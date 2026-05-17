@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Engine / server bug
+    url: https://ironflow.run/support
+    about: Bugs in the Ironflow engine (HTTP API, workflow execution, dashboard) — email support per LICENSE.
+  - name: Security vulnerability
+    url: https://github.com/sahina/ironflow-go/security/policy
+    about: Report security issues privately per SECURITY.md.
+  - name: Pull requests
+    url: https://github.com/sahina/ironflow-go/blob/main/CONTRIBUTING.md
+    about: This repo is read-only. PRs will be closed without review.

@@ -1,0 +1,24 @@
+# Go build artifacts
+*.test
+*.out
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Coverage
+coverage.txt
+coverage.html
+*.cover
+
+# OS noise
+.DS_Store
+
+# Vendor (we do not commit vendor/)
+vendor/
+
+# Editor
+*.swp
+.idea/
+.vscode/
