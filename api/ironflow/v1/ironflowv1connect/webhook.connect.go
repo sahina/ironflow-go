@@ -37,9 +37,24 @@ const (
 	// WebhookServiceCreateWebhookSourceProcedure is the fully-qualified name of the WebhookService's
 	// CreateWebhookSource RPC.
 	WebhookServiceCreateWebhookSourceProcedure = "/ironflow.v1.WebhookService/CreateWebhookSource"
+	// WebhookServiceGetWebhookSourceProcedure is the fully-qualified name of the WebhookService's
+	// GetWebhookSource RPC.
+	WebhookServiceGetWebhookSourceProcedure = "/ironflow.v1.WebhookService/GetWebhookSource"
 	// WebhookServiceListWebhookSourcesProcedure is the fully-qualified name of the WebhookService's
 	// ListWebhookSources RPC.
 	WebhookServiceListWebhookSourcesProcedure = "/ironflow.v1.WebhookService/ListWebhookSources"
+	// WebhookServiceUpdateWebhookSourceProcedure is the fully-qualified name of the WebhookService's
+	// UpdateWebhookSource RPC.
+	WebhookServiceUpdateWebhookSourceProcedure = "/ironflow.v1.WebhookService/UpdateWebhookSource"
+	// WebhookServiceRotateWebhookSecretProcedure is the fully-qualified name of the WebhookService's
+	// RotateWebhookSecret RPC.
+	WebhookServiceRotateWebhookSecretProcedure = "/ironflow.v1.WebhookService/RotateWebhookSecret"
+	// WebhookServiceExpireWebhookSecretPrevProcedure is the fully-qualified name of the
+	// WebhookService's ExpireWebhookSecretPrev RPC.
+	WebhookServiceExpireWebhookSecretPrevProcedure = "/ironflow.v1.WebhookService/ExpireWebhookSecretPrev"
+	// WebhookServiceDisableWebhookSignatureVerificationProcedure is the fully-qualified name of the
+	// WebhookService's DisableWebhookSignatureVerification RPC.
+	WebhookServiceDisableWebhookSignatureVerificationProcedure = "/ironflow.v1.WebhookService/DisableWebhookSignatureVerification"
 	// WebhookServiceDeleteWebhookSourceProcedure is the fully-qualified name of the WebhookService's
 	// DeleteWebhookSource RPC.
 	WebhookServiceDeleteWebhookSourceProcedure = "/ironflow.v1.WebhookService/DeleteWebhookSource"
@@ -52,8 +67,22 @@ const (
 type WebhookServiceClient interface {
 	// Create a new webhook source
 	CreateWebhookSource(context.Context, *connect.Request[v1.CreateWebhookSourceRequest]) (*connect.Response[v1.WebhookSource], error)
+	// Get a single webhook source by ID
+	GetWebhookSource(context.Context, *connect.Request[v1.GetWebhookSourceRequest]) (*connect.Response[v1.WebhookSource], error)
 	// List all webhook sources
 	ListWebhookSources(context.Context, *connect.Request[v1.ListWebhookSourcesRequest]) (*connect.Response[v1.ListWebhookSourcesResponse], error)
+	// Update editable fields on a webhook source. Does not change verify_secret.
+	UpdateWebhookSource(context.Context, *connect.Request[v1.UpdateWebhookSourceRequest]) (*connect.Response[v1.WebhookSource], error)
+	// Rotate the verify_secret. Promotes the prior current secret to the
+	// prev slot for the grace window. Empty new secret is rejected — use
+	// DisableWebhookSignatureVerification.
+	RotateWebhookSecret(context.Context, *connect.Request[v1.RotateWebhookSecretRequest]) (*connect.Response[v1.WebhookSource], error)
+	// Force-expire the previous secret immediately. Idempotent.
+	ExpireWebhookSecretPrev(context.Context, *connect.Request[v1.ExpireWebhookSecretPrevRequest]) (*connect.Response[v1.WebhookSource], error)
+	// Disable signature verification on a source. Preserves the prior
+	// current secret as prev for the grace window; after the window the
+	// source operates unsigned.
+	DisableWebhookSignatureVerification(context.Context, *connect.Request[v1.DisableWebhookSignatureVerificationRequest]) (*connect.Response[v1.WebhookSource], error)
 	// Delete a webhook source
 	DeleteWebhookSource(context.Context, *connect.Request[v1.DeleteWebhookSourceRequest]) (*connect.Response[emptypb.Empty], error)
 	// List webhook deliveries with optional filtering
@@ -77,10 +106,40 @@ func NewWebhookServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(webhookServiceMethods.ByName("CreateWebhookSource")),
 			connect.WithClientOptions(opts...),
 		),
+		getWebhookSource: connect.NewClient[v1.GetWebhookSourceRequest, v1.WebhookSource](
+			httpClient,
+			baseURL+WebhookServiceGetWebhookSourceProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("GetWebhookSource")),
+			connect.WithClientOptions(opts...),
+		),
 		listWebhookSources: connect.NewClient[v1.ListWebhookSourcesRequest, v1.ListWebhookSourcesResponse](
 			httpClient,
 			baseURL+WebhookServiceListWebhookSourcesProcedure,
 			connect.WithSchema(webhookServiceMethods.ByName("ListWebhookSources")),
+			connect.WithClientOptions(opts...),
+		),
+		updateWebhookSource: connect.NewClient[v1.UpdateWebhookSourceRequest, v1.WebhookSource](
+			httpClient,
+			baseURL+WebhookServiceUpdateWebhookSourceProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("UpdateWebhookSource")),
+			connect.WithClientOptions(opts...),
+		),
+		rotateWebhookSecret: connect.NewClient[v1.RotateWebhookSecretRequest, v1.WebhookSource](
+			httpClient,
+			baseURL+WebhookServiceRotateWebhookSecretProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("RotateWebhookSecret")),
+			connect.WithClientOptions(opts...),
+		),
+		expireWebhookSecretPrev: connect.NewClient[v1.ExpireWebhookSecretPrevRequest, v1.WebhookSource](
+			httpClient,
+			baseURL+WebhookServiceExpireWebhookSecretPrevProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("ExpireWebhookSecretPrev")),
+			connect.WithClientOptions(opts...),
+		),
+		disableWebhookSignatureVerification: connect.NewClient[v1.DisableWebhookSignatureVerificationRequest, v1.WebhookSource](
+			httpClient,
+			baseURL+WebhookServiceDisableWebhookSignatureVerificationProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("DisableWebhookSignatureVerification")),
 			connect.WithClientOptions(opts...),
 		),
 		deleteWebhookSource: connect.NewClient[v1.DeleteWebhookSourceRequest, emptypb.Empty](
@@ -100,10 +159,15 @@ func NewWebhookServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // webhookServiceClient implements WebhookServiceClient.
 type webhookServiceClient struct {
-	createWebhookSource   *connect.Client[v1.CreateWebhookSourceRequest, v1.WebhookSource]
-	listWebhookSources    *connect.Client[v1.ListWebhookSourcesRequest, v1.ListWebhookSourcesResponse]
-	deleteWebhookSource   *connect.Client[v1.DeleteWebhookSourceRequest, emptypb.Empty]
-	listWebhookDeliveries *connect.Client[v1.ListWebhookDeliveriesRequest, v1.ListWebhookDeliveriesResponse]
+	createWebhookSource                 *connect.Client[v1.CreateWebhookSourceRequest, v1.WebhookSource]
+	getWebhookSource                    *connect.Client[v1.GetWebhookSourceRequest, v1.WebhookSource]
+	listWebhookSources                  *connect.Client[v1.ListWebhookSourcesRequest, v1.ListWebhookSourcesResponse]
+	updateWebhookSource                 *connect.Client[v1.UpdateWebhookSourceRequest, v1.WebhookSource]
+	rotateWebhookSecret                 *connect.Client[v1.RotateWebhookSecretRequest, v1.WebhookSource]
+	expireWebhookSecretPrev             *connect.Client[v1.ExpireWebhookSecretPrevRequest, v1.WebhookSource]
+	disableWebhookSignatureVerification *connect.Client[v1.DisableWebhookSignatureVerificationRequest, v1.WebhookSource]
+	deleteWebhookSource                 *connect.Client[v1.DeleteWebhookSourceRequest, emptypb.Empty]
+	listWebhookDeliveries               *connect.Client[v1.ListWebhookDeliveriesRequest, v1.ListWebhookDeliveriesResponse]
 }
 
 // CreateWebhookSource calls ironflow.v1.WebhookService.CreateWebhookSource.
@@ -111,9 +175,35 @@ func (c *webhookServiceClient) CreateWebhookSource(ctx context.Context, req *con
 	return c.createWebhookSource.CallUnary(ctx, req)
 }
 
+// GetWebhookSource calls ironflow.v1.WebhookService.GetWebhookSource.
+func (c *webhookServiceClient) GetWebhookSource(ctx context.Context, req *connect.Request[v1.GetWebhookSourceRequest]) (*connect.Response[v1.WebhookSource], error) {
+	return c.getWebhookSource.CallUnary(ctx, req)
+}
+
 // ListWebhookSources calls ironflow.v1.WebhookService.ListWebhookSources.
 func (c *webhookServiceClient) ListWebhookSources(ctx context.Context, req *connect.Request[v1.ListWebhookSourcesRequest]) (*connect.Response[v1.ListWebhookSourcesResponse], error) {
 	return c.listWebhookSources.CallUnary(ctx, req)
+}
+
+// UpdateWebhookSource calls ironflow.v1.WebhookService.UpdateWebhookSource.
+func (c *webhookServiceClient) UpdateWebhookSource(ctx context.Context, req *connect.Request[v1.UpdateWebhookSourceRequest]) (*connect.Response[v1.WebhookSource], error) {
+	return c.updateWebhookSource.CallUnary(ctx, req)
+}
+
+// RotateWebhookSecret calls ironflow.v1.WebhookService.RotateWebhookSecret.
+func (c *webhookServiceClient) RotateWebhookSecret(ctx context.Context, req *connect.Request[v1.RotateWebhookSecretRequest]) (*connect.Response[v1.WebhookSource], error) {
+	return c.rotateWebhookSecret.CallUnary(ctx, req)
+}
+
+// ExpireWebhookSecretPrev calls ironflow.v1.WebhookService.ExpireWebhookSecretPrev.
+func (c *webhookServiceClient) ExpireWebhookSecretPrev(ctx context.Context, req *connect.Request[v1.ExpireWebhookSecretPrevRequest]) (*connect.Response[v1.WebhookSource], error) {
+	return c.expireWebhookSecretPrev.CallUnary(ctx, req)
+}
+
+// DisableWebhookSignatureVerification calls
+// ironflow.v1.WebhookService.DisableWebhookSignatureVerification.
+func (c *webhookServiceClient) DisableWebhookSignatureVerification(ctx context.Context, req *connect.Request[v1.DisableWebhookSignatureVerificationRequest]) (*connect.Response[v1.WebhookSource], error) {
+	return c.disableWebhookSignatureVerification.CallUnary(ctx, req)
 }
 
 // DeleteWebhookSource calls ironflow.v1.WebhookService.DeleteWebhookSource.
@@ -130,8 +220,22 @@ func (c *webhookServiceClient) ListWebhookDeliveries(ctx context.Context, req *c
 type WebhookServiceHandler interface {
 	// Create a new webhook source
 	CreateWebhookSource(context.Context, *connect.Request[v1.CreateWebhookSourceRequest]) (*connect.Response[v1.WebhookSource], error)
+	// Get a single webhook source by ID
+	GetWebhookSource(context.Context, *connect.Request[v1.GetWebhookSourceRequest]) (*connect.Response[v1.WebhookSource], error)
 	// List all webhook sources
 	ListWebhookSources(context.Context, *connect.Request[v1.ListWebhookSourcesRequest]) (*connect.Response[v1.ListWebhookSourcesResponse], error)
+	// Update editable fields on a webhook source. Does not change verify_secret.
+	UpdateWebhookSource(context.Context, *connect.Request[v1.UpdateWebhookSourceRequest]) (*connect.Response[v1.WebhookSource], error)
+	// Rotate the verify_secret. Promotes the prior current secret to the
+	// prev slot for the grace window. Empty new secret is rejected — use
+	// DisableWebhookSignatureVerification.
+	RotateWebhookSecret(context.Context, *connect.Request[v1.RotateWebhookSecretRequest]) (*connect.Response[v1.WebhookSource], error)
+	// Force-expire the previous secret immediately. Idempotent.
+	ExpireWebhookSecretPrev(context.Context, *connect.Request[v1.ExpireWebhookSecretPrevRequest]) (*connect.Response[v1.WebhookSource], error)
+	// Disable signature verification on a source. Preserves the prior
+	// current secret as prev for the grace window; after the window the
+	// source operates unsigned.
+	DisableWebhookSignatureVerification(context.Context, *connect.Request[v1.DisableWebhookSignatureVerificationRequest]) (*connect.Response[v1.WebhookSource], error)
 	// Delete a webhook source
 	DeleteWebhookSource(context.Context, *connect.Request[v1.DeleteWebhookSourceRequest]) (*connect.Response[emptypb.Empty], error)
 	// List webhook deliveries with optional filtering
@@ -151,10 +255,40 @@ func NewWebhookServiceHandler(svc WebhookServiceHandler, opts ...connect.Handler
 		connect.WithSchema(webhookServiceMethods.ByName("CreateWebhookSource")),
 		connect.WithHandlerOptions(opts...),
 	)
+	webhookServiceGetWebhookSourceHandler := connect.NewUnaryHandler(
+		WebhookServiceGetWebhookSourceProcedure,
+		svc.GetWebhookSource,
+		connect.WithSchema(webhookServiceMethods.ByName("GetWebhookSource")),
+		connect.WithHandlerOptions(opts...),
+	)
 	webhookServiceListWebhookSourcesHandler := connect.NewUnaryHandler(
 		WebhookServiceListWebhookSourcesProcedure,
 		svc.ListWebhookSources,
 		connect.WithSchema(webhookServiceMethods.ByName("ListWebhookSources")),
+		connect.WithHandlerOptions(opts...),
+	)
+	webhookServiceUpdateWebhookSourceHandler := connect.NewUnaryHandler(
+		WebhookServiceUpdateWebhookSourceProcedure,
+		svc.UpdateWebhookSource,
+		connect.WithSchema(webhookServiceMethods.ByName("UpdateWebhookSource")),
+		connect.WithHandlerOptions(opts...),
+	)
+	webhookServiceRotateWebhookSecretHandler := connect.NewUnaryHandler(
+		WebhookServiceRotateWebhookSecretProcedure,
+		svc.RotateWebhookSecret,
+		connect.WithSchema(webhookServiceMethods.ByName("RotateWebhookSecret")),
+		connect.WithHandlerOptions(opts...),
+	)
+	webhookServiceExpireWebhookSecretPrevHandler := connect.NewUnaryHandler(
+		WebhookServiceExpireWebhookSecretPrevProcedure,
+		svc.ExpireWebhookSecretPrev,
+		connect.WithSchema(webhookServiceMethods.ByName("ExpireWebhookSecretPrev")),
+		connect.WithHandlerOptions(opts...),
+	)
+	webhookServiceDisableWebhookSignatureVerificationHandler := connect.NewUnaryHandler(
+		WebhookServiceDisableWebhookSignatureVerificationProcedure,
+		svc.DisableWebhookSignatureVerification,
+		connect.WithSchema(webhookServiceMethods.ByName("DisableWebhookSignatureVerification")),
 		connect.WithHandlerOptions(opts...),
 	)
 	webhookServiceDeleteWebhookSourceHandler := connect.NewUnaryHandler(
@@ -173,8 +307,18 @@ func NewWebhookServiceHandler(svc WebhookServiceHandler, opts ...connect.Handler
 		switch r.URL.Path {
 		case WebhookServiceCreateWebhookSourceProcedure:
 			webhookServiceCreateWebhookSourceHandler.ServeHTTP(w, r)
+		case WebhookServiceGetWebhookSourceProcedure:
+			webhookServiceGetWebhookSourceHandler.ServeHTTP(w, r)
 		case WebhookServiceListWebhookSourcesProcedure:
 			webhookServiceListWebhookSourcesHandler.ServeHTTP(w, r)
+		case WebhookServiceUpdateWebhookSourceProcedure:
+			webhookServiceUpdateWebhookSourceHandler.ServeHTTP(w, r)
+		case WebhookServiceRotateWebhookSecretProcedure:
+			webhookServiceRotateWebhookSecretHandler.ServeHTTP(w, r)
+		case WebhookServiceExpireWebhookSecretPrevProcedure:
+			webhookServiceExpireWebhookSecretPrevHandler.ServeHTTP(w, r)
+		case WebhookServiceDisableWebhookSignatureVerificationProcedure:
+			webhookServiceDisableWebhookSignatureVerificationHandler.ServeHTTP(w, r)
 		case WebhookServiceDeleteWebhookSourceProcedure:
 			webhookServiceDeleteWebhookSourceHandler.ServeHTTP(w, r)
 		case WebhookServiceListWebhookDeliveriesProcedure:
@@ -192,8 +336,28 @@ func (UnimplementedWebhookServiceHandler) CreateWebhookSource(context.Context, *
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.WebhookService.CreateWebhookSource is not implemented"))
 }
 
+func (UnimplementedWebhookServiceHandler) GetWebhookSource(context.Context, *connect.Request[v1.GetWebhookSourceRequest]) (*connect.Response[v1.WebhookSource], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.WebhookService.GetWebhookSource is not implemented"))
+}
+
 func (UnimplementedWebhookServiceHandler) ListWebhookSources(context.Context, *connect.Request[v1.ListWebhookSourcesRequest]) (*connect.Response[v1.ListWebhookSourcesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.WebhookService.ListWebhookSources is not implemented"))
+}
+
+func (UnimplementedWebhookServiceHandler) UpdateWebhookSource(context.Context, *connect.Request[v1.UpdateWebhookSourceRequest]) (*connect.Response[v1.WebhookSource], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.WebhookService.UpdateWebhookSource is not implemented"))
+}
+
+func (UnimplementedWebhookServiceHandler) RotateWebhookSecret(context.Context, *connect.Request[v1.RotateWebhookSecretRequest]) (*connect.Response[v1.WebhookSource], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.WebhookService.RotateWebhookSecret is not implemented"))
+}
+
+func (UnimplementedWebhookServiceHandler) ExpireWebhookSecretPrev(context.Context, *connect.Request[v1.ExpireWebhookSecretPrevRequest]) (*connect.Response[v1.WebhookSource], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.WebhookService.ExpireWebhookSecretPrev is not implemented"))
+}
+
+func (UnimplementedWebhookServiceHandler) DisableWebhookSignatureVerification(context.Context, *connect.Request[v1.DisableWebhookSignatureVerificationRequest]) (*connect.Response[v1.WebhookSource], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.WebhookService.DisableWebhookSignatureVerification is not implemented"))
 }
 
 func (UnimplementedWebhookServiceHandler) DeleteWebhookSource(context.Context, *connect.Request[v1.DeleteWebhookSourceRequest]) (*connect.Response[emptypb.Empty], error) {

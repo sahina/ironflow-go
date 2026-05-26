@@ -6,9 +6,9 @@ module github.com/sahina/ironflow-go
 go 1.25.0
 
 require (
-	connectrpc.com/connect v1.19.2
+	connectrpc.com/connect v1.20.0
 	github.com/gorilla/websocket v1.5.3
-	golang.org/x/net v0.54.0
+	golang.org/x/net v0.55.0
 	golang.org/x/sync v0.20.0
 	google.golang.org/protobuf v1.36.11
 )
