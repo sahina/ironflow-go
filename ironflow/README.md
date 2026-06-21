@@ -140,7 +140,6 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
     Secrets:  []string{"STRIPE_KEY"}, // secrets injected at runtime
     Recording:          true,         // enable audit recording
     RecordingRetention: "30d",        // "7d", "30d", "90d", "forever"
-    PauseBehavior:      "hold",      // "hold" (default) or "release" concurrency slot when paused
 }, func(ctx ironflow.Context) (any, error) {
     // ctx.Event  -- triggering event
     // ctx.Run    -- run metadata (ID, FunctionID, Attempt, StartedAt)
@@ -546,15 +545,6 @@ prevOutput, err := client.InjectStepOutput(ctx, "run_abc123", "step_xyz",
 
 // Resume (fromStep="" to resume from where it paused)
 run, err := client.ResumeRun(ctx, "run_abc123", "")
-```
-
-`PauseBehavior` on `FunctionConfig` controls whether a paused run retains (`"hold"`, default) or releases (`"release"`) its concurrency lane slot:
-
-```go
-fn := ironflow.CreateFunction(ironflow.FunctionConfig{
-    ID:            "process-order",
-    PauseBehavior: "hold", // "hold" (default) or "release"
-})
 ```
 
 ### Developer Pub/Sub
@@ -1427,12 +1417,14 @@ ironflow.PushMode  // "push"
 ironflow.PullMode  // "pull"
 
 // Run statuses
-ironflow.RunStatusPending    // "pending"
+ironflow.RunStatusPending    // "pending" (deprecated: the engine no longer produces this as of #1222)
 ironflow.RunStatusRunning    // "running"
 ironflow.RunStatusCompleted  // "completed"
 ironflow.RunStatusFailed     // "failed"
 ironflow.RunStatusCancelled  // "cancelled"
 ironflow.RunStatusPaused     // "paused"
+// The capacity lifecycle also produces the string statuses "waiting_for_capacity"
+// (queued, eligible for a dispatch slot) and "waiting" (queued, backing off) (#1222).
 
 // Ack modes
 ironflow.AckModeAuto    // "auto"

@@ -1149,12 +1149,12 @@ func TestWorker_RequestJob_NoContent(t *testing.T) {
 		Logger:    NewNoopLogger(),
 	})
 
-	job, err := worker.requestJob(context.Background())
+	jobs, err := worker.requestJobs(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if job != nil {
-		t.Errorf("expected nil job for 204 response, got %+v", job)
+	if len(jobs) != 0 {
+		t.Errorf("expected no jobs for 204 response, got %d", len(jobs))
 	}
 }
 
@@ -1198,14 +1198,14 @@ func TestWorker_RequestJob_ReturnsJob(t *testing.T) {
 		Logger:    NewNoopLogger(),
 	})
 
-	job, err := worker.requestJob(context.Background())
+	jobs, err := worker.requestJobs(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if job == nil {
-		t.Fatal("expected a job, got nil")
-		return
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job (legacy single-object), got %d", len(jobs))
 	}
+	job := jobs[0]
 
 	if job.JobID != "job-123" {
 		t.Errorf("expected JobID=job-123, got %q", job.JobID)
@@ -1253,12 +1253,12 @@ func TestWorker_RequestJob_ErrorOnBadStatus(t *testing.T) {
 		Logger:    NewNoopLogger(),
 	})
 
-	job, err := worker.requestJob(context.Background())
+	jobs, err := worker.requestJobs(context.Background(), 1)
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
-	if job != nil {
-		t.Errorf("expected nil job on error, got %+v", job)
+	if jobs != nil {
+		t.Errorf("expected nil jobs on error, got %+v", jobs)
 	}
 	if !strings.Contains(err.Error(), "unexpected status: 500") {
 		t.Errorf("expected 'unexpected status: 500' in error, got %q", err.Error())

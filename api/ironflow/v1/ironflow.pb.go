@@ -39,18 +39,12 @@ type RegisterFunctionRequest struct {
 	Secrets            []string               `protobuf:"bytes,11,rep,name=secrets,proto3" json:"secrets,omitempty"`
 	Recording          bool                   `protobuf:"varint,12,opt,name=recording,proto3" json:"recording,omitempty"`
 	RecordingRetention string                 `protobuf:"bytes,13,opt,name=recording_retention,json=recordingRetention,proto3" json:"recording_retention,omitempty"`
-	// Concurrency lane behavior when paused for injection: "hold" (default) or "release"
-	PauseBehavior string `protobuf:"bytes,14,opt,name=pause_behavior,json=pauseBehavior,proto3" json:"pause_behavior,omitempty"`
 	// Arbitrary key-value metadata for the function
 	Metadata *structpb.Struct `protobuf:"bytes,15,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	// Optional reason for the change (e.g., "deploy v2.1.0")
 	ChangeReason string `protobuf:"bytes,16,opt,name=change_reason,json=changeReason,proto3" json:"change_reason,omitempty"`
 	// Optional debounce configuration. Issue #545.
 	Debounce *DebounceConfig `protobuf:"bytes,17,opt,name=debounce,proto3" json:"debounce,omitempty"`
-	// Run registered step.compensate() handlers in reverse order when a
-	// pull-mode run is cancelled mid-saga. Ignored (warning logged) for
-	// push-mode functions. Issue #546 P2.
-	CompensateOnCancel bool `protobuf:"varint,18,opt,name=compensate_on_cancel,json=compensateOnCancel,proto3" json:"compensate_on_cancel,omitempty"`
 	// Optional cancel-on-event specs. Issue #546 P3 / #572.
 	CancelOn      []*CancelOnSpec `protobuf:"bytes,19,rep,name=cancel_on,json=cancelOn,proto3" json:"cancel_on,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -178,13 +172,6 @@ func (x *RegisterFunctionRequest) GetRecordingRetention() string {
 	return ""
 }
 
-func (x *RegisterFunctionRequest) GetPauseBehavior() string {
-	if x != nil {
-		return x.PauseBehavior
-	}
-	return ""
-}
-
 func (x *RegisterFunctionRequest) GetMetadata() *structpb.Struct {
 	if x != nil {
 		return x.Metadata
@@ -204,13 +191,6 @@ func (x *RegisterFunctionRequest) GetDebounce() *DebounceConfig {
 		return x.Debounce
 	}
 	return nil
-}
-
-func (x *RegisterFunctionRequest) GetCompensateOnCancel() bool {
-	if x != nil {
-		return x.CompensateOnCancel
-	}
-	return false
 }
 
 func (x *RegisterFunctionRequest) GetCancelOn() []*CancelOnSpec {
@@ -2584,7 +2564,7 @@ var File_ironflow_v1_ironflow_proto protoreflect.FileDescriptor
 
 const file_ironflow_v1_ironflow_proto_rawDesc = "" +
 	"\n" +
-	"\x1aironflow/v1/ironflow.proto\x12\vironflow.v1\x1a\x17ironflow/v1/types.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb2\x06\n" +
+	"\x1aironflow/v1/ironflow.proto\x12\vironflow.v1\x1a\x17ironflow/v1/types.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8b\x06\n" +
 	"\x17RegisterFunctionRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -2600,13 +2580,11 @@ const file_ironflow_v1_ironflow_proto_rawDesc = "" +
 	" \x01(\tR\bactorKey\x12\x18\n" +
 	"\asecrets\x18\v \x03(\tR\asecrets\x12\x1c\n" +
 	"\trecording\x18\f \x01(\bR\trecording\x12/\n" +
-	"\x13recording_retention\x18\r \x01(\tR\x12recordingRetention\x12%\n" +
-	"\x0epause_behavior\x18\x0e \x01(\tR\rpauseBehavior\x123\n" +
+	"\x13recording_retention\x18\r \x01(\tR\x12recordingRetention\x123\n" +
 	"\bmetadata\x18\x0f \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12#\n" +
 	"\rchange_reason\x18\x10 \x01(\tR\fchangeReason\x127\n" +
-	"\bdebounce\x18\x11 \x01(\v2\x1b.ironflow.v1.DebounceConfigR\bdebounce\x120\n" +
-	"\x14compensate_on_cancel\x18\x12 \x01(\bR\x12compensateOnCancel\x126\n" +
-	"\tcancel_on\x18\x13 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOn\"g\n" +
+	"\bdebounce\x18\x11 \x01(\v2\x1b.ironflow.v1.DebounceConfigR\bdebounce\x126\n" +
+	"\tcancel_on\x18\x13 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOnJ\x04\b\x0e\x10\x0fJ\x04\b\x12\x10\x13R\x0epause_behaviorR\x14compensate_on_cancel\"g\n" +
 	"\x18RegisterFunctionResponse\x121\n" +
 	"\bfunction\x18\x01 \x01(\v2\x15.ironflow.v1.FunctionR\bfunction\x12\x18\n" +
 	"\acreated\x18\x02 \x01(\bR\acreated\"$\n" +

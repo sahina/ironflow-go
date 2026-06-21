@@ -2,7 +2,6 @@ package ironflow
 
 import (
 	"fmt"
-	"log"
 	"regexp"
 	"time"
 )
@@ -81,14 +80,6 @@ func validateFunctionConfig(config FunctionConfig) error {
 		if config.Debounce.MaxWait != 0 && config.Debounce.MaxWait < config.Debounce.Period {
 			return fmt.Errorf("debounce maxWait must be >= period (got maxWait=%s, period=%s) or 0 for no cap", config.Debounce.MaxWait, config.Debounce.Period)
 		}
-	}
-
-	if config.CompensateOnCancel && config.Mode == PushMode {
-		// Non-fatal: push-mode handlers have no live process to run
-		// compensation closures when the cancel signal arrives. Keep the
-		// config valid so forward migration to pull-mode doesn't require
-		// a code change — server logs a warning at registration.
-		log.Printf("ironflow: warning: function %q has compensateOnCancel=true but mode=push; compensations will not run (push mode has no point of re-entry after cancel). Switch to pull mode or remove the flag.", config.ID)
 	}
 
 	if len(config.CancelOn) > 0 {
@@ -207,10 +198,6 @@ func GetFunctionMetadata(fn Function) map[string]any {
 		metadata["debounce"] = dbn
 	}
 
-	if config.CompensateOnCancel {
-		metadata["compensate_on_cancel"] = true
-	}
-
 	if len(config.CancelOn) > 0 {
 		specs := make([]map[string]any, len(config.CancelOn))
 		for i, s := range config.CancelOn {
@@ -239,10 +226,6 @@ func GetFunctionMetadata(fn Function) map[string]any {
 	}
 	if config.RecordingRetention != "" {
 		metadata["recording_retention"] = config.RecordingRetention
-	}
-
-	if config.PauseBehavior != "" {
-		metadata["pause_behavior"] = config.PauseBehavior
 	}
 
 	if config.Metadata != nil {

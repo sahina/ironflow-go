@@ -128,33 +128,40 @@ type RunStatus int32
 
 const (
 	RunStatus_RUN_STATUS_UNSPECIFIED RunStatus = 0
-	RunStatus_RUN_STATUS_PENDING     RunStatus = 1
 	RunStatus_RUN_STATUS_RUNNING     RunStatus = 2
 	RunStatus_RUN_STATUS_COMPLETED   RunStatus = 3
 	RunStatus_RUN_STATUS_FAILED      RunStatus = 4
 	RunStatus_RUN_STATUS_CANCELLED   RunStatus = 5
 	RunStatus_RUN_STATUS_PAUSED      RunStatus = 6
+	// A runnable execution segment exists in dispatch_queue; capacity admission
+	// is pending. #1206 / ADR 0037.
+	RunStatus_RUN_STATUS_WAITING_FOR_CAPACITY RunStatus = 7
+	// Not runnable: blocked on a durable wait (sleep, event, invoke, retry_delay,
+	// recovery_grace). #1206 / ADR 0037.
+	RunStatus_RUN_STATUS_WAITING RunStatus = 8
 )
 
 // Enum value maps for RunStatus.
 var (
 	RunStatus_name = map[int32]string{
 		0: "RUN_STATUS_UNSPECIFIED",
-		1: "RUN_STATUS_PENDING",
 		2: "RUN_STATUS_RUNNING",
 		3: "RUN_STATUS_COMPLETED",
 		4: "RUN_STATUS_FAILED",
 		5: "RUN_STATUS_CANCELLED",
 		6: "RUN_STATUS_PAUSED",
+		7: "RUN_STATUS_WAITING_FOR_CAPACITY",
+		8: "RUN_STATUS_WAITING",
 	}
 	RunStatus_value = map[string]int32{
-		"RUN_STATUS_UNSPECIFIED": 0,
-		"RUN_STATUS_PENDING":     1,
-		"RUN_STATUS_RUNNING":     2,
-		"RUN_STATUS_COMPLETED":   3,
-		"RUN_STATUS_FAILED":      4,
-		"RUN_STATUS_CANCELLED":   5,
-		"RUN_STATUS_PAUSED":      6,
+		"RUN_STATUS_UNSPECIFIED":          0,
+		"RUN_STATUS_RUNNING":              2,
+		"RUN_STATUS_COMPLETED":            3,
+		"RUN_STATUS_FAILED":               4,
+		"RUN_STATUS_CANCELLED":            5,
+		"RUN_STATUS_PAUSED":               6,
+		"RUN_STATUS_WAITING_FOR_CAPACITY": 7,
+		"RUN_STATUS_WAITING":              8,
 	}
 )
 
@@ -656,19 +663,12 @@ type Function struct {
 	Recording bool `protobuf:"varint,15,opt,name=recording,proto3" json:"recording,omitempty"`
 	// Retention period for audit events (e.g. "7d", "30d", "90d", "forever")
 	RecordingRetention string `protobuf:"bytes,16,opt,name=recording_retention,json=recordingRetention,proto3" json:"recording_retention,omitempty"`
-	// Concurrency lane behavior when paused for injection: "hold" (default) or "release"
-	PauseBehavior string `protobuf:"bytes,17,opt,name=pause_behavior,json=pauseBehavior,proto3" json:"pause_behavior,omitempty"`
 	// Arbitrary key-value metadata for the function
 	Metadata *structpb.Struct `protobuf:"bytes,18,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	// Debounce configuration (optional). When set, events for this
 	// function are collapsed per `debounce.key` and the handler fires
 	// once per quiet-period. Issue #545.
 	Debounce *DebounceConfig `protobuf:"bytes,19,opt,name=debounce,proto3" json:"debounce,omitempty"`
-	// When true, a pull-mode run that is cancelled mid-saga runs its
-	// registered step.compensate() handlers in reverse order before
-	// terminating. Ignored for push-mode functions (compensation
-	// closures only exist in a live SDK process). Issue #546 P2.
-	CompensateOnCancel bool `protobuf:"varint,20,opt,name=compensate_on_cancel,json=compensateOnCancel,proto3" json:"compensate_on_cancel,omitempty"`
 	// Cancel-on-event specs. When any spec matches an incoming event
 	// and that event's match-path value equals the running run's
 	// corresponding field, the run is auto-cancelled with cause
@@ -820,13 +820,6 @@ func (x *Function) GetRecordingRetention() string {
 	return ""
 }
 
-func (x *Function) GetPauseBehavior() string {
-	if x != nil {
-		return x.PauseBehavior
-	}
-	return ""
-}
-
 func (x *Function) GetMetadata() *structpb.Struct {
 	if x != nil {
 		return x.Metadata
@@ -839,13 +832,6 @@ func (x *Function) GetDebounce() *DebounceConfig {
 		return x.Debounce
 	}
 	return nil
-}
-
-func (x *Function) GetCompensateOnCancel() bool {
-	if x != nil {
-		return x.CompensateOnCancel
-	}
-	return false
 }
 
 func (x *Function) GetCancelOn() []*CancelOnSpec {
@@ -1018,10 +1004,6 @@ type Run struct {
 	StartedAt *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	// When execution ended
 	EndedAt *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
-	// Concurrency key
-	ConcurrencyKey string `protobuf:"bytes,15,opt,name=concurrency_key,json=concurrencyKey,proto3" json:"concurrency_key,omitempty"`
-	// Priority level
-	Priority int32 `protobuf:"varint,16,opt,name=priority,proto3" json:"priority,omitempty"`
 	// Creation timestamp
 	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,17,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// Last update timestamp
@@ -1162,20 +1144,6 @@ func (x *Run) GetEndedAt() *timestamppb.Timestamp {
 		return x.EndedAt
 	}
 	return nil
-}
-
-func (x *Run) GetConcurrencyKey() string {
-	if x != nil {
-		return x.ConcurrencyKey
-	}
-	return ""
-}
-
-func (x *Run) GetPriority() int32 {
-	if x != nil {
-		return x.Priority
-	}
-	return 0
 }
 
 func (x *Run) GetCreatedAt() *timestamppb.Timestamp {
@@ -1581,7 +1549,7 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\x05match\x18\x02 \x01(\tR\x05match\"?\n" +
 	"\x0eDebounceConfig\x12\x1b\n" +
 	"\tperiod_ms\x18\x01 \x01(\x05R\bperiodMs\x12\x10\n" +
-	"\x03key\x18\x02 \x01(\tR\x03key\"\xa9\a\n" +
+	"\x03key\x18\x02 \x01(\tR\x03key\"\x82\a\n" +
 	"\bFunction\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -1602,12 +1570,10 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1c\n" +
 	"\trecording\x18\x0f \x01(\bR\trecording\x12/\n" +
-	"\x13recording_retention\x18\x10 \x01(\tR\x12recordingRetention\x12%\n" +
-	"\x0epause_behavior\x18\x11 \x01(\tR\rpauseBehavior\x123\n" +
+	"\x13recording_retention\x18\x10 \x01(\tR\x12recordingRetention\x123\n" +
 	"\bmetadata\x18\x12 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x127\n" +
-	"\bdebounce\x18\x13 \x01(\v2\x1b.ironflow.v1.DebounceConfigR\bdebounce\x120\n" +
-	"\x14compensate_on_cancel\x18\x14 \x01(\bR\x12compensateOnCancel\x126\n" +
-	"\tcancel_on\x18\x15 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOn\"\x87\x03\n" +
+	"\bdebounce\x18\x13 \x01(\v2\x1b.ironflow.v1.DebounceConfigR\bdebounce\x126\n" +
+	"\tcancel_on\x18\x15 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOnJ\x04\b\x11\x10\x12J\x04\b\x14\x10\x15R\x0epause_behaviorR\x14compensate_on_cancel\"\x87\x03\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12+\n" +
@@ -1621,7 +1587,7 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\ventity_type\x18\n" +
 	" \x01(\tR\n" +
 	"entityType\x12%\n" +
-	"\x0eentity_version\x18\v \x01(\x03R\rentityVersion\"\xe7\x06\n" +
+	"\x0eentity_version\x18\v \x01(\x03R\rentityVersion\"\xc9\x06\n" +
 	"\x03Run\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vfunction_id\x18\x02 \x01(\tR\n" +
@@ -1639,16 +1605,14 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\fmax_attempts\x18\f \x01(\x05R\vmaxAttempts\x129\n" +
 	"\n" +
 	"started_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
-	"\bended_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x12'\n" +
-	"\x0fconcurrency_key\x18\x0f \x01(\tR\x0econcurrencyKey\x12\x1a\n" +
-	"\bpriority\x18\x10 \x01(\x05R\bpriority\x129\n" +
+	"\bended_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x129\n" +
 	"\n" +
 	"created_at\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12'\n" +
 	"\x0fpause_requested\x18\x13 \x01(\bR\x0epauseRequested\x12!\n" +
 	"\fpause_reason\x18\x14 \x01(\tR\vpauseReason\x12)\n" +
-	"\x10function_version\x18\x15 \x01(\x05R\x0ffunctionVersion\"\xe4\x05\n" +
+	"\x10function_version\x18\x15 \x01(\x05R\x0ffunctionVersionJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11R\x0fconcurrency_keyR\bpriority\"\xe4\x05\n" +
 	"\x04Step\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06run_id\x18\x02 \x01(\tR\x05runId\x12\x17\n" +
@@ -1696,15 +1660,16 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\rExecutionMode\x12\x1e\n" +
 	"\x1aEXECUTION_MODE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13EXECUTION_MODE_PUSH\x10\x01\x12\x17\n" +
-	"\x13EXECUTION_MODE_PULL\x10\x02*\xb9\x01\n" +
+	"\x13EXECUTION_MODE_PULL\x10\x02*\xf8\x01\n" +
 	"\tRunStatus\x12\x1a\n" +
 	"\x16RUN_STATUS_UNSPECIFIED\x10\x00\x12\x16\n" +
-	"\x12RUN_STATUS_PENDING\x10\x01\x12\x16\n" +
 	"\x12RUN_STATUS_RUNNING\x10\x02\x12\x18\n" +
 	"\x14RUN_STATUS_COMPLETED\x10\x03\x12\x15\n" +
 	"\x11RUN_STATUS_FAILED\x10\x04\x12\x18\n" +
 	"\x14RUN_STATUS_CANCELLED\x10\x05\x12\x15\n" +
-	"\x11RUN_STATUS_PAUSED\x10\x06*\x8c\x02\n" +
+	"\x11RUN_STATUS_PAUSED\x10\x06\x12#\n" +
+	"\x1fRUN_STATUS_WAITING_FOR_CAPACITY\x10\a\x12\x16\n" +
+	"\x12RUN_STATUS_WAITING\x10\b\"\x04\b\x01\x10\x01*\x12RUN_STATUS_PENDING*\x8c\x02\n" +
 	"\n" +
 	"StepStatus\x12\x1b\n" +
 	"\x17STEP_STATUS_UNSPECIFIED\x10\x00\x12\x17\n" +

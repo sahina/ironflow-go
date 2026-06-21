@@ -44,12 +44,6 @@ type HandlerOptions struct {
 	// rejects debounced functions. Issue #545.
 	Debounce *DebounceConfig
 
-	// CompensateOnCancel runs registered compensation handlers in reverse
-	// order when a pull-mode run is cancelled mid-saga. No-op for push-mode
-	// handlers (compensation closures live only in a live SDK process).
-	// Issue #546 P2.
-	CompensateOnCancel bool
-
 	// Timeout is the handler timeout.
 	Timeout time.Duration
 
@@ -233,9 +227,6 @@ func CreateHandler[TEvent any](config HandlerConfig[TEvent]) Function {
 		}
 		if config.Options.Debounce != nil {
 			fnConfig.Debounce = config.Options.Debounce
-		}
-		if config.Options.CompensateOnCancel {
-			fnConfig.CompensateOnCancel = true
 		}
 		if config.Options.Timeout > 0 {
 			fnConfig.Timeout = config.Options.Timeout

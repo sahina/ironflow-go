@@ -415,11 +415,14 @@ func (w *StreamingWorker) handleJobAssignment(ctx context.Context, protoJob *iro
 		return
 	}
 
-	// Send JobAck
+	// Send JobAck, echoing the execution fence (#1206, ADR 0037, chunk 3e) so the
+	// engine can validate the ack against the assigned segment.
 	w.enqueue(&ironflowv1.WorkerMessage{
 		Payload: &ironflowv1.WorkerMessage_JobAck{
 			JobAck: &ironflowv1.JobAck{
-				JobId: protoJob.GetJobId(),
+				JobId:        protoJob.GetJobId(),
+				ExecutionSeq: protoJob.GetExecutionSeq(),
+				LeaseToken:   protoJob.GetLeaseToken(),
 			},
 		},
 	})
@@ -431,10 +434,13 @@ func (w *StreamingWorker) handleJobAssignment(ctx context.Context, protoJob *iro
 		return
 	}
 
-	// Create reporter that sends results via the stream
+	// Create reporter that sends results via the stream. It carries the per-job
+	// execution fence so every terminal/yield it emits echoes back to the engine.
 	reporter := &streamJobReporter{
-		outCh:  w.outCh,
-		logger: w.logger,
+		outCh:        w.outCh,
+		logger:       w.logger,
+		executionSeq: job.ExecutionSeq,
+		leaseToken:   job.LeaseToken,
 	}
 
 	// Process asynchronously
@@ -557,6 +563,12 @@ func (w *StreamingWorker) stopProjectionRunners() {
 type streamJobReporter struct {
 	outCh  chan<- *ironflowv1.WorkerMessage
 	logger Logger
+
+	// Execution fence (#1206, ADR 0037, chunk 3e), captured per job from the
+	// JobAssignment. send() stamps it onto every outgoing message so the engine's
+	// ingress fence guard can validate it. Zero for legacy / non-capacity jobs.
+	executionSeq int64
+	leaseToken   string
 }
 
 func (r *streamJobReporter) ReportCompleted(_ context.Context, jobID string, output any, _ []*StepResult) error {
@@ -703,6 +715,7 @@ func (r *streamJobReporter) ReportYielded(_ context.Context, jobID string, yield
 }
 
 func (r *streamJobReporter) send(msg *ironflowv1.WorkerMessage) {
+	r.stampFence(msg)
 	select {
 	case r.outCh <- msg:
 	default:
@@ -710,10 +723,44 @@ func (r *streamJobReporter) send(msg *ironflowv1.WorkerMessage) {
 	}
 }
 
+// stampFence copies the per-job execution fence onto a mutating message before it
+// is sent (#1206, ADR 0037, chunk 3e). Centralizing it here covers every
+// JobCompleted / JobFailed / StepYielded construction in this reporter — including
+// the yield-parse fallbacks — so no echo site can be missed. Every call site
+// allocates the inner message, so the oneof inner is never nil today; the nil
+// guards are defensive against a future caller passing a bare oneof wrapper.
+func (r *streamJobReporter) stampFence(msg *ironflowv1.WorkerMessage) {
+	switch p := msg.GetPayload().(type) {
+	case *ironflowv1.WorkerMessage_JobCompleted:
+		if p.JobCompleted != nil {
+			p.JobCompleted.ExecutionSeq = r.executionSeq
+			p.JobCompleted.LeaseToken = r.leaseToken
+		}
+	case *ironflowv1.WorkerMessage_JobFailed:
+		if p.JobFailed != nil {
+			p.JobFailed.ExecutionSeq = r.executionSeq
+			p.JobFailed.LeaseToken = r.leaseToken
+		}
+	case *ironflowv1.WorkerMessage_StepYielded:
+		if p.StepYielded != nil {
+			p.StepYielded.ExecutionSeq = r.executionSeq
+			p.StepYielded.LeaseToken = r.leaseToken
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // streamStepReporter implements stepLifecycleReporter for the streaming worker.
 // ---------------------------------------------------------------------------
 
+// GO-LIVE COUPLING (#1206, ADR 0037): this reporter is a per-worker singleton
+// with no per-job binding, so its Step* messages carry an empty JobId and no
+// execution fence — the engine's ingress guard treats them as "unknown job" and
+// passes them UNFENCED today. Per-job step attribution must land before pull
+// capacity is armed, and it MUST add the fence in the same change: the instant a
+// real JobId is stamped on a capacity job's Step*, an absent lease token flips
+// the engine verdict to fenceDisconnect (stream kill) on every step. Give this
+// reporter per-job fence binding (like streamJobReporter) at that time.
 type streamStepReporter struct {
 	outCh chan<- *ironflowv1.WorkerMessage
 }
@@ -842,6 +889,8 @@ func protoToJobAssignment(pa *ironflowv1.JobAssignment) (*jobAssignment, error) 
 		CompletedSteps: completedSteps,
 		ActorID:        pa.GetActorId(),
 		Context:        jobCtx,
+		ExecutionSeq:   pa.GetExecutionSeq(),
+		LeaseToken:     pa.GetLeaseToken(),
 	}, nil
 }
 

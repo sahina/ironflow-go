@@ -196,6 +196,16 @@ type jobAssignment struct {
 	CompletedSteps []completedStep `json:"completed_steps"`
 	ActorID        string          `json:"actor_id,omitempty"`
 	Context        *jobContext     `json:"context,omitempty"`
+
+	// Execution fence (#1206, ADR 0037). Carried from the gRPC JobAssignment
+	// (chunk 3e, set programmatically) OR decoded from the REST poll response
+	// (chunk 2 / T9, set from JSON) so the worker can ack and echo it on every
+	// mutating message back to the engine. Zero / empty for legacy /
+	// non-capacity assignments. The JSON tags are decode-only — nothing marshals
+	// a jobAssignment outbound — and omitempty leaves the gRPC path, which never
+	// JSON-encodes this struct, unaffected.
+	ExecutionSeq int64  `json:"execution_seq,omitempty"`
+	LeaseToken   string `json:"lease_token,omitempty"`
 }
 
 type jobEvent struct {

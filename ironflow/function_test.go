@@ -292,37 +292,6 @@ func TestGetFunctionMetadata_OmitsNilMetadata(t *testing.T) {
 	}
 }
 
-// TestGetFunctionMetadata_CompensateOnCancel verifies the P2 flag flows
-// into the registration metadata map that the SDK sends to the server.
-func TestGetFunctionMetadata_CompensateOnCancel(t *testing.T) {
-	t.Run("flag set", func(t *testing.T) {
-		fn := CreateFunction(FunctionConfig{
-			ID:                 "fn-comp-on",
-			Triggers:           []Trigger{{Event: "t"}},
-			Mode:               PullMode,
-			CompensateOnCancel: true,
-		}, func(_ Context) (any, error) { return nil, nil })
-
-		meta := GetFunctionMetadata(fn)
-		if meta["compensate_on_cancel"] != true {
-			t.Errorf("compensate_on_cancel = %v, want true", meta["compensate_on_cancel"])
-		}
-	})
-
-	t.Run("flag omitted — key absent", func(t *testing.T) {
-		fn := CreateFunction(FunctionConfig{
-			ID:       "fn-comp-off",
-			Triggers: []Trigger{{Event: "t"}},
-			Mode:     PullMode,
-		}, func(_ Context) (any, error) { return nil, nil })
-
-		meta := GetFunctionMetadata(fn)
-		if _, ok := meta["compensate_on_cancel"]; ok {
-			t.Error("compensate_on_cancel key should be omitted when false (default)")
-		}
-	})
-}
-
 // TestGetFunctionMetadata_CancelOn verifies cancelOn specs flow into the
 // registration metadata. Issue #546 P3 / #572.
 func TestGetFunctionMetadata_CancelOn(t *testing.T) {

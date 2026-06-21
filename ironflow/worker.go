@@ -372,9 +372,6 @@ func (w *Worker) sendHeartbeat(ctx context.Context) {
 
 // pollForJobs polls for jobs from the server.
 func (w *Worker) pollForJobs(ctx context.Context) error {
-	// Create an HTTP-based job reporter for the polling worker
-	reporter := &httpJobReporter{worker: w}
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -388,39 +385,54 @@ func (w *Worker) pollForJobs(ctx context.Context) error {
 			return nil
 		}
 
-		// Check capacity
-		if int(w.jobCount.Load()) >= w.config.MaxConcurrentJobs {
-			time.Sleep(time.Second)
-			continue
-		}
-
 		// Check if draining
 		if w.state.Load() == int32(stateDraining) {
 			return nil
 		}
 
-		// Request a job
-		job, err := w.requestJob(ctx)
+		// Advertise free slots as the available count (#1206, T9): a capacity
+		// server returns up to this many fenced assignments; a legacy server
+		// ignores the param and returns at most one. <= 0 means full — back off.
+		free := w.config.MaxConcurrentJobs - int(w.jobCount.Load())
+		if free <= 0 {
+			time.Sleep(time.Second)
+			continue
+		}
+
+		jobs, err := w.requestJobs(ctx, free)
 		if err != nil {
 			w.logger.Warn("Job request error", "error", err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
 
-		if job == nil {
+		if len(jobs) == 0 {
 			// No jobs available
 			time.Sleep(time.Second)
 			continue
 		}
 
-		// Process the job
-		w.processJob(ctx, job, reporter)
+		for _, job := range jobs {
+			w.processJob(ctx, job)
+		}
 	}
 }
 
-// requestJob requests a job from the server.
-func (w *Worker) requestJob(ctx context.Context) (*jobAssignment, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, w.config.ServerURL+fmt.Sprintf("/api/v1/workers/%s/jobs", w.workerID), nil)
+// jobPollResponse decodes the poll response in either shape: the capacity
+// batched response ({"jobs":[...]}, #1206 T9) or the legacy single-assignment
+// object. The embedded jobAssignment captures the legacy top-level fields; Jobs
+// captures the batch. A new SDK therefore works against both a capacity-enabled
+// and a capacity-disabled server (default-off), echoing the fence only when the
+// assignment carries one — the same tolerance the gRPC SDK has.
+type jobPollResponse struct {
+	jobAssignment
+	Jobs []*jobAssignment `json:"jobs"`
+}
+
+// requestJobs requests up to `available` jobs from the server.
+func (w *Worker) requestJobs(ctx context.Context, available int) ([]*jobAssignment, error) {
+	url := w.config.ServerURL + fmt.Sprintf("/api/v1/workers/%s/jobs?available=%d", w.workerID, available)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -442,16 +454,22 @@ func (w *Worker) requestJob(ctx context.Context) (*jobAssignment, error) {
 		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
-	var job jobAssignment
-	if err := json.NewDecoder(resp.Body).Decode(&job); err != nil {
+	var pr jobPollResponse
+	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
 		return nil, err
 	}
-
-	return &job, nil
+	if len(pr.Jobs) > 0 {
+		return pr.Jobs, nil // capacity batched response
+	}
+	if pr.JobID != "" {
+		single := pr.jobAssignment
+		return []*jobAssignment{&single}, nil // legacy single-object response
+	}
+	return nil, nil
 }
 
 // processJob processes a job asynchronously.
-func (w *Worker) processJob(ctx context.Context, job *jobAssignment, reporter jobReporter) {
+func (w *Worker) processJob(ctx context.Context, job *jobAssignment) {
 	jobCtx, cancel := context.WithCancel(ctx)
 
 	aj := &activeJob{
@@ -464,6 +482,13 @@ func (w *Worker) processJob(ctx context.Context, job *jobAssignment, reporter jo
 	w.activeJobs.Store(job.JobID, aj)
 	w.jobCount.Add(1)
 
+	// Per-job reporter carrying the execution fence (#1206, T9), so every
+	// terminal/yield it emits echoes the fence. Captured here from the assignment
+	// rather than looked up from activeJobs at report time — immune to map state,
+	// mirroring the gRPC streamJobReporter and avoiding the chunk-3e cancel-race
+	// that produced tokenless (rejected) updates. Empty fence for legacy jobs.
+	reporter := &httpJobReporter{worker: w, executionSeq: job.ExecutionSeq, leaseToken: job.LeaseToken}
+
 	go func() {
 		defer func() {
 			w.activeJobs.Delete(job.JobID)
@@ -471,23 +496,62 @@ func (w *Worker) processJob(ctx context.Context, job *jobAssignment, reporter jo
 			cancel()
 		}()
 
+		// A fenced (capacity) assignment must be acknowledged before user code
+		// runs. A failed or stale (409) ack means the segment was recovered or
+		// superseded — drop it without executing; the lease expires server-side
+		// and the scanner recovers the run.
+		if job.LeaseToken != "" {
+			if err := w.ackJob(jobCtx, job); err != nil {
+				w.logger.Warn("Assignment ack failed, dropping job", "jobId", job.JobID, "error", err)
+				return
+			}
+		}
+
 		if err := w.executor.execute(jobCtx, job, reporter); err != nil {
 			w.logger.Error("Job failed", "jobId", job.JobID, "error", err)
 		}
 	}()
 }
 
-// httpJobReporter implements jobReporter by sending results via HTTP PUT.
+// ackJob acknowledges a fenced capacity assignment before executing user code
+// (#1206, T9). The body echoes the execution fence; a stale fence returns 409,
+// surfaced as an error by httpPut, so the caller drops the job.
+func (w *Worker) ackJob(ctx context.Context, job *jobAssignment) error {
+	return w.httpPut(ctx, fmt.Sprintf("/api/v1/workers/%s/jobs/%s/ack", w.workerID, job.JobID), map[string]any{
+		"run_id":        job.RunID,
+		"execution_seq": job.ExecutionSeq,
+		"lease_token":   job.LeaseToken,
+	}, nil)
+}
+
+// httpJobReporter implements jobReporter by sending results via HTTP PUT. It
+// carries the assignment's execution fence (#1206, T9) and stamps it onto every
+// outbound update so the engine can validate the mutation; the fence is empty for
+// legacy (non-capacity) assignments, in which case the body is unchanged.
 type httpJobReporter struct {
-	worker *Worker
+	worker       *Worker
+	executionSeq int64
+	leaseToken   string
+}
+
+// stampFence merges the execution-fence fields into an outbound update body when
+// this is a capacity assignment. A no-op for legacy assignments.
+func (r *httpJobReporter) stampFence(body map[string]any) {
+	if r.leaseToken == "" {
+		return
+	}
+	body["execution_seq"] = r.executionSeq
+	body["lease_token"] = r.leaseToken
 }
 
 func (r *httpJobReporter) ReportCompleted(ctx context.Context, jobID string, output any, steps []*StepResult) error {
-	return r.worker.httpPut(ctx, fmt.Sprintf("/api/v1/workers/%s/jobs/%s", r.worker.workerID, jobID), map[string]any{
+	body := map[string]any{
 		"status": "completed",
 		"output": output,
 		"steps":  steps,
-	}, nil)
+	}
+	r.stampFence(body)
+	return r.worker.httpPut(ctx, fmt.Sprintf("/api/v1/workers/%s/jobs/%s", r.worker.workerID, jobID), body, nil)
 }
 
 func (r *httpJobReporter) ReportFailed(ctx context.Context, jobID string, err *PushError, steps []*StepResult) error {
@@ -498,14 +562,17 @@ func (r *httpJobReporter) ReportFailed(ctx context.Context, jobID string, err *P
 	if len(steps) > 0 {
 		body["steps"] = steps
 	}
+	r.stampFence(body)
 	return r.worker.httpPut(ctx, fmt.Sprintf("/api/v1/workers/%s/jobs/%s", r.worker.workerID, jobID), body, nil)
 }
 
 func (r *httpJobReporter) ReportYielded(ctx context.Context, jobID string, yield *YieldInfo) error {
-	return r.worker.httpPut(ctx, fmt.Sprintf("/api/v1/workers/%s/jobs/%s", r.worker.workerID, jobID), map[string]any{
+	body := map[string]any{
 		"status": "yielded",
 		"yield":  yield,
-	}, nil)
+	}
+	r.stampFence(body)
+	return r.worker.httpPut(ctx, fmt.Sprintf("/api/v1/workers/%s/jobs/%s", r.worker.workerID, jobID), body, nil)
 }
 
 // httpPut makes an HTTP PUT request.

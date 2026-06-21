@@ -112,13 +112,6 @@ type FunctionConfig struct {
 	// functions with FailedPrecondition. Issue #545.
 	Debounce *DebounceConfig
 
-	// CompensateOnCancel runs registered compensation handlers in reverse
-	// order when a pull-mode run is cancelled mid-saga. Ignored for
-	// push-mode functions (compensation closures only exist in a live SDK
-	// process — push mode has no point of re-entry after the cancel
-	// signal). Issue #546 P2.
-	CompensateOnCancel bool
-
 	// CancelOn declares cancel-on-event specs. When any spec matches an
 	// incoming event whose match-path value equals the corresponding field
 	// on the running run, the run is auto-cancelled. OR semantic across
@@ -143,11 +136,6 @@ type FunctionConfig struct {
 
 	// RecordingRetention is the retention period ("7d", "30d", "90d", "forever").
 	RecordingRetention string
-
-	// PauseBehavior controls what happens when a function is paused for scoped injection.
-	// "hold" (default): Hold the run in paused state until explicitly resumed.
-	// "release": Automatically resume the run after injection.
-	PauseBehavior string
 
 	// Metadata is custom metadata (e.g., service, team, owner).
 	Metadata map[string]any
@@ -337,6 +325,7 @@ type EventFilter struct {
 type RunStatus string
 
 const (
+	// Deprecated: the engine no longer produces this status as of #1222 (run status "pending" retired). Retained for source compatibility.
 	RunStatusPending   RunStatus = "pending"
 	RunStatusRunning   RunStatus = "running"
 	RunStatusCompleted RunStatus = "completed"

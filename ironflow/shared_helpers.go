@@ -74,9 +74,6 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 		if fn.Config.RecordingRetention != "" {
 			body["recordingRetention"] = fn.Config.RecordingRetention
 		}
-		if fn.Config.PauseBehavior != "" {
-			body["pauseBehavior"] = fn.Config.PauseBehavior
-		}
 		if len(fn.Config.Secrets) > 0 {
 			body["secrets"] = fn.Config.Secrets
 		}
