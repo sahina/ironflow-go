@@ -583,7 +583,7 @@ functions, err := client.ListFunctions(ctx)
 workers, err := client.ListWorkers(ctx)
 
 // Health check
-status, err := client.Health(ctx) // returns "ok"
+status, err := client.Health(ctx) // returns "healthy"
 
 // Server capabilities (transports, features, version)
 caps, err := client.GetCapabilities(ctx)
@@ -990,7 +990,7 @@ rotated, err := client.RotateAPIKey(ctx, key.ID)
 err = client.DeleteAPIKey(ctx, key.ID)
 ```
 
-### Organizations (Enterprise)
+### Organizations
 
 ```go
 org, err := client.CreateOrganization(ctx, ironflow.CreateOrgInput{Name: "Acme Corp"})
@@ -1000,7 +1000,7 @@ org, err = client.UpdateOrganization(ctx, org.ID, ironflow.UpdateOrgInput{Name: 
 err = client.DeleteOrganization(ctx, org.ID)
 ```
 
-### Roles (Enterprise)
+### Roles
 
 ```go
 role, err := client.CreateRole(ctx, ironflow.CreateRoleInput{
@@ -1017,12 +1017,12 @@ err = client.AssignPolicyToRole(ctx, role.ID, policyID)
 err = client.RemovePolicyFromRole(ctx, role.ID, policyID)
 ```
 
-### Policies (Enterprise)
+### Policies
 
 ```go
 policy, err := client.CreatePolicy(ctx, ironflow.CreatePolicyInput{
     Name:      "read-only",
-    Effect:    "deny",        // "allow" or "deny"
+    Effect:    "deny",        // writes accept "deny" only (#943, ADR 0016 T2)
     Actions:   "read",         // comma-separated actions
     Resources: "*",            // resource patterns
     Condition: "",             // optional CEL expression
@@ -1489,4 +1489,4 @@ Full platform documentation: https://github.com/sahina/ironflow/tree/main/docs
 
 ## License
 
-MIT
+LicenseRef-Ironflow-EULA — see repository LICENSE for full terms.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math/rand"
 	"net/http"
 	"os"
@@ -83,6 +84,15 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 				specs[i] = map[string]string{"event": s.Event, "match": s.Match}
 			}
 			body["cancelOn"] = specs
+		}
+
+		// #1280: stamp the running binary's hash into metadata so a rebuild
+		// (air / go build) changes the registered config → the engine bumps the
+		// version → the reload barrier fires. Merges with any user metadata.
+		if h := executableHash(); h != "" {
+			meta := map[string]any{codeHashMetaKey: h}
+			maps.Copy(meta, fn.Config.Metadata)
+			body["metadata"] = meta
 		}
 
 		bodyBytes, err := json.Marshal(body)

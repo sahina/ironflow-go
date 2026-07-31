@@ -1791,6 +1791,12 @@ func (c *Client) executeRequest(ctx context.Context, method, url string, bodyByt
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
+	// Forward the emitting run id (when the context carries one) so events a
+	// function emits are attributed to the run for the flow map's learned
+	// emit edges (#1262). Matches the JS SDK's run-context propagation.
+	if rid := runIDFromContext(ctx); rid != "" {
+		req.Header.Set(HeaderRunID, rid)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
