@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -443,8 +444,7 @@ func (exec *executionContext) executeCompensations() {
 	exec.compensationsMu.Unlock()
 
 	// Iterate in reverse order
-	for i := len(compensations) - 1; i >= 0; i-- {
-		entry := compensations[i]
+	for _, entry := range slices.Backward(compensations) {
 		compName := fmt.Sprintf("compensate:%s", entry.stepName)
 		stepID := exec.generateStepID(compName)
 

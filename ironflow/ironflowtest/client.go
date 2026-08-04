@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -130,8 +131,7 @@ func (tc *TestClient) Emit(t *testing.T, eventName string, data any) *TestRun {
 	if execErr != nil {
 		// Run compensations in reverse
 		compensationsRan := []string{}
-		for i := len(interceptor.compensations) - 1; i >= 0; i-- {
-			entry := interceptor.compensations[i]
+		for _, entry := range slices.Backward(interceptor.compensations) {
 			compErr := entry.fn()
 			compensationsRan = append(compensationsRan, entry.stepName)
 			interceptor.steps = append(interceptor.steps, TestStep{
