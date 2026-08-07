@@ -27,7 +27,7 @@ Requires Go 1.25+.
 - `.go` source for the SDK package above
 - Generated proto + Connect-RPC code (`api/ironflow/v1/`) vendored from the engine repo
 - `go.mod`, `go.sum` regenerated at each release
-- `LICENSE`, issue templates, security policy
+- `LICENSE` and security policy
 
 ## Where the engine source lives
 
@@ -52,9 +52,11 @@ This repo is **read-only**. Pull requests will be closed without review. Source 
 
 ## Bug reports
 
-- SDK bugs (in `github.com/sahina/ironflow-go/...`) → [open an issue here](https://github.com/sahina/ironflow-go/issues/new/choose)
-- Engine/server bugs → email the support address in [LICENSE](LICENSE)
-- Security issues → see [SECURITY.md](SECURITY.md) — do **not** open a public issue
+Issues are disabled on this repo. All Ironflow bug reports — SDK, engine, CLI, dashboard, desktop — go to one tracker:
+
+- Bugs and feature requests → [sahina/ironflow-issues](https://github.com/sahina/ironflow-issues/issues/new/choose). Pick **Go SDK** as the component.
+- Security issues → [private advisory](https://github.com/sahina/ironflow-issues/security/advisories/new) or see [SECURITY.md](SECURITY.md) — do **not** open a public issue
+- Commercial-licensing enquiries → the support address in [LICENSE](LICENSE)
 
 ## Verifying release provenance
 
