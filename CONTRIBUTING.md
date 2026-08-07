@@ -6,9 +6,11 @@ The Ironflow Go SDK source is maintained in a private engine repository. This mi
 
 ## Reporting bugs
 
-- SDK bugs (in `github.com/sahina/ironflow-go/...`) → [open an issue](https://github.com/sahina/ironflow-go/issues/new/choose). Include Go version, repro steps, and minimal example.
-- Engine/server bugs → email the support address in [LICENSE](LICENSE).
-- Security issues → see [SECURITY.md](SECURITY.md). Do **not** open a public issue.
+Issues are disabled here. Everything goes to one tracker: [sahina/ironflow-issues](https://github.com/sahina/ironflow-issues/issues/new/choose).
+
+- SDK bugs (in `github.com/sahina/ironflow-go/...`) → file there and pick **Go SDK** as the component. Include Go version, repro steps, and minimal example.
+- Engine, CLI, dashboard, and desktop bugs → same tracker, pick the matching component.
+- Security issues → [private advisory](https://github.com/sahina/ironflow-issues/security/advisories/new) or see [SECURITY.md](SECURITY.md). Do **not** open a public issue.
 
 ## Pull requests
 
