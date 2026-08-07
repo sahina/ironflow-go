@@ -24,6 +24,173 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// WebhookVerifyConfig describes a provider's signature scheme and where the
+// event name and delivery ID live (ADR 0049).
+//
+// It carries no provider identity. GitHub, Stripe, Shopify, Slack and Standard
+// Webhooks are all expressible as field values here, so supporting a provider
+// is configuration rather than an Ironflow release — which matters because
+// provider schemes change independently of us.
+//
+// Unset means the source verifies the legacy way: hex HMAC over the bare
+// request body, using verify_header and verify_algorithm.
+type WebhookVerifyConfig struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Header carrying the signature, e.g. "Stripe-Signature".
+	SignatureHeader string `protobuf:"bytes,1,opt,name=signature_header,json=signatureHeader,proto3" json:"signature_header,omitempty"`
+	// Splits a multi-entry header. Empty means one entry. Stripe uses ",",
+	// Standard Webhooks uses " ".
+	EntrySeparator string `protobuf:"bytes,2,opt,name=entry_separator,json=entrySeparator,proto3" json:"entry_separator,omitempty"`
+	// Splits "key<delim>value" within an entry. Empty means the entry is a bare
+	// signature with no key (Shopify). GitHub/Stripe/Slack use "=", Standard
+	// Webhooks uses ",".
+	KvDelimiter string `protobuf:"bytes,3,opt,name=kv_delimiter,json=kvDelimiter,proto3" json:"kv_delimiter,omitempty"`
+	// Selects which entries hold signatures, e.g. "v1". Ignored when
+	// kv_delimiter is empty. EVERY matching entry is tried, because providers
+	// send several while a secret rotates.
+	SignatureKey string `protobuf:"bytes,4,opt,name=signature_key,json=signatureKey,proto3" json:"signature_key,omitempty"`
+	// Separate header holding the timestamp (Slack).
+	TimestampHeader string `protobuf:"bytes,5,opt,name=timestamp_header,json=timestampHeader,proto3" json:"timestamp_header,omitempty"`
+	// Or the key inside signature_header holding it (Stripe's "t=").
+	// timestamp_header wins when both are set.
+	TimestampKey string `protobuf:"bytes,6,opt,name=timestamp_key,json=timestampKey,proto3" json:"timestamp_key,omitempty"`
+	// The string that gets signed, with {body}, {ts} and {id} placeholders.
+	// {id} resolves through dedup_id_path.
+	SigningTemplate string `protobuf:"bytes,7,opt,name=signing_template,json=signingTemplate,proto3" json:"signing_template,omitempty"`
+	// "hex" or "base64".
+	Encoding string `protobuf:"bytes,8,opt,name=encoding,proto3" json:"encoding,omitempty"`
+	// "hmac-sha256" or "hmac-sha1".
+	Algorithm string `protobuf:"bytes,9,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
+	// Replay window. Honored ONLY when signing_template contains {ts} — an
+	// unsigned timestamp is attacker-controlled, so a tolerance over one is
+	// decoration. Setting it without {ts} is rejected rather than ignored.
+	// 0 disables.
+	ToleranceSeconds int32 `protobuf:"varint,10,opt,name=tolerance_seconds,json=toleranceSeconds,proto3" json:"tolerance_seconds,omitempty"`
+	// Where the event type lives: "header:X-GitHub-Event" or "body:type".
+	// Empty falls back to the body "type" key.
+	EventNamePath string `protobuf:"bytes,11,opt,name=event_name_path,json=eventNamePath,proto3" json:"event_name_path,omitempty"`
+	// Where the delivery ID lives: "header:X-GitHub-Delivery" or a dotted body
+	// path like "body:data.object.id". Empty falls back to the body "id" and
+	// "event_id" keys.
+	DedupIdPath   string `protobuf:"bytes,12,opt,name=dedup_id_path,json=dedupIdPath,proto3" json:"dedup_id_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WebhookVerifyConfig) Reset() {
+	*x = WebhookVerifyConfig{}
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WebhookVerifyConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WebhookVerifyConfig) ProtoMessage() {}
+
+func (x *WebhookVerifyConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WebhookVerifyConfig.ProtoReflect.Descriptor instead.
+func (*WebhookVerifyConfig) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *WebhookVerifyConfig) GetSignatureHeader() string {
+	if x != nil {
+		return x.SignatureHeader
+	}
+	return ""
+}
+
+func (x *WebhookVerifyConfig) GetEntrySeparator() string {
+	if x != nil {
+		return x.EntrySeparator
+	}
+	return ""
+}
+
+func (x *WebhookVerifyConfig) GetKvDelimiter() string {
+	if x != nil {
+		return x.KvDelimiter
+	}
+	return ""
+}
+
+func (x *WebhookVerifyConfig) GetSignatureKey() string {
+	if x != nil {
+		return x.SignatureKey
+	}
+	return ""
+}
+
+func (x *WebhookVerifyConfig) GetTimestampHeader() string {
+	if x != nil {
+		return x.TimestampHeader
+	}
+	return ""
+}
+
+func (x *WebhookVerifyConfig) GetTimestampKey() string {
+	if x != nil {
+		return x.TimestampKey
+	}
+	return ""
+}
+
+func (x *WebhookVerifyConfig) GetSigningTemplate() string {
+	if x != nil {
+		return x.SigningTemplate
+	}
+	return ""
+}
+
+func (x *WebhookVerifyConfig) GetEncoding() string {
+	if x != nil {
+		return x.Encoding
+	}
+	return ""
+}
+
+func (x *WebhookVerifyConfig) GetAlgorithm() string {
+	if x != nil {
+		return x.Algorithm
+	}
+	return ""
+}
+
+func (x *WebhookVerifyConfig) GetToleranceSeconds() int32 {
+	if x != nil {
+		return x.ToleranceSeconds
+	}
+	return 0
+}
+
+func (x *WebhookVerifyConfig) GetEventNamePath() string {
+	if x != nil {
+		return x.EventNamePath
+	}
+	return ""
+}
+
+func (x *WebhookVerifyConfig) GetDedupIdPath() string {
+	if x != nil {
+		return x.DedupIdPath
+	}
+	return ""
+}
+
 // WebhookSource represents a registered webhook provider.
 // NOTE: verify_secret is intentionally omitted from this response message (sensitive).
 type WebhookSource struct {
@@ -48,13 +215,23 @@ type WebhookSource struct {
 	VerifySecretPrevSet bool `protobuf:"varint,11,opt,name=verify_secret_prev_set,json=verifySecretPrevSet,proto3" json:"verify_secret_prev_set,omitempty"`
 	// Expiry of the prev secret slot. Zero/unset when no prev configured.
 	VerifySecretPrevExpiresAt *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=verify_secret_prev_expires_at,json=verifySecretPrevExpiresAt,proto3" json:"verify_secret_prev_expires_at,omitempty"`
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	// Short display fragment of the ingest token (ADR 0048), e.g.
+	// "ifwh_1a2b3c4d". Empty on sources predating migration 046, which still
+	// authenticate ingest with an org API key.
+	IngestTokenPrefix string `protobuf:"bytes,13,opt,name=ingest_token_prefix,json=ingestTokenPrefix,proto3" json:"ingest_token_prefix,omitempty"`
+	// The raw ingest token. Populated ONLY in the response to
+	// CreateWebhookSource and RotateWebhookIngestToken — it is never stored
+	// and every subsequent read returns it empty. Treat as write-once.
+	IngestToken string `protobuf:"bytes,14,opt,name=ingest_token,json=ingestToken,proto3" json:"ingest_token,omitempty"`
+	// Signature descriptor (ADR 0049). Unset means legacy verification.
+	VerifyConfig  *WebhookVerifyConfig `protobuf:"bytes,15,opt,name=verify_config,json=verifyConfig,proto3" json:"verify_config,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WebhookSource) Reset() {
 	*x = WebhookSource{}
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[0]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -66,7 +243,7 @@ func (x *WebhookSource) String() string {
 func (*WebhookSource) ProtoMessage() {}
 
 func (x *WebhookSource) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[0]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -79,7 +256,7 @@ func (x *WebhookSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebhookSource.ProtoReflect.Descriptor instead.
 func (*WebhookSource) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{0}
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *WebhookSource) GetId() string {
@@ -166,6 +343,27 @@ func (x *WebhookSource) GetVerifySecretPrevExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *WebhookSource) GetIngestTokenPrefix() string {
+	if x != nil {
+		return x.IngestTokenPrefix
+	}
+	return ""
+}
+
+func (x *WebhookSource) GetIngestToken() string {
+	if x != nil {
+		return x.IngestToken
+	}
+	return ""
+}
+
+func (x *WebhookSource) GetVerifyConfig() *WebhookVerifyConfig {
+	if x != nil {
+		return x.VerifyConfig
+	}
+	return nil
+}
+
 type GetWebhookSourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -175,7 +373,7 @@ type GetWebhookSourceRequest struct {
 
 func (x *GetWebhookSourceRequest) Reset() {
 	*x = GetWebhookSourceRequest{}
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[1]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -187,7 +385,7 @@ func (x *GetWebhookSourceRequest) String() string {
 func (*GetWebhookSourceRequest) ProtoMessage() {}
 
 func (x *GetWebhookSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[1]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -200,7 +398,7 @@ func (x *GetWebhookSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetWebhookSourceRequest.ProtoReflect.Descriptor instead.
 func (*GetWebhookSourceRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{1}
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *GetWebhookSourceRequest) GetId() string {
@@ -218,14 +416,17 @@ type CreateWebhookSourceRequest struct {
 	VerifySecret    string                 `protobuf:"bytes,5,opt,name=verify_secret,json=verifySecret,proto3" json:"verify_secret,omitempty"`
 	Metadata        *structpb.Struct       `protobuf:"bytes,6,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	// Operator-friendly display label (required, NOT unique).
-	Name          string `protobuf:"bytes,7,opt,name=name,proto3" json:"name,omitempty"`
+	Name string `protobuf:"bytes,7,opt,name=name,proto3" json:"name,omitempty"`
+	// Signature descriptor (ADR 0049). Omit for legacy verification via
+	// verify_header/verify_algorithm.
+	VerifyConfig  *WebhookVerifyConfig `protobuf:"bytes,8,opt,name=verify_config,json=verifyConfig,proto3" json:"verify_config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateWebhookSourceRequest) Reset() {
 	*x = CreateWebhookSourceRequest{}
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[2]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -237,7 +438,7 @@ func (x *CreateWebhookSourceRequest) String() string {
 func (*CreateWebhookSourceRequest) ProtoMessage() {}
 
 func (x *CreateWebhookSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[2]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -250,7 +451,7 @@ func (x *CreateWebhookSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateWebhookSourceRequest.ProtoReflect.Descriptor instead.
 func (*CreateWebhookSourceRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{2}
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CreateWebhookSourceRequest) GetEventPrefix() string {
@@ -295,6 +496,13 @@ func (x *CreateWebhookSourceRequest) GetName() string {
 	return ""
 }
 
+func (x *CreateWebhookSourceRequest) GetVerifyConfig() *WebhookVerifyConfig {
+	if x != nil {
+		return x.VerifyConfig
+	}
+	return nil
+}
+
 type ListWebhookSourcesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -305,7 +513,7 @@ type ListWebhookSourcesRequest struct {
 
 func (x *ListWebhookSourcesRequest) Reset() {
 	*x = ListWebhookSourcesRequest{}
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[3]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -317,7 +525,7 @@ func (x *ListWebhookSourcesRequest) String() string {
 func (*ListWebhookSourcesRequest) ProtoMessage() {}
 
 func (x *ListWebhookSourcesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[3]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -330,7 +538,7 @@ func (x *ListWebhookSourcesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWebhookSourcesRequest.ProtoReflect.Descriptor instead.
 func (*ListWebhookSourcesRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{3}
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListWebhookSourcesRequest) GetLimit() int32 {
@@ -357,7 +565,7 @@ type ListWebhookSourcesResponse struct {
 
 func (x *ListWebhookSourcesResponse) Reset() {
 	*x = ListWebhookSourcesResponse{}
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[4]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -369,7 +577,7 @@ func (x *ListWebhookSourcesResponse) String() string {
 func (*ListWebhookSourcesResponse) ProtoMessage() {}
 
 func (x *ListWebhookSourcesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[4]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -382,7 +590,7 @@ func (x *ListWebhookSourcesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWebhookSourcesResponse.ProtoReflect.Descriptor instead.
 func (*ListWebhookSourcesResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{4}
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListWebhookSourcesResponse) GetSources() []*WebhookSource {
@@ -406,13 +614,32 @@ type UpdateWebhookSourceRequest struct {
 	VerifyHeader    string                 `protobuf:"bytes,3,opt,name=verify_header,json=verifyHeader,proto3" json:"verify_header,omitempty"`
 	VerifyAlgorithm string                 `protobuf:"bytes,4,opt,name=verify_algorithm,json=verifyAlgorithm,proto3" json:"verify_algorithm,omitempty"`
 	Metadata        *structpb.Struct       `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Signature descriptor (ADR 0049). OMITTING THIS PRESERVES the stored
+	// descriptor — it is not a full replace like the fields above. A partial
+	// update (a rename, say) would otherwise wipe the descriptor and silently
+	// downgrade the source to legacy body-only verification, so every
+	// subsequent delivery from a real provider would fail.
+	//
+	// There is deliberately no "clear" signal: legacy behavior is itself
+	// expressible as a descriptor ({body} template, hex encoding), so reverting
+	// means writing that rather than reaching a null state.
+	VerifyConfig *WebhookVerifyConfig `protobuf:"bytes,6,opt,name=verify_config,json=verifyConfig,proto3" json:"verify_config,omitempty"`
+	// Optimistic concurrency token. Send the updated_at you last read; the write
+	// is rejected with ABORTED if the row moved since.
+	//
+	// This matters more here than on the sibling RPCs because verify_config is
+	// preserve-on-omit: the server reads the stored descriptor and writes it back,
+	// so without a version token a concurrent descriptor change can be silently
+	// reverted by an unrelated rename. Omit it to skip the check (unchanged
+	// behavior for existing clients).
+	ExpectedUpdatedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expected_updated_at,json=expectedUpdatedAt,proto3" json:"expected_updated_at,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *UpdateWebhookSourceRequest) Reset() {
 	*x = UpdateWebhookSourceRequest{}
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[5]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -424,7 +651,7 @@ func (x *UpdateWebhookSourceRequest) String() string {
 func (*UpdateWebhookSourceRequest) ProtoMessage() {}
 
 func (x *UpdateWebhookSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[5]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -437,7 +664,7 @@ func (x *UpdateWebhookSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateWebhookSourceRequest.ProtoReflect.Descriptor instead.
 func (*UpdateWebhookSourceRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{5}
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *UpdateWebhookSourceRequest) GetId() string {
@@ -475,6 +702,20 @@ func (x *UpdateWebhookSourceRequest) GetMetadata() *structpb.Struct {
 	return nil
 }
 
+func (x *UpdateWebhookSourceRequest) GetVerifyConfig() *WebhookVerifyConfig {
+	if x != nil {
+		return x.VerifyConfig
+	}
+	return nil
+}
+
+func (x *UpdateWebhookSourceRequest) GetExpectedUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpectedUpdatedAt
+	}
+	return nil
+}
+
 type RotateWebhookSecretRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -499,7 +740,7 @@ type RotateWebhookSecretRequest struct {
 
 func (x *RotateWebhookSecretRequest) Reset() {
 	*x = RotateWebhookSecretRequest{}
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[6]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -511,7 +752,7 @@ func (x *RotateWebhookSecretRequest) String() string {
 func (*RotateWebhookSecretRequest) ProtoMessage() {}
 
 func (x *RotateWebhookSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[6]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -524,7 +765,7 @@ func (x *RotateWebhookSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateWebhookSecretRequest.ProtoReflect.Descriptor instead.
 func (*RotateWebhookSecretRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{6}
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *RotateWebhookSecretRequest) GetId() string {
@@ -567,7 +808,7 @@ type ExpireWebhookSecretPrevRequest struct {
 
 func (x *ExpireWebhookSecretPrevRequest) Reset() {
 	*x = ExpireWebhookSecretPrevRequest{}
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[7]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -579,7 +820,7 @@ func (x *ExpireWebhookSecretPrevRequest) String() string {
 func (*ExpireWebhookSecretPrevRequest) ProtoMessage() {}
 
 func (x *ExpireWebhookSecretPrevRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[7]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -592,7 +833,7 @@ func (x *ExpireWebhookSecretPrevRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExpireWebhookSecretPrevRequest.ProtoReflect.Descriptor instead.
 func (*ExpireWebhookSecretPrevRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{7}
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ExpireWebhookSecretPrevRequest) GetId() string {
@@ -625,7 +866,7 @@ type DisableWebhookSignatureVerificationRequest struct {
 
 func (x *DisableWebhookSignatureVerificationRequest) Reset() {
 	*x = DisableWebhookSignatureVerificationRequest{}
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[8]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -637,7 +878,7 @@ func (x *DisableWebhookSignatureVerificationRequest) String() string {
 func (*DisableWebhookSignatureVerificationRequest) ProtoMessage() {}
 
 func (x *DisableWebhookSignatureVerificationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[8]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -650,7 +891,7 @@ func (x *DisableWebhookSignatureVerificationRequest) ProtoReflect() protoreflect
 
 // Deprecated: Use DisableWebhookSignatureVerificationRequest.ProtoReflect.Descriptor instead.
 func (*DisableWebhookSignatureVerificationRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{8}
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DisableWebhookSignatureVerificationRequest) GetId() string {
@@ -674,6 +915,60 @@ func (x *DisableWebhookSignatureVerificationRequest) GetExpectedUpdatedAt() *tim
 	return nil
 }
 
+type RotateWebhookIngestTokenRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Optimistic concurrency token. Same semantics as
+	// RotateWebhookSecretRequest.expected_updated_at.
+	ExpectedUpdatedAt *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expected_updated_at,json=expectedUpdatedAt,proto3" json:"expected_updated_at,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *RotateWebhookIngestTokenRequest) Reset() {
+	*x = RotateWebhookIngestTokenRequest{}
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateWebhookIngestTokenRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateWebhookIngestTokenRequest) ProtoMessage() {}
+
+func (x *RotateWebhookIngestTokenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateWebhookIngestTokenRequest.ProtoReflect.Descriptor instead.
+func (*RotateWebhookIngestTokenRequest) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *RotateWebhookIngestTokenRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *RotateWebhookIngestTokenRequest) GetExpectedUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpectedUpdatedAt
+	}
+	return nil
+}
+
 type DeleteWebhookSourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -683,7 +978,7 @@ type DeleteWebhookSourceRequest struct {
 
 func (x *DeleteWebhookSourceRequest) Reset() {
 	*x = DeleteWebhookSourceRequest{}
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[9]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -695,7 +990,7 @@ func (x *DeleteWebhookSourceRequest) String() string {
 func (*DeleteWebhookSourceRequest) ProtoMessage() {}
 
 func (x *DeleteWebhookSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[9]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -708,7 +1003,7 @@ func (x *DeleteWebhookSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteWebhookSourceRequest.ProtoReflect.Descriptor instead.
 func (*DeleteWebhookSourceRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{9}
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *DeleteWebhookSourceRequest) GetId() string {
@@ -738,7 +1033,7 @@ type WebhookDelivery struct {
 
 func (x *WebhookDelivery) Reset() {
 	*x = WebhookDelivery{}
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[10]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -750,7 +1045,7 @@ func (x *WebhookDelivery) String() string {
 func (*WebhookDelivery) ProtoMessage() {}
 
 func (x *WebhookDelivery) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[10]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -763,7 +1058,7 @@ func (x *WebhookDelivery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebhookDelivery.ProtoReflect.Descriptor instead.
 func (*WebhookDelivery) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{10}
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *WebhookDelivery) GetId() string {
@@ -848,7 +1143,7 @@ type ListWebhookDeliveriesRequest struct {
 
 func (x *ListWebhookDeliveriesRequest) Reset() {
 	*x = ListWebhookDeliveriesRequest{}
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[11]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -860,7 +1155,7 @@ func (x *ListWebhookDeliveriesRequest) String() string {
 func (*ListWebhookDeliveriesRequest) ProtoMessage() {}
 
 func (x *ListWebhookDeliveriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[11]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -873,7 +1168,7 @@ func (x *ListWebhookDeliveriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWebhookDeliveriesRequest.ProtoReflect.Descriptor instead.
 func (*ListWebhookDeliveriesRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{11}
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListWebhookDeliveriesRequest) GetSourceId() string {
@@ -914,7 +1209,7 @@ type ListWebhookDeliveriesResponse struct {
 
 func (x *ListWebhookDeliveriesResponse) Reset() {
 	*x = ListWebhookDeliveriesResponse{}
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[12]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -926,7 +1221,7 @@ func (x *ListWebhookDeliveriesResponse) String() string {
 func (*ListWebhookDeliveriesResponse) ProtoMessage() {}
 
 func (x *ListWebhookDeliveriesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_webhook_proto_msgTypes[12]
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -939,7 +1234,7 @@ func (x *ListWebhookDeliveriesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWebhookDeliveriesResponse.ProtoReflect.Descriptor instead.
 func (*ListWebhookDeliveriesResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{12}
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListWebhookDeliveriesResponse) GetDeliveries() []*WebhookDelivery {
@@ -956,11 +1251,220 @@ func (x *ListWebhookDeliveriesResponse) GetTotalCount() int32 {
 	return 0
 }
 
+// TestWebhookVerifyConfigRequest replays one captured delivery.
+type TestWebhookVerifyConfigRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Descriptor to evaluate. Required.
+	VerifyConfig *WebhookVerifyConfig `protobuf:"bytes,1,opt,name=verify_config,json=verifyConfig,proto3" json:"verify_config,omitempty"`
+	// Raw request body exactly as the provider sent it. Signatures cover the
+	// bytes, so any reformatting produces a mismatch that is not the operator's
+	// configuration error.
+	Body string `protobuf:"bytes,2,opt,name=body,proto3" json:"body,omitempty"`
+	// Request headers from the captured delivery.
+	Headers map[string]string `protobuf:"bytes,3,rep,name=headers,proto3" json:"headers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Secret to test with. When empty, the stored verify_secret of source_id is
+	// used instead, so an operator can test without re-entering it.
+	VerifySecret string `protobuf:"bytes,4,opt,name=verify_secret,json=verifySecret,proto3" json:"verify_secret,omitempty"`
+	// Source whose stored secret to borrow when verify_secret is empty.
+	SourceId      string `protobuf:"bytes,5,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestWebhookVerifyConfigRequest) Reset() {
+	*x = TestWebhookVerifyConfigRequest{}
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestWebhookVerifyConfigRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestWebhookVerifyConfigRequest) ProtoMessage() {}
+
+func (x *TestWebhookVerifyConfigRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestWebhookVerifyConfigRequest.ProtoReflect.Descriptor instead.
+func (*TestWebhookVerifyConfigRequest) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *TestWebhookVerifyConfigRequest) GetVerifyConfig() *WebhookVerifyConfig {
+	if x != nil {
+		return x.VerifyConfig
+	}
+	return nil
+}
+
+func (x *TestWebhookVerifyConfigRequest) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
+func (x *TestWebhookVerifyConfigRequest) GetHeaders() map[string]string {
+	if x != nil {
+		return x.Headers
+	}
+	return nil
+}
+
+func (x *TestWebhookVerifyConfigRequest) GetVerifySecret() string {
+	if x != nil {
+		return x.VerifySecret
+	}
+	return ""
+}
+
+func (x *TestWebhookVerifyConfigRequest) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+type TestWebhookVerifyConfigResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// True when a presented signature matched.
+	Verified bool `protobuf:"varint,1,opt,name=verified,proto3" json:"verified,omitempty"`
+	// The string the server built from signing_template. The single most useful
+	// field here: comparing it against the provider's documented signing string
+	// distinguishes a wrong template from a wrong secret.
+	SigningString string `protobuf:"bytes,2,opt,name=signing_string,json=signingString,proto3" json:"signing_string,omitempty"`
+	// The signature the server computed, encoded per the descriptor.
+	ComputedSignature string `protobuf:"bytes,3,opt,name=computed_signature,json=computedSignature,proto3" json:"computed_signature,omitempty"`
+	// Every candidate signature found in the header.
+	PresentedSignatures []string `protobuf:"bytes,4,rep,name=presented_signatures,json=presentedSignatures,proto3" json:"presented_signatures,omitempty"`
+	// Timestamp resolved for {ts}, if any.
+	ResolvedTimestamp string `protobuf:"bytes,5,opt,name=resolved_timestamp,json=resolvedTimestamp,proto3" json:"resolved_timestamp,omitempty"`
+	// Event name the descriptor would produce (without the source prefix).
+	ResolvedEventName string `protobuf:"bytes,6,opt,name=resolved_event_name,json=resolvedEventName,proto3" json:"resolved_event_name,omitempty"`
+	// Delivery ID the descriptor would deduplicate on.
+	ResolvedDedupId string `protobuf:"bytes,7,opt,name=resolved_dedup_id,json=resolvedDedupId,proto3" json:"resolved_dedup_id,omitempty"`
+	// Why verification failed, when it did.
+	Error         string `protobuf:"bytes,8,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestWebhookVerifyConfigResponse) Reset() {
+	*x = TestWebhookVerifyConfigResponse{}
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestWebhookVerifyConfigResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestWebhookVerifyConfigResponse) ProtoMessage() {}
+
+func (x *TestWebhookVerifyConfigResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_webhook_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestWebhookVerifyConfigResponse.ProtoReflect.Descriptor instead.
+func (*TestWebhookVerifyConfigResponse) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_webhook_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *TestWebhookVerifyConfigResponse) GetVerified() bool {
+	if x != nil {
+		return x.Verified
+	}
+	return false
+}
+
+func (x *TestWebhookVerifyConfigResponse) GetSigningString() string {
+	if x != nil {
+		return x.SigningString
+	}
+	return ""
+}
+
+func (x *TestWebhookVerifyConfigResponse) GetComputedSignature() string {
+	if x != nil {
+		return x.ComputedSignature
+	}
+	return ""
+}
+
+func (x *TestWebhookVerifyConfigResponse) GetPresentedSignatures() []string {
+	if x != nil {
+		return x.PresentedSignatures
+	}
+	return nil
+}
+
+func (x *TestWebhookVerifyConfigResponse) GetResolvedTimestamp() string {
+	if x != nil {
+		return x.ResolvedTimestamp
+	}
+	return ""
+}
+
+func (x *TestWebhookVerifyConfigResponse) GetResolvedEventName() string {
+	if x != nil {
+		return x.ResolvedEventName
+	}
+	return ""
+}
+
+func (x *TestWebhookVerifyConfigResponse) GetResolvedDedupId() string {
+	if x != nil {
+		return x.ResolvedDedupId
+	}
+	return ""
+}
+
+func (x *TestWebhookVerifyConfigResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 var File_ironflow_v1_webhook_proto protoreflect.FileDescriptor
 
 const file_ironflow_v1_webhook_proto_rawDesc = "" +
 	"\n" +
-	"\x19ironflow/v1/webhook.proto\x12\vironflow.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb1\x04\n" +
+	"\x19ironflow/v1/webhook.proto\x12\vironflow.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xdf\x03\n" +
+	"\x13WebhookVerifyConfig\x12)\n" +
+	"\x10signature_header\x18\x01 \x01(\tR\x0fsignatureHeader\x12'\n" +
+	"\x0fentry_separator\x18\x02 \x01(\tR\x0eentrySeparator\x12!\n" +
+	"\fkv_delimiter\x18\x03 \x01(\tR\vkvDelimiter\x12#\n" +
+	"\rsignature_key\x18\x04 \x01(\tR\fsignatureKey\x12)\n" +
+	"\x10timestamp_header\x18\x05 \x01(\tR\x0ftimestampHeader\x12#\n" +
+	"\rtimestamp_key\x18\x06 \x01(\tR\ftimestampKey\x12)\n" +
+	"\x10signing_template\x18\a \x01(\tR\x0fsigningTemplate\x12\x1a\n" +
+	"\bencoding\x18\b \x01(\tR\bencoding\x12\x1c\n" +
+	"\talgorithm\x18\t \x01(\tR\talgorithm\x12+\n" +
+	"\x11tolerance_seconds\x18\n" +
+	" \x01(\x05R\x10toleranceSeconds\x12&\n" +
+	"\x0fevent_name_path\x18\v \x01(\tR\reventNamePath\x12\"\n" +
+	"\rdedup_id_path\x18\f \x01(\tR\vdedupIdPath\"\xcb\x05\n" +
 	"\rWebhookSource\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fevent_prefix\x18\x02 \x01(\tR\veventPrefix\x12#\n" +
@@ -977,29 +1481,35 @@ const file_ironflow_v1_webhook_proto_rawDesc = "" +
 	"\x04name\x18\n" +
 	" \x01(\tR\x04name\x123\n" +
 	"\x16verify_secret_prev_set\x18\v \x01(\bR\x13verifySecretPrevSet\x12\\\n" +
-	"\x1dverify_secret_prev_expires_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\x19verifySecretPrevExpiresAt\")\n" +
+	"\x1dverify_secret_prev_expires_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\x19verifySecretPrevExpiresAt\x12.\n" +
+	"\x13ingest_token_prefix\x18\r \x01(\tR\x11ingestTokenPrefix\x12!\n" +
+	"\fingest_token\x18\x0e \x01(\tR\vingestToken\x12E\n" +
+	"\rverify_config\x18\x0f \x01(\v2 .ironflow.v1.WebhookVerifyConfigR\fverifyConfig\")\n" +
 	"\x17GetWebhookSourceRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x87\x02\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xce\x02\n" +
 	"\x1aCreateWebhookSourceRequest\x12!\n" +
 	"\fevent_prefix\x18\x02 \x01(\tR\veventPrefix\x12#\n" +
 	"\rverify_header\x18\x03 \x01(\tR\fverifyHeader\x12)\n" +
 	"\x10verify_algorithm\x18\x04 \x01(\tR\x0fverifyAlgorithm\x12#\n" +
 	"\rverify_secret\x18\x05 \x01(\tR\fverifySecret\x123\n" +
 	"\bmetadata\x18\x06 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12\x12\n" +
-	"\x04name\x18\a \x01(\tR\x04nameJ\x04\b\x01\x10\x02R\x02id\"I\n" +
+	"\x04name\x18\a \x01(\tR\x04name\x12E\n" +
+	"\rverify_config\x18\b \x01(\v2 .ironflow.v1.WebhookVerifyConfigR\fverifyConfigJ\x04\b\x01\x10\x02R\x02id\"I\n" +
 	"\x19ListWebhookSourcesRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x05R\x06offset\"s\n" +
 	"\x1aListWebhookSourcesResponse\x124\n" +
 	"\asources\x18\x01 \x03(\v2\x1a.ironflow.v1.WebhookSourceR\asources\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x05R\n" +
-	"totalCount\"\xc5\x01\n" +
+	"totalCount\"\xd8\x02\n" +
 	"\x1aUpdateWebhookSourceRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12#\n" +
 	"\rverify_header\x18\x03 \x01(\tR\fverifyHeader\x12)\n" +
 	"\x10verify_algorithm\x18\x04 \x01(\tR\x0fverifyAlgorithm\x123\n" +
-	"\bmetadata\x18\x05 \x01(\v2\x17.google.protobuf.StructR\bmetadata\"\xd9\x01\n" +
+	"\bmetadata\x18\x05 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12E\n" +
+	"\rverify_config\x18\x06 \x01(\v2 .ironflow.v1.WebhookVerifyConfigR\fverifyConfig\x12J\n" +
+	"\x13expected_updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x11expectedUpdatedAt\"\xd9\x01\n" +
 	"\x1aRotateWebhookSecretRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12#\n" +
 	"\rverify_secret\x18\x02 \x01(\tR\fverifySecret\x12(\n" +
@@ -1013,7 +1523,10 @@ const file_ironflow_v1_webhook_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12(\n" +
 	"\rgrace_seconds\x18\x02 \x01(\x05H\x00R\fgraceSeconds\x88\x01\x01\x12J\n" +
 	"\x13expected_updated_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x11expectedUpdatedAtB\x10\n" +
-	"\x0e_grace_seconds\",\n" +
+	"\x0e_grace_seconds\"}\n" +
+	"\x1fRotateWebhookIngestTokenRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12J\n" +
+	"\x13expected_updated_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x11expectedUpdatedAt\",\n" +
 	"\x1aDeleteWebhookSourceRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\xed\x02\n" +
 	"\x0fWebhookDelivery\x12\x0e\n" +
@@ -1040,7 +1553,25 @@ const file_ironflow_v1_webhook_proto_rawDesc = "" +
 	"deliveries\x18\x01 \x03(\v2\x1c.ironflow.v1.WebhookDeliveryR\n" +
 	"deliveries\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x05R\n" +
-	"totalCount2\x89\a\n" +
+	"totalCount\"\xcd\x02\n" +
+	"\x1eTestWebhookVerifyConfigRequest\x12E\n" +
+	"\rverify_config\x18\x01 \x01(\v2 .ironflow.v1.WebhookVerifyConfigR\fverifyConfig\x12\x12\n" +
+	"\x04body\x18\x02 \x01(\tR\x04body\x12R\n" +
+	"\aheaders\x18\x03 \x03(\v28.ironflow.v1.TestWebhookVerifyConfigRequest.HeadersEntryR\aheaders\x12#\n" +
+	"\rverify_secret\x18\x04 \x01(\tR\fverifySecret\x12\x1b\n" +
+	"\tsource_id\x18\x05 \x01(\tR\bsourceId\x1a:\n" +
+	"\fHeadersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe7\x02\n" +
+	"\x1fTestWebhookVerifyConfigResponse\x12\x1a\n" +
+	"\bverified\x18\x01 \x01(\bR\bverified\x12%\n" +
+	"\x0esigning_string\x18\x02 \x01(\tR\rsigningString\x12-\n" +
+	"\x12computed_signature\x18\x03 \x01(\tR\x11computedSignature\x121\n" +
+	"\x14presented_signatures\x18\x04 \x03(\tR\x13presentedSignatures\x12-\n" +
+	"\x12resolved_timestamp\x18\x05 \x01(\tR\x11resolvedTimestamp\x12.\n" +
+	"\x13resolved_event_name\x18\x06 \x01(\tR\x11resolvedEventName\x12*\n" +
+	"\x11resolved_dedup_id\x18\a \x01(\tR\x0fresolvedDedupId\x12\x14\n" +
+	"\x05error\x18\b \x01(\tR\x05error2\xe5\b\n" +
 	"\x0eWebhookService\x12Z\n" +
 	"\x13CreateWebhookSource\x12'.ironflow.v1.CreateWebhookSourceRequest\x1a\x1a.ironflow.v1.WebhookSource\x12T\n" +
 	"\x10GetWebhookSource\x12$.ironflow.v1.GetWebhookSourceRequest\x1a\x1a.ironflow.v1.WebhookSource\x12e\n" +
@@ -1048,7 +1579,9 @@ const file_ironflow_v1_webhook_proto_rawDesc = "" +
 	"\x13UpdateWebhookSource\x12'.ironflow.v1.UpdateWebhookSourceRequest\x1a\x1a.ironflow.v1.WebhookSource\x12Z\n" +
 	"\x13RotateWebhookSecret\x12'.ironflow.v1.RotateWebhookSecretRequest\x1a\x1a.ironflow.v1.WebhookSource\x12b\n" +
 	"\x17ExpireWebhookSecretPrev\x12+.ironflow.v1.ExpireWebhookSecretPrevRequest\x1a\x1a.ironflow.v1.WebhookSource\x12z\n" +
-	"#DisableWebhookSignatureVerification\x127.ironflow.v1.DisableWebhookSignatureVerificationRequest\x1a\x1a.ironflow.v1.WebhookSource\x12V\n" +
+	"#DisableWebhookSignatureVerification\x127.ironflow.v1.DisableWebhookSignatureVerificationRequest\x1a\x1a.ironflow.v1.WebhookSource\x12d\n" +
+	"\x18RotateWebhookIngestToken\x12,.ironflow.v1.RotateWebhookIngestTokenRequest\x1a\x1a.ironflow.v1.WebhookSource\x12t\n" +
+	"\x17TestWebhookVerifyConfig\x12+.ironflow.v1.TestWebhookVerifyConfigRequest\x1a,.ironflow.v1.TestWebhookVerifyConfigResponse\x12V\n" +
 	"\x13DeleteWebhookSource\x12'.ironflow.v1.DeleteWebhookSourceRequest\x1a\x16.google.protobuf.Empty\x12n\n" +
 	"\x15ListWebhookDeliveries\x12).ironflow.v1.ListWebhookDeliveriesRequest\x1a*.ironflow.v1.ListWebhookDeliveriesResponseB:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
 
@@ -1064,62 +1597,78 @@ func file_ironflow_v1_webhook_proto_rawDescGZIP() []byte {
 	return file_ironflow_v1_webhook_proto_rawDescData
 }
 
-var file_ironflow_v1_webhook_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_ironflow_v1_webhook_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_ironflow_v1_webhook_proto_goTypes = []any{
-	(*WebhookSource)(nil),                              // 0: ironflow.v1.WebhookSource
-	(*GetWebhookSourceRequest)(nil),                    // 1: ironflow.v1.GetWebhookSourceRequest
-	(*CreateWebhookSourceRequest)(nil),                 // 2: ironflow.v1.CreateWebhookSourceRequest
-	(*ListWebhookSourcesRequest)(nil),                  // 3: ironflow.v1.ListWebhookSourcesRequest
-	(*ListWebhookSourcesResponse)(nil),                 // 4: ironflow.v1.ListWebhookSourcesResponse
-	(*UpdateWebhookSourceRequest)(nil),                 // 5: ironflow.v1.UpdateWebhookSourceRequest
-	(*RotateWebhookSecretRequest)(nil),                 // 6: ironflow.v1.RotateWebhookSecretRequest
-	(*ExpireWebhookSecretPrevRequest)(nil),             // 7: ironflow.v1.ExpireWebhookSecretPrevRequest
-	(*DisableWebhookSignatureVerificationRequest)(nil), // 8: ironflow.v1.DisableWebhookSignatureVerificationRequest
-	(*DeleteWebhookSourceRequest)(nil),                 // 9: ironflow.v1.DeleteWebhookSourceRequest
-	(*WebhookDelivery)(nil),                            // 10: ironflow.v1.WebhookDelivery
-	(*ListWebhookDeliveriesRequest)(nil),               // 11: ironflow.v1.ListWebhookDeliveriesRequest
-	(*ListWebhookDeliveriesResponse)(nil),              // 12: ironflow.v1.ListWebhookDeliveriesResponse
-	(*structpb.Struct)(nil),                            // 13: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),                      // 14: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),                              // 15: google.protobuf.Empty
+	(*WebhookVerifyConfig)(nil),                        // 0: ironflow.v1.WebhookVerifyConfig
+	(*WebhookSource)(nil),                              // 1: ironflow.v1.WebhookSource
+	(*GetWebhookSourceRequest)(nil),                    // 2: ironflow.v1.GetWebhookSourceRequest
+	(*CreateWebhookSourceRequest)(nil),                 // 3: ironflow.v1.CreateWebhookSourceRequest
+	(*ListWebhookSourcesRequest)(nil),                  // 4: ironflow.v1.ListWebhookSourcesRequest
+	(*ListWebhookSourcesResponse)(nil),                 // 5: ironflow.v1.ListWebhookSourcesResponse
+	(*UpdateWebhookSourceRequest)(nil),                 // 6: ironflow.v1.UpdateWebhookSourceRequest
+	(*RotateWebhookSecretRequest)(nil),                 // 7: ironflow.v1.RotateWebhookSecretRequest
+	(*ExpireWebhookSecretPrevRequest)(nil),             // 8: ironflow.v1.ExpireWebhookSecretPrevRequest
+	(*DisableWebhookSignatureVerificationRequest)(nil), // 9: ironflow.v1.DisableWebhookSignatureVerificationRequest
+	(*RotateWebhookIngestTokenRequest)(nil),            // 10: ironflow.v1.RotateWebhookIngestTokenRequest
+	(*DeleteWebhookSourceRequest)(nil),                 // 11: ironflow.v1.DeleteWebhookSourceRequest
+	(*WebhookDelivery)(nil),                            // 12: ironflow.v1.WebhookDelivery
+	(*ListWebhookDeliveriesRequest)(nil),               // 13: ironflow.v1.ListWebhookDeliveriesRequest
+	(*ListWebhookDeliveriesResponse)(nil),              // 14: ironflow.v1.ListWebhookDeliveriesResponse
+	(*TestWebhookVerifyConfigRequest)(nil),             // 15: ironflow.v1.TestWebhookVerifyConfigRequest
+	(*TestWebhookVerifyConfigResponse)(nil),            // 16: ironflow.v1.TestWebhookVerifyConfigResponse
+	nil,                                                // 17: ironflow.v1.TestWebhookVerifyConfigRequest.HeadersEntry
+	(*structpb.Struct)(nil),                            // 18: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),                      // 19: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),                              // 20: google.protobuf.Empty
 }
 var file_ironflow_v1_webhook_proto_depIdxs = []int32{
-	13, // 0: ironflow.v1.WebhookSource.metadata:type_name -> google.protobuf.Struct
-	14, // 1: ironflow.v1.WebhookSource.created_at:type_name -> google.protobuf.Timestamp
-	14, // 2: ironflow.v1.WebhookSource.updated_at:type_name -> google.protobuf.Timestamp
-	14, // 3: ironflow.v1.WebhookSource.verify_secret_prev_expires_at:type_name -> google.protobuf.Timestamp
-	13, // 4: ironflow.v1.CreateWebhookSourceRequest.metadata:type_name -> google.protobuf.Struct
-	0,  // 5: ironflow.v1.ListWebhookSourcesResponse.sources:type_name -> ironflow.v1.WebhookSource
-	13, // 6: ironflow.v1.UpdateWebhookSourceRequest.metadata:type_name -> google.protobuf.Struct
-	14, // 7: ironflow.v1.RotateWebhookSecretRequest.expected_updated_at:type_name -> google.protobuf.Timestamp
-	14, // 8: ironflow.v1.ExpireWebhookSecretPrevRequest.expected_updated_at:type_name -> google.protobuf.Timestamp
-	14, // 9: ironflow.v1.DisableWebhookSignatureVerificationRequest.expected_updated_at:type_name -> google.protobuf.Timestamp
-	14, // 10: ironflow.v1.WebhookDelivery.created_at:type_name -> google.protobuf.Timestamp
-	13, // 11: ironflow.v1.WebhookDelivery.request_headers:type_name -> google.protobuf.Struct
-	10, // 12: ironflow.v1.ListWebhookDeliveriesResponse.deliveries:type_name -> ironflow.v1.WebhookDelivery
-	2,  // 13: ironflow.v1.WebhookService.CreateWebhookSource:input_type -> ironflow.v1.CreateWebhookSourceRequest
-	1,  // 14: ironflow.v1.WebhookService.GetWebhookSource:input_type -> ironflow.v1.GetWebhookSourceRequest
-	3,  // 15: ironflow.v1.WebhookService.ListWebhookSources:input_type -> ironflow.v1.ListWebhookSourcesRequest
-	5,  // 16: ironflow.v1.WebhookService.UpdateWebhookSource:input_type -> ironflow.v1.UpdateWebhookSourceRequest
-	6,  // 17: ironflow.v1.WebhookService.RotateWebhookSecret:input_type -> ironflow.v1.RotateWebhookSecretRequest
-	7,  // 18: ironflow.v1.WebhookService.ExpireWebhookSecretPrev:input_type -> ironflow.v1.ExpireWebhookSecretPrevRequest
-	8,  // 19: ironflow.v1.WebhookService.DisableWebhookSignatureVerification:input_type -> ironflow.v1.DisableWebhookSignatureVerificationRequest
-	9,  // 20: ironflow.v1.WebhookService.DeleteWebhookSource:input_type -> ironflow.v1.DeleteWebhookSourceRequest
-	11, // 21: ironflow.v1.WebhookService.ListWebhookDeliveries:input_type -> ironflow.v1.ListWebhookDeliveriesRequest
-	0,  // 22: ironflow.v1.WebhookService.CreateWebhookSource:output_type -> ironflow.v1.WebhookSource
-	0,  // 23: ironflow.v1.WebhookService.GetWebhookSource:output_type -> ironflow.v1.WebhookSource
-	4,  // 24: ironflow.v1.WebhookService.ListWebhookSources:output_type -> ironflow.v1.ListWebhookSourcesResponse
-	0,  // 25: ironflow.v1.WebhookService.UpdateWebhookSource:output_type -> ironflow.v1.WebhookSource
-	0,  // 26: ironflow.v1.WebhookService.RotateWebhookSecret:output_type -> ironflow.v1.WebhookSource
-	0,  // 27: ironflow.v1.WebhookService.ExpireWebhookSecretPrev:output_type -> ironflow.v1.WebhookSource
-	0,  // 28: ironflow.v1.WebhookService.DisableWebhookSignatureVerification:output_type -> ironflow.v1.WebhookSource
-	15, // 29: ironflow.v1.WebhookService.DeleteWebhookSource:output_type -> google.protobuf.Empty
-	12, // 30: ironflow.v1.WebhookService.ListWebhookDeliveries:output_type -> ironflow.v1.ListWebhookDeliveriesResponse
-	22, // [22:31] is the sub-list for method output_type
-	13, // [13:22] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	18, // 0: ironflow.v1.WebhookSource.metadata:type_name -> google.protobuf.Struct
+	19, // 1: ironflow.v1.WebhookSource.created_at:type_name -> google.protobuf.Timestamp
+	19, // 2: ironflow.v1.WebhookSource.updated_at:type_name -> google.protobuf.Timestamp
+	19, // 3: ironflow.v1.WebhookSource.verify_secret_prev_expires_at:type_name -> google.protobuf.Timestamp
+	0,  // 4: ironflow.v1.WebhookSource.verify_config:type_name -> ironflow.v1.WebhookVerifyConfig
+	18, // 5: ironflow.v1.CreateWebhookSourceRequest.metadata:type_name -> google.protobuf.Struct
+	0,  // 6: ironflow.v1.CreateWebhookSourceRequest.verify_config:type_name -> ironflow.v1.WebhookVerifyConfig
+	1,  // 7: ironflow.v1.ListWebhookSourcesResponse.sources:type_name -> ironflow.v1.WebhookSource
+	18, // 8: ironflow.v1.UpdateWebhookSourceRequest.metadata:type_name -> google.protobuf.Struct
+	0,  // 9: ironflow.v1.UpdateWebhookSourceRequest.verify_config:type_name -> ironflow.v1.WebhookVerifyConfig
+	19, // 10: ironflow.v1.UpdateWebhookSourceRequest.expected_updated_at:type_name -> google.protobuf.Timestamp
+	19, // 11: ironflow.v1.RotateWebhookSecretRequest.expected_updated_at:type_name -> google.protobuf.Timestamp
+	19, // 12: ironflow.v1.ExpireWebhookSecretPrevRequest.expected_updated_at:type_name -> google.protobuf.Timestamp
+	19, // 13: ironflow.v1.DisableWebhookSignatureVerificationRequest.expected_updated_at:type_name -> google.protobuf.Timestamp
+	19, // 14: ironflow.v1.RotateWebhookIngestTokenRequest.expected_updated_at:type_name -> google.protobuf.Timestamp
+	19, // 15: ironflow.v1.WebhookDelivery.created_at:type_name -> google.protobuf.Timestamp
+	18, // 16: ironflow.v1.WebhookDelivery.request_headers:type_name -> google.protobuf.Struct
+	12, // 17: ironflow.v1.ListWebhookDeliveriesResponse.deliveries:type_name -> ironflow.v1.WebhookDelivery
+	0,  // 18: ironflow.v1.TestWebhookVerifyConfigRequest.verify_config:type_name -> ironflow.v1.WebhookVerifyConfig
+	17, // 19: ironflow.v1.TestWebhookVerifyConfigRequest.headers:type_name -> ironflow.v1.TestWebhookVerifyConfigRequest.HeadersEntry
+	3,  // 20: ironflow.v1.WebhookService.CreateWebhookSource:input_type -> ironflow.v1.CreateWebhookSourceRequest
+	2,  // 21: ironflow.v1.WebhookService.GetWebhookSource:input_type -> ironflow.v1.GetWebhookSourceRequest
+	4,  // 22: ironflow.v1.WebhookService.ListWebhookSources:input_type -> ironflow.v1.ListWebhookSourcesRequest
+	6,  // 23: ironflow.v1.WebhookService.UpdateWebhookSource:input_type -> ironflow.v1.UpdateWebhookSourceRequest
+	7,  // 24: ironflow.v1.WebhookService.RotateWebhookSecret:input_type -> ironflow.v1.RotateWebhookSecretRequest
+	8,  // 25: ironflow.v1.WebhookService.ExpireWebhookSecretPrev:input_type -> ironflow.v1.ExpireWebhookSecretPrevRequest
+	9,  // 26: ironflow.v1.WebhookService.DisableWebhookSignatureVerification:input_type -> ironflow.v1.DisableWebhookSignatureVerificationRequest
+	10, // 27: ironflow.v1.WebhookService.RotateWebhookIngestToken:input_type -> ironflow.v1.RotateWebhookIngestTokenRequest
+	15, // 28: ironflow.v1.WebhookService.TestWebhookVerifyConfig:input_type -> ironflow.v1.TestWebhookVerifyConfigRequest
+	11, // 29: ironflow.v1.WebhookService.DeleteWebhookSource:input_type -> ironflow.v1.DeleteWebhookSourceRequest
+	13, // 30: ironflow.v1.WebhookService.ListWebhookDeliveries:input_type -> ironflow.v1.ListWebhookDeliveriesRequest
+	1,  // 31: ironflow.v1.WebhookService.CreateWebhookSource:output_type -> ironflow.v1.WebhookSource
+	1,  // 32: ironflow.v1.WebhookService.GetWebhookSource:output_type -> ironflow.v1.WebhookSource
+	5,  // 33: ironflow.v1.WebhookService.ListWebhookSources:output_type -> ironflow.v1.ListWebhookSourcesResponse
+	1,  // 34: ironflow.v1.WebhookService.UpdateWebhookSource:output_type -> ironflow.v1.WebhookSource
+	1,  // 35: ironflow.v1.WebhookService.RotateWebhookSecret:output_type -> ironflow.v1.WebhookSource
+	1,  // 36: ironflow.v1.WebhookService.ExpireWebhookSecretPrev:output_type -> ironflow.v1.WebhookSource
+	1,  // 37: ironflow.v1.WebhookService.DisableWebhookSignatureVerification:output_type -> ironflow.v1.WebhookSource
+	1,  // 38: ironflow.v1.WebhookService.RotateWebhookIngestToken:output_type -> ironflow.v1.WebhookSource
+	16, // 39: ironflow.v1.WebhookService.TestWebhookVerifyConfig:output_type -> ironflow.v1.TestWebhookVerifyConfigResponse
+	20, // 40: ironflow.v1.WebhookService.DeleteWebhookSource:output_type -> google.protobuf.Empty
+	14, // 41: ironflow.v1.WebhookService.ListWebhookDeliveries:output_type -> ironflow.v1.ListWebhookDeliveriesResponse
+	31, // [31:42] is the sub-list for method output_type
+	20, // [20:31] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_webhook_proto_init() }
@@ -1127,15 +1676,15 @@ func file_ironflow_v1_webhook_proto_init() {
 	if File_ironflow_v1_webhook_proto != nil {
 		return
 	}
-	file_ironflow_v1_webhook_proto_msgTypes[6].OneofWrappers = []any{}
-	file_ironflow_v1_webhook_proto_msgTypes[8].OneofWrappers = []any{}
+	file_ironflow_v1_webhook_proto_msgTypes[7].OneofWrappers = []any{}
+	file_ironflow_v1_webhook_proto_msgTypes[9].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ironflow_v1_webhook_proto_rawDesc), len(file_ironflow_v1_webhook_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

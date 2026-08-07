@@ -55,6 +55,12 @@ const (
 	// WebhookServiceDisableWebhookSignatureVerificationProcedure is the fully-qualified name of the
 	// WebhookService's DisableWebhookSignatureVerification RPC.
 	WebhookServiceDisableWebhookSignatureVerificationProcedure = "/ironflow.v1.WebhookService/DisableWebhookSignatureVerification"
+	// WebhookServiceRotateWebhookIngestTokenProcedure is the fully-qualified name of the
+	// WebhookService's RotateWebhookIngestToken RPC.
+	WebhookServiceRotateWebhookIngestTokenProcedure = "/ironflow.v1.WebhookService/RotateWebhookIngestToken"
+	// WebhookServiceTestWebhookVerifyConfigProcedure is the fully-qualified name of the
+	// WebhookService's TestWebhookVerifyConfig RPC.
+	WebhookServiceTestWebhookVerifyConfigProcedure = "/ironflow.v1.WebhookService/TestWebhookVerifyConfig"
 	// WebhookServiceDeleteWebhookSourceProcedure is the fully-qualified name of the WebhookService's
 	// DeleteWebhookSource RPC.
 	WebhookServiceDeleteWebhookSourceProcedure = "/ironflow.v1.WebhookService/DeleteWebhookSource"
@@ -83,6 +89,22 @@ type WebhookServiceClient interface {
 	// current secret as prev for the grace window; after the window the
 	// source operates unsigned.
 	DisableWebhookSignatureVerification(context.Context, *connect.Request[v1.DisableWebhookSignatureVerificationRequest]) (*connect.Response[v1.WebhookSource], error)
+	// Rotate the per-source ingest token (ADR 0048). Replaces any existing
+	// token outright — there is no grace window, because the token lives
+	// only in the provider's URL field and is replaced by the same operator
+	// who rotated it. The new raw token is returned once, in
+	// WebhookSource.ingest_token, and is unrecoverable afterwards.
+	RotateWebhookIngestToken(context.Context, *connect.Request[v1.RotateWebhookIngestTokenRequest]) (*connect.Response[v1.WebhookSource], error)
+	// TestWebhookVerifyConfig replays a captured delivery against a descriptor
+	// and reports what the server computed. A wrong signing template and a wrong
+	// secret both surface as "invalid signature" at delivery time, so this is
+	// how an operator tells them apart — it returns the signing string that was
+	// built alongside the signature, without persisting anything.
+	//
+	// Mutating-verb naming ("Test") is required: rbac.connectAction routes
+	// WebhookService methods by verb, and anything unmatched falls through to
+	// events:subscribe, which RoleViewer holds. This request carries a secret.
+	TestWebhookVerifyConfig(context.Context, *connect.Request[v1.TestWebhookVerifyConfigRequest]) (*connect.Response[v1.TestWebhookVerifyConfigResponse], error)
 	// Delete a webhook source
 	DeleteWebhookSource(context.Context, *connect.Request[v1.DeleteWebhookSourceRequest]) (*connect.Response[emptypb.Empty], error)
 	// List webhook deliveries with optional filtering
@@ -142,6 +164,18 @@ func NewWebhookServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(webhookServiceMethods.ByName("DisableWebhookSignatureVerification")),
 			connect.WithClientOptions(opts...),
 		),
+		rotateWebhookIngestToken: connect.NewClient[v1.RotateWebhookIngestTokenRequest, v1.WebhookSource](
+			httpClient,
+			baseURL+WebhookServiceRotateWebhookIngestTokenProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("RotateWebhookIngestToken")),
+			connect.WithClientOptions(opts...),
+		),
+		testWebhookVerifyConfig: connect.NewClient[v1.TestWebhookVerifyConfigRequest, v1.TestWebhookVerifyConfigResponse](
+			httpClient,
+			baseURL+WebhookServiceTestWebhookVerifyConfigProcedure,
+			connect.WithSchema(webhookServiceMethods.ByName("TestWebhookVerifyConfig")),
+			connect.WithClientOptions(opts...),
+		),
 		deleteWebhookSource: connect.NewClient[v1.DeleteWebhookSourceRequest, emptypb.Empty](
 			httpClient,
 			baseURL+WebhookServiceDeleteWebhookSourceProcedure,
@@ -166,6 +200,8 @@ type webhookServiceClient struct {
 	rotateWebhookSecret                 *connect.Client[v1.RotateWebhookSecretRequest, v1.WebhookSource]
 	expireWebhookSecretPrev             *connect.Client[v1.ExpireWebhookSecretPrevRequest, v1.WebhookSource]
 	disableWebhookSignatureVerification *connect.Client[v1.DisableWebhookSignatureVerificationRequest, v1.WebhookSource]
+	rotateWebhookIngestToken            *connect.Client[v1.RotateWebhookIngestTokenRequest, v1.WebhookSource]
+	testWebhookVerifyConfig             *connect.Client[v1.TestWebhookVerifyConfigRequest, v1.TestWebhookVerifyConfigResponse]
 	deleteWebhookSource                 *connect.Client[v1.DeleteWebhookSourceRequest, emptypb.Empty]
 	listWebhookDeliveries               *connect.Client[v1.ListWebhookDeliveriesRequest, v1.ListWebhookDeliveriesResponse]
 }
@@ -206,6 +242,16 @@ func (c *webhookServiceClient) DisableWebhookSignatureVerification(ctx context.C
 	return c.disableWebhookSignatureVerification.CallUnary(ctx, req)
 }
 
+// RotateWebhookIngestToken calls ironflow.v1.WebhookService.RotateWebhookIngestToken.
+func (c *webhookServiceClient) RotateWebhookIngestToken(ctx context.Context, req *connect.Request[v1.RotateWebhookIngestTokenRequest]) (*connect.Response[v1.WebhookSource], error) {
+	return c.rotateWebhookIngestToken.CallUnary(ctx, req)
+}
+
+// TestWebhookVerifyConfig calls ironflow.v1.WebhookService.TestWebhookVerifyConfig.
+func (c *webhookServiceClient) TestWebhookVerifyConfig(ctx context.Context, req *connect.Request[v1.TestWebhookVerifyConfigRequest]) (*connect.Response[v1.TestWebhookVerifyConfigResponse], error) {
+	return c.testWebhookVerifyConfig.CallUnary(ctx, req)
+}
+
 // DeleteWebhookSource calls ironflow.v1.WebhookService.DeleteWebhookSource.
 func (c *webhookServiceClient) DeleteWebhookSource(ctx context.Context, req *connect.Request[v1.DeleteWebhookSourceRequest]) (*connect.Response[emptypb.Empty], error) {
 	return c.deleteWebhookSource.CallUnary(ctx, req)
@@ -236,6 +282,22 @@ type WebhookServiceHandler interface {
 	// current secret as prev for the grace window; after the window the
 	// source operates unsigned.
 	DisableWebhookSignatureVerification(context.Context, *connect.Request[v1.DisableWebhookSignatureVerificationRequest]) (*connect.Response[v1.WebhookSource], error)
+	// Rotate the per-source ingest token (ADR 0048). Replaces any existing
+	// token outright — there is no grace window, because the token lives
+	// only in the provider's URL field and is replaced by the same operator
+	// who rotated it. The new raw token is returned once, in
+	// WebhookSource.ingest_token, and is unrecoverable afterwards.
+	RotateWebhookIngestToken(context.Context, *connect.Request[v1.RotateWebhookIngestTokenRequest]) (*connect.Response[v1.WebhookSource], error)
+	// TestWebhookVerifyConfig replays a captured delivery against a descriptor
+	// and reports what the server computed. A wrong signing template and a wrong
+	// secret both surface as "invalid signature" at delivery time, so this is
+	// how an operator tells them apart — it returns the signing string that was
+	// built alongside the signature, without persisting anything.
+	//
+	// Mutating-verb naming ("Test") is required: rbac.connectAction routes
+	// WebhookService methods by verb, and anything unmatched falls through to
+	// events:subscribe, which RoleViewer holds. This request carries a secret.
+	TestWebhookVerifyConfig(context.Context, *connect.Request[v1.TestWebhookVerifyConfigRequest]) (*connect.Response[v1.TestWebhookVerifyConfigResponse], error)
 	// Delete a webhook source
 	DeleteWebhookSource(context.Context, *connect.Request[v1.DeleteWebhookSourceRequest]) (*connect.Response[emptypb.Empty], error)
 	// List webhook deliveries with optional filtering
@@ -291,6 +353,18 @@ func NewWebhookServiceHandler(svc WebhookServiceHandler, opts ...connect.Handler
 		connect.WithSchema(webhookServiceMethods.ByName("DisableWebhookSignatureVerification")),
 		connect.WithHandlerOptions(opts...),
 	)
+	webhookServiceRotateWebhookIngestTokenHandler := connect.NewUnaryHandler(
+		WebhookServiceRotateWebhookIngestTokenProcedure,
+		svc.RotateWebhookIngestToken,
+		connect.WithSchema(webhookServiceMethods.ByName("RotateWebhookIngestToken")),
+		connect.WithHandlerOptions(opts...),
+	)
+	webhookServiceTestWebhookVerifyConfigHandler := connect.NewUnaryHandler(
+		WebhookServiceTestWebhookVerifyConfigProcedure,
+		svc.TestWebhookVerifyConfig,
+		connect.WithSchema(webhookServiceMethods.ByName("TestWebhookVerifyConfig")),
+		connect.WithHandlerOptions(opts...),
+	)
 	webhookServiceDeleteWebhookSourceHandler := connect.NewUnaryHandler(
 		WebhookServiceDeleteWebhookSourceProcedure,
 		svc.DeleteWebhookSource,
@@ -319,6 +393,10 @@ func NewWebhookServiceHandler(svc WebhookServiceHandler, opts ...connect.Handler
 			webhookServiceExpireWebhookSecretPrevHandler.ServeHTTP(w, r)
 		case WebhookServiceDisableWebhookSignatureVerificationProcedure:
 			webhookServiceDisableWebhookSignatureVerificationHandler.ServeHTTP(w, r)
+		case WebhookServiceRotateWebhookIngestTokenProcedure:
+			webhookServiceRotateWebhookIngestTokenHandler.ServeHTTP(w, r)
+		case WebhookServiceTestWebhookVerifyConfigProcedure:
+			webhookServiceTestWebhookVerifyConfigHandler.ServeHTTP(w, r)
 		case WebhookServiceDeleteWebhookSourceProcedure:
 			webhookServiceDeleteWebhookSourceHandler.ServeHTTP(w, r)
 		case WebhookServiceListWebhookDeliveriesProcedure:
@@ -358,6 +436,14 @@ func (UnimplementedWebhookServiceHandler) ExpireWebhookSecretPrev(context.Contex
 
 func (UnimplementedWebhookServiceHandler) DisableWebhookSignatureVerification(context.Context, *connect.Request[v1.DisableWebhookSignatureVerificationRequest]) (*connect.Response[v1.WebhookSource], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.WebhookService.DisableWebhookSignatureVerification is not implemented"))
+}
+
+func (UnimplementedWebhookServiceHandler) RotateWebhookIngestToken(context.Context, *connect.Request[v1.RotateWebhookIngestTokenRequest]) (*connect.Response[v1.WebhookSource], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.WebhookService.RotateWebhookIngestToken is not implemented"))
+}
+
+func (UnimplementedWebhookServiceHandler) TestWebhookVerifyConfig(context.Context, *connect.Request[v1.TestWebhookVerifyConfigRequest]) (*connect.Response[v1.TestWebhookVerifyConfigResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.WebhookService.TestWebhookVerifyConfig is not implemented"))
 }
 
 func (UnimplementedWebhookServiceHandler) DeleteWebhookSource(context.Context, *connect.Request[v1.DeleteWebhookSourceRequest]) (*connect.Response[emptypb.Empty], error) {

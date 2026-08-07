@@ -8,6 +8,54 @@ import (
 // WebhookSource represents a registered webhook source.
 // ID is server-generated (UUID with `wh_` prefix). Name is the operator-
 // friendly display label and is NOT unique.
+// WebhookVerifyConfig describes a provider's signature scheme and where the
+// event name and delivery ID live (ADR 0049).
+//
+// It carries no provider identity — GitHub, Stripe, Shopify, Slack and Standard
+// Webhooks are all expressible as field values here — so supporting a provider
+// is configuration rather than an Ironflow release.
+//
+// Nil means the source verifies the legacy way: hex HMAC over the bare request
+// body, using VerifyHeader and VerifyAlgorithm.
+type WebhookVerifyConfig struct {
+	// SignatureHeader carries the signature, e.g. "Stripe-Signature".
+	SignatureHeader string `json:"signature_header"`
+	// EntrySeparator splits a multi-entry header. Empty means one entry.
+	// Stripe uses ",", Standard Webhooks uses " ".
+	EntrySeparator string `json:"entry_separator,omitempty"`
+	// KVDelimiter splits "key<delim>value" within an entry. Empty means the
+	// entry is a bare signature (Shopify). GitHub/Stripe/Slack use "=",
+	// Standard Webhooks uses ",".
+	KVDelimiter string `json:"kv_delimiter,omitempty"`
+	// SignatureKey selects which entries hold signatures, e.g. "v1". EVERY
+	// matching entry is tried, because providers send several during rotation.
+	SignatureKey string `json:"signature_key,omitempty"`
+	// TimestampHeader names a separate timestamp header (Slack).
+	TimestampHeader string `json:"timestamp_header,omitempty"`
+	// TimestampKey instead reads it from a keyed entry in SignatureHeader
+	// (Stripe's "t="). TimestampHeader wins when both are set.
+	TimestampKey string `json:"timestamp_key,omitempty"`
+	// SigningTemplate is the string that gets signed, with {body}, {ts} and
+	// {id} placeholders. {id} resolves through DedupIDPath.
+	SigningTemplate string `json:"signing_template"`
+	// Encoding is "hex" or "base64".
+	Encoding string `json:"encoding"`
+	// Algorithm is "hmac-sha256" or "hmac-sha1".
+	Algorithm string `json:"algorithm"`
+	// ToleranceSeconds bounds replay. Honored ONLY when SigningTemplate
+	// contains {ts} — an unsigned timestamp is attacker-controlled, so a
+	// tolerance over one is decoration and is rejected rather than ignored.
+	ToleranceSeconds int `json:"tolerance_seconds,omitempty"`
+	// EventNamePath locates the event type: "header:X-GitHub-Event" or
+	// "body:type". Empty falls back to the body "type" key.
+	EventNamePath string `json:"event_name_path,omitempty"`
+	// DedupIDPath locates the delivery ID: "header:X-GitHub-Delivery" or a
+	// dotted body path like "body:data.object.id". Empty falls back to the
+	// body "id" and "event_id" keys.
+	DedupIDPath string `json:"dedup_id_path,omitempty"`
+}
+
+// WebhookSource represents a registered webhook source.
 type WebhookSource struct {
 	ID                        string         `json:"id"`
 	Name                      string         `json:"name"`
@@ -19,8 +67,19 @@ type WebhookSource struct {
 	VerifySecretPrevExpiresAt string         `json:"verify_secret_prev_expires_at,omitempty"`
 	SourceType                string         `json:"source_type,omitempty"`
 	Metadata                  map[string]any `json:"metadata,omitempty"`
-	CreatedAt                 string         `json:"created_at,omitempty"`
-	UpdatedAt                 string         `json:"updated_at,omitempty"`
+	// IngestTokenPrefix is a short display fragment (ifwh_ + 8 chars) of the
+	// per-source ingest token. Empty on sources predating migration 046.
+	IngestTokenPrefix string `json:"ingest_token_prefix,omitempty"`
+	// IngestToken is the RAW ingest token, populated ONLY by CreateSource and
+	// RotateIngestToken (ADR 0048). The server stores just a hash, so this is
+	// the single opportunity to capture it — every later read returns it
+	// empty. Without it the source cannot receive deliveries.
+	IngestToken string `json:"ingest_token,omitempty"`
+	// VerifyConfig is the signature descriptor (ADR 0049). Nil means legacy
+	// verification via VerifyHeader/VerifyAlgorithm.
+	VerifyConfig *WebhookVerifyConfig `json:"verify_config,omitempty"`
+	CreatedAt    string               `json:"created_at,omitempty"`
+	UpdatedAt    string               `json:"updated_at,omitempty"`
 }
 
 // WebhookDelivery represents a single webhook delivery attempt.
@@ -58,6 +117,10 @@ type CreateWebhookSourceInput struct {
 	VerifyHeader string `json:"verify_header,omitempty"`
 	// VerifyAlgorithm is the algorithm for signature verification, e.g. "sha256" (optional).
 	VerifyAlgorithm string `json:"verify_algorithm,omitempty"`
+	// VerifyConfig is the signature descriptor (ADR 0049). Set it to verify a
+	// provider whose scheme is not "hex HMAC over the bare body" — which is
+	// every provider except GitHub. Omit for legacy verification.
+	VerifyConfig *WebhookVerifyConfig `json:"verify_config,omitempty"`
 	// VerifySecret is the secret used for signature verification (optional).
 	VerifySecret string `json:"verify_secret,omitempty"`
 	// Metadata is arbitrary key-value data attached to the webhook source (optional).
@@ -140,6 +203,17 @@ type UpdateWebhookSourceInput struct {
 	VerifyHeader string `json:"verify_header,omitempty"`
 	// VerifyAlgorithm is the signature algorithm. Empty clears it.
 	VerifyAlgorithm string `json:"verify_algorithm,omitempty"`
+	// VerifyConfig is the signature descriptor (ADR 0049). Unlike the fields
+	// above, OMITTING IT PRESERVES the stored descriptor rather than clearing
+	// it — a partial update would otherwise silently downgrade the source to
+	// legacy body-only verification and every real delivery would then fail.
+	VerifyConfig *WebhookVerifyConfig `json:"verify_config,omitempty"`
+	// ExpectedUpdatedAt is an optimistic-concurrency token: send the UpdatedAt
+	// you last read and the write is rejected with ABORTED if the row moved.
+	// Worth sending precisely because VerifyConfig is preserve-on-omit — an
+	// unguarded rename can otherwise revert someone else's descriptor change.
+	// Omit to skip the check.
+	ExpectedUpdatedAt string `json:"expected_updated_at,omitempty"`
 	// Metadata replaces the metadata blob entirely. nil clears the column.
 	Metadata map[string]any `json:"metadata,omitempty"`
 }
@@ -288,4 +362,31 @@ func (wm *WebhookManagementClient) ListDeliveries(ctx context.Context, opts List
 		return []WebhookDelivery{}, 0, nil
 	}
 	return result.Deliveries, result.TotalCount, nil
+}
+
+// RotateWebhookIngestTokenInput configures RotateIngestToken.
+type RotateWebhookIngestTokenInput struct {
+	ID string
+	// ExpectedUpdatedAt is an optimistic-concurrency token. When set, the
+	// server returns Aborted if the source changed since you read it.
+	ExpectedUpdatedAt *time.Time
+}
+
+// RotateIngestToken replaces the source's per-source ingest token (ADR 0048).
+//
+// There is no grace window: the previous token stops working the moment this
+// returns, so update the provider's URL immediately. The new raw token is in
+// the returned WebhookSource.IngestToken and is unrecoverable afterwards —
+// capture it here or you will have to rotate again.
+func (wm *WebhookManagementClient) RotateIngestToken(ctx context.Context, input RotateWebhookIngestTokenInput) (*WebhookSource, error) {
+	var result WebhookSource
+	body := map[string]any{"id": input.ID}
+	if input.ExpectedUpdatedAt != nil {
+		body["expected_updated_at"] = input.ExpectedUpdatedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if err := wm.client.restRequest(ctx, "POST",
+		"/ironflow.v1.WebhookService/RotateWebhookIngestToken", body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }

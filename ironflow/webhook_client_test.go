@@ -510,3 +510,98 @@ func TestWebhookManagementClient_ListDeliveries(t *testing.T) {
 		}
 	})
 }
+
+// ============================================================================
+// WebhookManagementClient.RotateIngestToken
+// ============================================================================
+
+func TestWebhookManagementClient_RotateIngestToken(t *testing.T) {
+	t.Run("returns the raw token, which is unrecoverable afterwards", func(t *testing.T) {
+		var receivedBody map[string]any
+		var receivedPath string
+		client, cleanup := setupMockWebhookServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			receivedPath = r.URL.Path
+			json.NewDecoder(r.Body).Decode(&receivedBody)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"id":                  "whs_1",
+				"event_prefix":        "stripe.",
+				"ingest_token":        "ifwh_rawsecretvalue",
+				"ingest_token_prefix": "ifwh_raws",
+				"created_at":          "2026-03-28T00:00:00Z",
+				"updated_at":          "2026-03-28T00:00:00Z",
+			})
+		}))
+		defer cleanup()
+
+		source, err := client.Webhooks().RotateIngestToken(context.Background(),
+			RotateWebhookIngestTokenInput{ID: "whs_1"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if receivedPath != "/ironflow.v1.WebhookService/RotateWebhookIngestToken" {
+			t.Errorf("path = %s", receivedPath)
+		}
+		if receivedBody["id"] != "whs_1" {
+			t.Errorf("id = %v, want whs_1", receivedBody["id"])
+		}
+		// The whole point of the call: this field exists only in this response.
+		if source.IngestToken != "ifwh_rawsecretvalue" {
+			t.Errorf("IngestToken = %q, want the raw token", source.IngestToken)
+		}
+		if source.IngestTokenPrefix != "ifwh_raws" {
+			t.Errorf("IngestTokenPrefix = %q", source.IngestTokenPrefix)
+		}
+	})
+
+	t.Run("omits expected_updated_at when unset", func(t *testing.T) {
+		var receivedBody map[string]any
+		client, cleanup := setupMockWebhookServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			json.NewDecoder(r.Body).Decode(&receivedBody)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"id": "whs_1"})
+		}))
+		defer cleanup()
+
+		if _, err := client.Webhooks().RotateIngestToken(context.Background(),
+			RotateWebhookIngestTokenInput{ID: "whs_1"}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// Sending a zero timestamp would make every rotate look stale.
+		if _, ok := receivedBody["expected_updated_at"]; ok {
+			t.Error("expected_updated_at must be absent when the caller did not set it")
+		}
+	})
+
+	t.Run("sends expected_updated_at as RFC3339 UTC", func(t *testing.T) {
+		var receivedBody map[string]any
+		client, cleanup := setupMockWebhookServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			json.NewDecoder(r.Body).Decode(&receivedBody)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"id": "whs_1"})
+		}))
+		defer cleanup()
+
+		at := time.Date(2026, 3, 28, 12, 0, 0, 0, time.FixedZone("EST", -5*3600))
+		if _, err := client.Webhooks().RotateIngestToken(context.Background(),
+			RotateWebhookIngestTokenInput{ID: "whs_1", ExpectedUpdatedAt: &at}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := receivedBody["expected_updated_at"]; got != "2026-03-28T17:00:00Z" {
+			t.Errorf("expected_updated_at = %v, want the UTC form", got)
+		}
+	})
+
+	t.Run("propagates a server error", func(t *testing.T) {
+		client, cleanup := setupMockWebhookServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"code":"not_found","message":"webhook source not found"}`))
+		}))
+		defer cleanup()
+
+		if _, err := client.Webhooks().RotateIngestToken(context.Background(),
+			RotateWebhookIngestTokenInput{ID: "whs_missing"}); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
+}
