@@ -445,6 +445,10 @@ func (c *Client) CancelRun(ctx context.Context, runID string, reason string) (*W
 }
 
 // RetryRun retries a failed run.
+//
+// NOTE: the server handler returns CodeUnimplemented, so this currently always
+// fails. Use [Client.ResumeRun], which resumes failed runs from the last
+// successful step and takes the same arguments.
 func (c *Client) RetryRun(ctx context.Context, runID string, fromStep string) (*WorkflowRun, error) {
 	req := map[string]string{"id": runID}
 	if fromStep != "" {

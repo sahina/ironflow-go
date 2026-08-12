@@ -116,6 +116,14 @@ Match the JS module so cross-SDK consumers branch on the same constants:
 | `AGENT_MEMORY_INVALID_DATA` | `IronflowError` |
 | `AGENT_MEMORY_NOT_IMPLEMENTED` | `IronflowError` |
 | `AGENT_MCP_NO_TOOLS` | `IronflowError` |
+| `AGENT_MCP_MISSING_CALLBACK_URL` | `IronflowError` |
+| `AGENT_MCP_MISSING_SERVER_URL` | `IronflowError` |
+| `AGENT_MCP_MISSING_API_KEY` | `IronflowError` |
+| `AGENT_MCP_DUPLICATE_TOOL` | `IronflowError` |
+| `AGENT_MCP_MISSING_SCHEMA` | `IronflowError` |
+| `AGENT_MCP_TRANSPORT_ERROR` | `IronflowError` |
+| `AGENT_MCP_INVALID_RESPONSE` | `IronflowError` |
+| `AGENT_MCP_UNREGISTER_FAILED` | `IronflowError` |
 | `LLM_REFUSAL` | `LLMRefusalError` |
 | `LLM_INVALID_JSON` | `LLMInvalidJSONError` |
 | `LLM_MAX_TOKENS` | `LLMMaxTokensError` |

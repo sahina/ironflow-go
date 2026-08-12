@@ -31,9 +31,10 @@ type MemoryBackend interface {
 	// GetProjection reads the projection state.
 	GetProjection(ctx context.Context, name string) (*ironflow.ProjectionStateResult, error)
 
-	// WaitForCatchup blocks until the projection has processed events
-	// up to the given NATS sequence.
-	WaitForCatchup(ctx context.Context, name string, opts ironflow.WaitForProjectionOpts) error
+	// WaitForEvent blocks until the projection has processed the given
+	// event. Appends run through the transactional outbox, so no NATS
+	// sequence is known at append time — the server resolves the event ID.
+	WaitForEvent(ctx context.Context, eventID, projection string, opts ironflow.WaitForProjectionOpts) error
 }
 
 // MemoryAppendInput carries the wire fields for AppendEvent. Mirrors
@@ -153,11 +154,9 @@ func (m memoryClient) Append(eventName string, data map[string]any, opts ...Memo
 		return err
 	}
 
-	if appended != nil && appended.Sequence > 0 {
-		seq := uint64(appended.Sequence.Int64())
+	if appended != nil && appended.EventID != "" {
 		if _, waitErr := ironflow.Run(m.ctx.Inner, "memory.append.wait", func() (struct{}, error) {
-			return struct{}{}, runtime.memoryBackend.WaitForCatchup(context.Background(), cfg.Projection, ironflow.WaitForProjectionOpts{
-				MinSeq:  seq,
+			return struct{}{}, runtime.memoryBackend.WaitForEvent(context.Background(), appended.EventID, cfg.Projection, ironflow.WaitForProjectionOpts{
 				Timeout: memoryAppendWaitTimeout,
 			})
 		}); waitErr != nil {
@@ -278,9 +277,9 @@ func (b *clientBackedBackend) GetProjection(ctx context.Context, name string) (*
 	return b.client.Projections().Get(ctx, name)
 }
 
-// WaitForCatchup forwards to client.WaitForProjection. Drops the
-// boolean result — callers only need to know whether it succeeded.
-func (b *clientBackedBackend) WaitForCatchup(ctx context.Context, name string, opts ironflow.WaitForProjectionOpts) error {
-	_, err := b.client.WaitForProjection(ctx, name, opts)
+// WaitForEvent forwards to client.WaitForEvent. Drops the result —
+// callers only need to know whether it succeeded.
+func (b *clientBackedBackend) WaitForEvent(ctx context.Context, eventID, projection string, opts ironflow.WaitForProjectionOpts) error {
+	_, err := b.client.WaitForEvent(ctx, eventID, projection, opts)
 	return err
 }

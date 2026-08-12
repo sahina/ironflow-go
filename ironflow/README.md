@@ -114,7 +114,7 @@ Use `CreateFunction` to define a workflow function. It panics if the config is i
 
 ```go
 var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
-    // Required
+    // Required: ID
     ID:       "my-function",                                // alphanumeric, hyphens, underscores
     Triggers: []ironflow.Trigger{{Event: "order.placed"}},  // optional — functions without triggers can be called via Invoke/InvokeAsync
 
@@ -283,7 +283,7 @@ results, err := ironflow.Parallel(ctx, "checks", branches, ironflow.ParallelOpti
 })
 ```
 
-Branch-scoped variants available for all step types:
+Branch-scoped variants (the complete set -- `SleepUntil`, `Map`, `Invoke`, `InvokeAsync`, and `Publish` have no branch variant):
 - `RunWithBranch[T](b, name, fn, opts...)`
 - `SleepWithBranch(b, name, duration)`
 - `WaitForEventWithBranch(b, name, filter)`

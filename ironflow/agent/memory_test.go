@@ -27,7 +27,6 @@ func (f *fakeMemoryBackend) AppendEvent(_ context.Context, _ string, input Memor
 	return &ironflow.AppendResult{
 		EntityVersion: ironflow.ProtoInt64(int64(len(f.appendCalls))),
 		EventID:       "evt-1",
-		Sequence:      ironflow.ProtoInt64(int64(len(f.appendCalls))),
 	}, nil
 }
 
@@ -39,8 +38,8 @@ func (f *fakeMemoryBackend) GetProjection(_ context.Context, name string) (*iron
 	return f.getResult, nil
 }
 
-func (f *fakeMemoryBackend) WaitForCatchup(_ context.Context, name string, _ ironflow.WaitForProjectionOpts) error {
-	f.waitCalls = append(f.waitCalls, name)
+func (f *fakeMemoryBackend) WaitForEvent(_ context.Context, eventID, projection string, _ ironflow.WaitForProjectionOpts) error {
+	f.waitCalls = append(f.waitCalls, eventID+":"+projection)
 	return nil
 }
 
@@ -130,7 +129,7 @@ func TestMemory_AppendGeneratesIdempotencyKey(t *testing.T) {
 		})
 	}
 	interceptor.stepMocks["memory.append.wait"] = func() (any, error) {
-		return struct{}{}, backend.WaitForCatchup(context.Background(), "p", ironflow.WaitForProjectionOpts{})
+		return struct{}{}, backend.WaitForEvent(context.Background(), "evt-1", "p", ironflow.WaitForProjectionOpts{})
 	}
 
 	ctx, runtime := newAgentContext(t, AgentConfig{
