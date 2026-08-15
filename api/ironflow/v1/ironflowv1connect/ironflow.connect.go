@@ -79,9 +79,6 @@ const (
 	// IronflowServiceCancelRunProcedure is the fully-qualified name of the IronflowService's CancelRun
 	// RPC.
 	IronflowServiceCancelRunProcedure = "/ironflow.v1.IronflowService/CancelRun"
-	// IronflowServiceRetryRunProcedure is the fully-qualified name of the IronflowService's RetryRun
-	// RPC.
-	IronflowServiceRetryRunProcedure = "/ironflow.v1.IronflowService/RetryRun"
 	// IronflowServicePatchStepProcedure is the fully-qualified name of the IronflowService's PatchStep
 	// RPC.
 	IronflowServicePatchStepProcedure = "/ironflow.v1.IronflowService/PatchStep"
@@ -137,8 +134,6 @@ type IronflowServiceClient interface {
 	GetRunSteps(context.Context, *connect.Request[v1.GetRunStepsRequest]) (*connect.Response[v1.GetRunStepsResponse], error)
 	// Cancel a running workflow
 	CancelRun(context.Context, *connect.Request[v1.CancelRunRequest]) (*connect.Response[v1.Run], error)
-	// Retry a failed run
-	RetryRun(context.Context, *connect.Request[v1.RetryRunRequest]) (*connect.Response[v1.Run], error)
 	// Patch a step's output
 	PatchStep(context.Context, *connect.Request[v1.PatchStepRequest]) (*connect.Response[v1.Step], error)
 	// Resume a paused/failed run
@@ -262,12 +257,6 @@ func NewIronflowServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(ironflowServiceMethods.ByName("CancelRun")),
 			connect.WithClientOptions(opts...),
 		),
-		retryRun: connect.NewClient[v1.RetryRunRequest, v1.Run](
-			httpClient,
-			baseURL+IronflowServiceRetryRunProcedure,
-			connect.WithSchema(ironflowServiceMethods.ByName("RetryRun")),
-			connect.WithClientOptions(opts...),
-		),
 		patchStep: connect.NewClient[v1.PatchStepRequest, v1.Step](
 			httpClient,
 			baseURL+IronflowServicePatchStepProcedure,
@@ -331,7 +320,6 @@ type ironflowServiceClient struct {
 	listRuns             *connect.Client[v1.ListRunsRequest, v1.ListRunsResponse]
 	getRunSteps          *connect.Client[v1.GetRunStepsRequest, v1.GetRunStepsResponse]
 	cancelRun            *connect.Client[v1.CancelRunRequest, v1.Run]
-	retryRun             *connect.Client[v1.RetryRunRequest, v1.Run]
 	patchStep            *connect.Client[v1.PatchStepRequest, v1.Step]
 	resumeRun            *connect.Client[v1.ResumeRunRequest, v1.Run]
 	pauseRun             *connect.Client[v1.PauseRunRequest, v1.PauseRunResponse]
@@ -421,11 +409,6 @@ func (c *ironflowServiceClient) CancelRun(ctx context.Context, req *connect.Requ
 	return c.cancelRun.CallUnary(ctx, req)
 }
 
-// RetryRun calls ironflow.v1.IronflowService.RetryRun.
-func (c *ironflowServiceClient) RetryRun(ctx context.Context, req *connect.Request[v1.RetryRunRequest]) (*connect.Response[v1.Run], error) {
-	return c.retryRun.CallUnary(ctx, req)
-}
-
 // PatchStep calls ironflow.v1.IronflowService.PatchStep.
 func (c *ironflowServiceClient) PatchStep(ctx context.Context, req *connect.Request[v1.PatchStepRequest]) (*connect.Response[v1.Step], error) {
 	return c.patchStep.CallUnary(ctx, req)
@@ -495,8 +478,6 @@ type IronflowServiceHandler interface {
 	GetRunSteps(context.Context, *connect.Request[v1.GetRunStepsRequest]) (*connect.Response[v1.GetRunStepsResponse], error)
 	// Cancel a running workflow
 	CancelRun(context.Context, *connect.Request[v1.CancelRunRequest]) (*connect.Response[v1.Run], error)
-	// Retry a failed run
-	RetryRun(context.Context, *connect.Request[v1.RetryRunRequest]) (*connect.Response[v1.Run], error)
 	// Patch a step's output
 	PatchStep(context.Context, *connect.Request[v1.PatchStepRequest]) (*connect.Response[v1.Step], error)
 	// Resume a paused/failed run
@@ -616,12 +597,6 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 		connect.WithSchema(ironflowServiceMethods.ByName("CancelRun")),
 		connect.WithHandlerOptions(opts...),
 	)
-	ironflowServiceRetryRunHandler := connect.NewUnaryHandler(
-		IronflowServiceRetryRunProcedure,
-		svc.RetryRun,
-		connect.WithSchema(ironflowServiceMethods.ByName("RetryRun")),
-		connect.WithHandlerOptions(opts...),
-	)
 	ironflowServicePatchStepHandler := connect.NewUnaryHandler(
 		IronflowServicePatchStepProcedure,
 		svc.PatchStep,
@@ -698,8 +673,6 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 			ironflowServiceGetRunStepsHandler.ServeHTTP(w, r)
 		case IronflowServiceCancelRunProcedure:
 			ironflowServiceCancelRunHandler.ServeHTTP(w, r)
-		case IronflowServiceRetryRunProcedure:
-			ironflowServiceRetryRunHandler.ServeHTTP(w, r)
 		case IronflowServicePatchStepProcedure:
 			ironflowServicePatchStepHandler.ServeHTTP(w, r)
 		case IronflowServiceResumeRunProcedure:
@@ -785,10 +758,6 @@ func (UnimplementedIronflowServiceHandler) GetRunSteps(context.Context, *connect
 
 func (UnimplementedIronflowServiceHandler) CancelRun(context.Context, *connect.Request[v1.CancelRunRequest]) (*connect.Response[v1.Run], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.CancelRun is not implemented"))
-}
-
-func (UnimplementedIronflowServiceHandler) RetryRun(context.Context, *connect.Request[v1.RetryRunRequest]) (*connect.Response[v1.Run], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.RetryRun is not implemented"))
 }
 
 func (UnimplementedIronflowServiceHandler) PatchStep(context.Context, *connect.Request[v1.PatchStepRequest]) (*connect.Response[v1.Step], error) {

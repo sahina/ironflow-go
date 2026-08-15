@@ -444,26 +444,6 @@ func (c *Client) CancelRun(ctx context.Context, runID string, reason string) (*W
 	return mapRunResponse(&resp), nil
 }
 
-// RetryRun retries a failed run.
-//
-// NOTE: the server handler returns CodeUnimplemented, so this currently always
-// fails. Use [Client.ResumeRun], which resumes failed runs from the last
-// successful step and takes the same arguments.
-func (c *Client) RetryRun(ctx context.Context, runID string, fromStep string) (*WorkflowRun, error) {
-	req := map[string]string{"id": runID}
-	if fromStep != "" {
-		req["from_step"] = fromStep
-	}
-
-	var resp runResponse
-
-	if err := c.request(ctx, "POST", "/ironflow.v1.IronflowService/RetryRun", req, &resp); err != nil {
-		return nil, err
-	}
-
-	return mapRunResponse(&resp), nil
-}
-
 // PauseRun pauses a running workflow run for scoped injection.
 //
 // Example:

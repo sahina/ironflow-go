@@ -517,9 +517,8 @@ for _, run := range result.Runs {
 // Cancel a run
 run, err := client.CancelRun(ctx, runID, "no longer needed")
 
-// Retry a failed run (from beginning or specific step)
-run, err := client.RetryRun(ctx, runID, "")         // from beginning
-run, err := client.RetryRun(ctx, runID, "validate")  // from specific step
+// Retry a failed run — resumes from the last successful step
+run, err := client.ResumeRun(ctx, runID, "")
 
 // Patch a step's output (hot patching)
 err := client.PatchStep(ctx, stepID, map[string]any{"corrected": true}, "fix data")
@@ -1485,7 +1484,7 @@ worker := ironflow.NewWorker(ironflow.WorkerConfig{
 
 ## Documentation
 
-Full platform documentation: https://github.com/sahina/ironflow/tree/main/docs
+Full platform documentation: https://docs.ironflow.run
 
 ## License
 
