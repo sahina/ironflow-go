@@ -3,6 +3,7 @@ package ironflow
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 )
 
@@ -239,4 +240,35 @@ func isYieldSignal(err error) (*yieldSignal, bool) {
 		return signal, true
 	}
 	return nil, false
+}
+
+// AuthHelp is appended to 401/403 errors so an unauthenticated SDK names the env
+// var and the key file instead of printing a bare status code (#1673). The path
+// is a default, not a fact: serve resolves it three ways (--bootstrap-key-file,
+// <db-dir>/, os.TempDir()) — so point at the banner.
+const AuthHelp = "Set IRONFLOW_API_KEY (or the APIKey config field). " +
+	"The server writes a first-boot admin key to <db-dir>/.ironflow_bootstrap_key.json " +
+	"(dev default: .ironflow/.ironflow_bootstrap_key.json) and prints the exact path in its " +
+	"startup banner. Read it with: cat <path> | jq -r .key"
+
+// authError returns a non-retryable error for 401/403, and nil for every other
+// status. Callers with a reconnect loop should stop on it (errors.Is against
+// ErrUnauthorized / ErrForbidden) rather than retry an auth failure on the
+// network cadence — a missing or revoked key does not fix itself.
+func authError(status int, what string) error {
+	switch status {
+	case http.StatusUnauthorized:
+		return &IronflowError{
+			Message: fmt.Sprintf("%s: 401 unauthenticated. %s", what, AuthHelp),
+			Code:    "UNAUTHENTICATED",
+			Cause:   ErrUnauthorized,
+		}
+	case http.StatusForbidden:
+		return &IronflowError{
+			Message: fmt.Sprintf("%s: 403 forbidden. %s", what, AuthHelp),
+			Code:    "UNAUTHORIZED",
+			Cause:   ErrForbidden,
+		}
+	}
+	return nil
 }

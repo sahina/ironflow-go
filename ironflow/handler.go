@@ -201,6 +201,16 @@ func CreateHandler[TEvent any](config HandlerConfig[TEvent]) Function {
 		id = generateHandlerID(config.Event)
 	}
 
+	// CreateHandler built its Function directly and so skipped the ID gate
+	// CreateFunction has always applied (#1750). Only a user-supplied Options.ID
+	// can fail it — generateHandlerID sanitizes its own output. Panics to match
+	// CreateFunction's idiom: an ID that cannot become a NATS subject is a
+	// declaration bug, and failing at init beats failing at registration, where
+	// both SDKs abort the whole worker's loop on the first error.
+	if err := validateFunctionID(id); err != nil {
+		panic(fmt.Sprintf("invalid handler config: %v", err))
+	}
+
 	// Build trigger
 	trigger := Trigger{
 		Event: config.Event,

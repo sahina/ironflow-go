@@ -2,6 +2,7 @@ package ironflow
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -342,4 +343,53 @@ func TestHandlerContext_EventAccess(t *testing.T) {
 	if resultMap["orderId"] != "order-456" {
 		t.Errorf("expected orderId %q, got %v", "order-456", resultMap["orderId"])
 	}
+}
+
+// TestCreateHandler_ValidatesID pins the gate CreateHandler was missing (#1750).
+// It built its Function directly, so a user-supplied Options.ID skipped the
+// check every CreateFunction ID goes through and only failed at registration.
+func TestCreateHandler_ValidatesID(t *testing.T) {
+	t.Run("panics on a whitespace Options.ID", func(t *testing.T) {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("expected panic for an ID with whitespace")
+			}
+			msg, ok := r.(string)
+			if !ok {
+				t.Fatalf("panic type %T, want string", r)
+			}
+			if !strings.Contains(msg, "whitespace") {
+				t.Errorf("panic = %q, want substring %q", msg, "whitespace")
+			}
+		}()
+		CreateHandler(HandlerConfig[map[string]any]{
+			Event:   "order.placed",
+			Options: &HandlerOptions{ID: "my handler"},
+			Handler: func(_ map[string]any, _ *HandlerContext) (any, error) { return nil, nil },
+		})
+	})
+
+	t.Run("accepts a dotted Options.ID", func(t *testing.T) {
+		fn := CreateHandler(HandlerConfig[map[string]any]{
+			Event:   "order.placed",
+			Options: &HandlerOptions{ID: "orders.placed.handler"},
+			Handler: func(_ map[string]any, _ *HandlerContext) (any, error) { return nil, nil },
+		})
+		if fn.Config.ID != "orders.placed.handler" {
+			t.Errorf("ID = %q, want %q", fn.Config.ID, "orders.placed.handler")
+		}
+	})
+
+	t.Run("generated IDs always pass", func(t *testing.T) {
+		// generateHandlerID sanitizes to [a-zA-Z0-9-], so no event name can
+		// produce an ID this rejects. Pinned so a change there cannot start
+		// panicking on a legal event name.
+		for _, event := range []string{"order.placed", "order.*", "order.>", "a b c", "*"} {
+			CreateHandler(HandlerConfig[map[string]any]{
+				Event:   event,
+				Handler: func(_ map[string]any, _ *HandlerContext) (any, error) { return nil, nil },
+			})
+		}
+	})
 }

@@ -544,6 +544,11 @@ type BranchContext struct {
 	// scopePrefix is the prefix for generating step IDs in this branch
 	scopePrefix string
 
+	// legacyScopePrefix is scopePrefix built WITHOUT the #1694 name escaping.
+	// Carried so a run that started before escaping shipped still matches its
+	// already-persisted branch step ids on resume — see preferLegacyStepID.
+	legacyScopePrefix string
+
 	// stepCounters tracks step invocation counts for this branch
 	stepCounters map[string]int
 }

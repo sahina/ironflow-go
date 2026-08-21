@@ -452,7 +452,7 @@ The `Client` is used for server interaction: emitting events, managing runs, pub
 ```go
 client := ironflow.NewClient(ironflow.ClientConfig{
     ServerURL: ironflow.GetServerURL(),     // default: http://localhost:9123
-    APIKey:    "ifkey_...",                     // optional for local dev
+    APIKey:    "ifkey_...",                 // default: IRONFLOW_API_KEY env
     Timeout:   30 * time.Second,            // default: 30s
     HTTPClient: &http.Client{},             // optional custom HTTP client
 

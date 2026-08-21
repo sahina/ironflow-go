@@ -384,3 +384,59 @@ func TestCreateFunction_CancelOnValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateFunctionID pins the SDK rule to the server's
+// pubsub.ValidateFunctionID (#1750). The two live in different modules and
+// cannot share code, so this is the only thing holding them together.
+//
+// The accept half matters as much as the reject half: the regex this replaced
+// rejected dots and unicode, which the server accepts, so a legal ID panicked
+// at declaration and the user never reached the server to find out.
+func TestValidateFunctionID(t *testing.T) {
+	valid := []string{
+		"my-function",
+		"myFunction",
+		"my_function",
+		"function123",
+		"123function",
+		"order.placed",           // dots: legal server-side, rejected by the old regex
+		"a.b.c.d",                // multi-segment
+		"função-de-pedido",       // unicode: legal server-side, rejected by the old regex
+		"订单处理",                   // non-latin script
+		strings.Repeat("a", 300), // length is the server's business, not the SDK's
+	}
+	for _, id := range valid {
+		if err := validateFunctionID(id); err != nil {
+			t.Errorf("validateFunctionID(%q) = %v, want nil", id, err)
+		}
+	}
+
+	invalid := []struct {
+		id      string
+		wantErr string
+	}{
+		{"", "required"},
+		{"my function", "whitespace"},
+		{"my\tfunction", "whitespace"},
+		{"my function", "whitespace"}, // NBSP — a ContainsAny(" \t\n") check would miss this
+		{"my　function", "whitespace"}, // ideographic space
+		{"my\x00function", "control character"},
+		{"my\nfunction", "whitespace"},
+		{"orders.*", "wildcard"},
+		{"orders.>", "wildcard"},
+		{"*", "wildcard"},
+		{".orders", "empty segment"},
+		{"orders.", "empty segment"},
+		{"orders..process", "empty segment"},
+	}
+	for _, c := range invalid {
+		err := validateFunctionID(c.id)
+		if err == nil {
+			t.Errorf("validateFunctionID(%q) = nil, want error", c.id)
+			continue
+		}
+		if !strings.Contains(err.Error(), c.wantErr) {
+			t.Errorf("validateFunctionID(%q) = %q, want substring %q", c.id, err, c.wantErr)
+		}
+	}
+}

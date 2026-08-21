@@ -294,7 +294,20 @@ func (h *serveHandler) handleWebhook(w http.ResponseWriter, r *http.Request, pro
 			h.sendError(w, http.StatusInternalServerError, "EMIT_FAILED", fmt.Sprintf("failed to marshal event: %v", err))
 			return
 		}
-		resp, err := http.Post(h.serverURL+"/api/v1/events", "application/json", bytes.NewReader(emitBody))
+		// /api/v1/events requires auth (isPublicPath rejects every /api/ path),
+		// so an unauthenticated emit fails the whole webhook outside dev mode.
+		// Same env key executeHandler gives the step callbacks.
+		emitHTTPReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost,
+			h.serverURL+"/api/v1/events", bytes.NewReader(emitBody))
+		if err != nil {
+			h.sendError(w, http.StatusInternalServerError, "EMIT_FAILED", fmt.Sprintf("failed to build emit request: %v", err))
+			return
+		}
+		emitHTTPReq.Header.Set("Content-Type", "application/json")
+		for k, v := range buildAuthHeaders("") {
+			emitHTTPReq.Header.Set(k, v)
+		}
+		resp, err := http.DefaultClient.Do(emitHTTPReq)
 		if err != nil {
 			h.sendError(w, http.StatusBadGateway, "EMIT_FAILED", fmt.Sprintf("failed to emit event: %v", err))
 			return

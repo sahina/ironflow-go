@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -147,6 +148,7 @@ func NewWorker(config WorkerConfig) *Worker {
 			functions: functions,
 			upcasters: config.Upcasters,
 			serverURL: config.ServerURL,
+			apiKey:    config.APIKey,
 			logger:    logger,
 			onError:   config.OnError,
 		},
@@ -176,6 +178,14 @@ func (w *Worker) Run(ctx context.Context) error {
 		if err := w.connect(ctx); err != nil {
 			if w.state.Load() == int32(stateStopped) {
 				return nil
+			}
+
+			// An auth failure will not fix itself on the reconnect cadence
+			// (#1673): surface the actionable message once and stop.
+			if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrForbidden) {
+				w.logger.Error(err.Error())
+				w.Stop()
+				return err
 			}
 
 			w.logger.Error("Connection error", "error", err)
@@ -401,6 +411,11 @@ func (w *Worker) pollForJobs(ctx context.Context) error {
 
 		jobs, err := w.requestJobs(ctx, free)
 		if err != nil {
+			// Key revoked mid-run: let it out to Run, which stops the worker
+			// rather than polling a 401 every 5s (#1673).
+			if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrForbidden) {
+				return err
+			}
 			w.logger.Warn("Job request error", "error", err)
 			time.Sleep(5 * time.Second)
 			continue
@@ -451,6 +466,9 @@ func (w *Worker) requestJobs(ctx context.Context, available int) ([]*jobAssignme
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if authErr := authError(resp.StatusCode, "failed to get job"); authErr != nil {
+			return nil, authErr
+		}
 		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
@@ -600,6 +618,9 @@ func (w *Worker) httpPut(ctx context.Context, path string, body any, result any)
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
+		if authErr := authError(resp.StatusCode, "request to "+path+" failed"); authErr != nil {
+			return authErr
+		}
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("request failed: %s", string(respBody))
 	}

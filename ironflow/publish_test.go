@@ -125,6 +125,7 @@ func TestPublish_Success(t *testing.T) {
 	// Set up a test server that returns a successful publish response
 	var receivedTopic string
 	var receivedData map[string]any
+	var receivedRunID string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/ironflow.v1.PubSubService/Publish" {
 			t.Errorf("Expected path '/ironflow.v1.PubSubService/Publish', got %q", r.URL.Path)
@@ -139,6 +140,7 @@ func TestPublish_Success(t *testing.T) {
 		}
 		receivedTopic, _ = body["topic"].(string)
 		receivedData, _ = body["data"].(map[string]any)
+		receivedRunID = r.Header.Get(HeaderRunID)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
@@ -168,6 +170,11 @@ func TestPublish_Success(t *testing.T) {
 	}
 	if receivedData["orderId"] != "123" {
 		t.Errorf("Expected data.orderId '123', got %v", receivedData["orderId"])
+	}
+	// The publish step hand-rolls its request, so the run-id header is not
+	// inherited from Client.request — it must be set explicitly (#1706).
+	if receivedRunID != "test-run" {
+		t.Errorf("Expected %s header 'test-run', got %q", HeaderRunID, receivedRunID)
 	}
 
 	// Verify step was recorded as completed

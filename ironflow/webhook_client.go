@@ -180,11 +180,13 @@ func (wm *WebhookManagementClient) ListSources(ctx context.Context) ([]WebhookSo
 // verify_secret is intentionally NOT included — use RotateSecret to change it.
 // event_prefix and source_type are immutable post-create.
 //
-// Semantics are FULL-REPLACE, not patch. Every editable field on the server is
-// overwritten with the value in this struct. Omitting a field (zero value or
-// nil map) clears the corresponding column server-side. To preserve existing
-// values, fetch the current source first and copy across whatever you do not
-// intend to change:
+// Semantics are full-replace for Name and Metadata: omitting either overwrites
+// the stored value (a nil map clears the column). VerifyHeader, VerifyAlgorithm
+// and VerifyConfig are PRESERVE-ON-OMIT, because clearing them is how signature
+// verification gets switched off by accident.
+//
+// Fetching first and copying across is still the safest habit, and is required
+// if you want Metadata to survive:
 //
 //	current, _ := client.Webhooks().GetSource(ctx, id)
 //	_, err := client.Webhooks().UpdateSource(ctx, UpdateWebhookSourceInput{
@@ -199,9 +201,13 @@ type UpdateWebhookSourceInput struct {
 	ID string `json:"id"`
 	// Name is the operator-friendly display label (required).
 	Name string `json:"name"`
-	// VerifyHeader is the HTTP header for signature verification. Empty clears it.
+	// VerifyHeader is the HTTP header for signature verification. Empty
+	// PRESERVES the stored value rather than clearing it — clearing it on a
+	// source with no VerifyConfig would silently stop signature checking at
+	// ingest. Use DisableSignatureVerification to turn verification off.
 	VerifyHeader string `json:"verify_header,omitempty"`
-	// VerifyAlgorithm is the signature algorithm. Empty clears it.
+	// VerifyAlgorithm is the signature algorithm. Empty preserves; see
+	// VerifyHeader.
 	VerifyAlgorithm string `json:"verify_algorithm,omitempty"`
 	// VerifyConfig is the signature descriptor (ADR 0049). Unlike the fields
 	// above, OMITTING IT PRESERVES the stored descriptor rather than clearing

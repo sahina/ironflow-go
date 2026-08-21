@@ -118,6 +118,9 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 		_ = resp.Body.Close()
 
 		if resp.StatusCode >= 400 {
+			if authErr := authError(resp.StatusCode, fmt.Sprintf("failed to register function %s", id)); authErr != nil {
+				return authErr
+			}
 			return fmt.Errorf("failed to register function %s: status %d", id, resp.StatusCode)
 		}
 

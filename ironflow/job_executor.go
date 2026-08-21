@@ -29,9 +29,13 @@ type stepLifecycleReporter interface {
 // execution context setup, memoization, upcasting, handler invocation,
 // yield/error classification, and compensation.
 type jobExecutor struct {
-	functions    map[string]Function
-	upcasters    *UpcasterRegistry
-	serverURL    string
+	functions map[string]Function
+	upcasters *UpcasterRegistry
+	serverURL string
+	// apiKey is the worker's configured key. Empty falls back to the env var,
+	// so an explicit WorkerConfig.APIKey reaches durable step callbacks
+	// (step.Publish) the same way it reaches the polling transport.
+	apiKey       string
 	logger       Logger
 	onError      func(err error, ctx ErrorContext)
 	stepReporter stepLifecycleReporter // nil for polling worker; set for streaming worker
@@ -75,7 +79,9 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 
 	exec.stepTimeout = fn.Config.StepTimeout
 	exec.serverURL = e.serverURL
-	if apiKey := GetAPIKey(); apiKey != "" {
+	if apiKey := e.apiKey; apiKey != "" {
+		exec.apiKey = apiKey
+	} else if apiKey := GetAPIKey(); apiKey != "" {
 		exec.apiKey = apiKey
 	}
 

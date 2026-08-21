@@ -69,6 +69,9 @@ type GrpcSubscriptionClient struct {
 	logger       Logger
 	httpClient   *http.Client
 	pubsubClient ironflowv1connect.PubSubServiceClient
+	// apiKey is what the bearer interceptor was built with. Kept so the
+	// resolution is assertable; the interceptor itself closes over a copy.
+	apiKey string
 
 	mu               sync.RWMutex
 	state            ConnectionState
@@ -131,7 +134,15 @@ func (s *GrpcSubscription) Unsubscribe() {
 }
 
 // NewGrpcSubscriptionClient creates a new gRPC subscription client.
+//
+// ConnectRPC routes require auth. GrpcSubscriptionClientConfig has no key field
+// yet, so this constructor authenticates from IRONFLOW_API_KEY;
+// Client.CreateGrpcSubscriptionClient passes the parent client's resolved key.
 func NewGrpcSubscriptionClient(config GrpcSubscriptionClientConfig) *GrpcSubscriptionClient {
+	return newGrpcSubscriptionClient(config, GetAPIKey())
+}
+
+func newGrpcSubscriptionClient(config GrpcSubscriptionClientConfig, apiKey string) *GrpcSubscriptionClient {
 	if config.ReconnectDelay == 0 {
 		config.ReconnectDelay = time.Second
 	}
@@ -150,10 +161,14 @@ func NewGrpcSubscriptionClient(config GrpcSubscriptionClientConfig) *GrpcSubscri
 
 	httpClient := newH2CClient(config.ServerURL)
 
+	opts := []connect.ClientOption{connect.WithProtoJSON()}
+	if apiKey != "" {
+		opts = append(opts, connect.WithInterceptors(bearerInterceptor(apiKey)))
+	}
 	pubsubClient := ironflowv1connect.NewPubSubServiceClient(
 		httpClient,
 		config.ServerURL,
-		connect.WithProtoJSON(),
+		opts...,
 	)
 
 	return &GrpcSubscriptionClient{
@@ -161,10 +176,37 @@ func NewGrpcSubscriptionClient(config GrpcSubscriptionClientConfig) *GrpcSubscri
 		logger:        logger,
 		httpClient:    httpClient,
 		pubsubClient:  pubsubClient,
+		apiKey:        apiKey,
 		state:         StateDisconnected,
 		subscriptions: make(map[string]*GrpcSubscription),
 		done:          make(chan struct{}),
 	}
+}
+
+// bearerAuth attaches an Authorization header to every ConnectRPC request.
+// A plain connect.UnaryInterceptorFunc would not do: PubSubService.Subscribe is
+// server-streaming, and the streaming path needs its own wrapper.
+type bearerAuth struct{ key string }
+
+func bearerInterceptor(key string) connect.Interceptor { return bearerAuth{key: key} }
+
+func (b bearerAuth) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		req.Header().Set("Authorization", "Bearer "+b.key)
+		return next(ctx, req)
+	}
+}
+
+func (b bearerAuth) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return func(ctx context.Context, spec connect.Spec) connect.StreamingClientConn {
+		conn := next(ctx, spec)
+		conn.RequestHeader().Set("Authorization", "Bearer "+b.key)
+		return conn
+	}
+}
+
+func (b bearerAuth) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return next
 }
 
 // State returns the current connection state.
@@ -487,8 +529,10 @@ func (c *GrpcSubscriptionClient) SubscribeAckable(ctx context.Context, pattern s
 //
 // This is a convenience method that uses the client's server URL.
 func (c *Client) CreateGrpcSubscriptionClient() *GrpcSubscriptionClient {
-	return NewGrpcSubscriptionClient(GrpcSubscriptionClientConfig{
+	// Carries the parent client's resolved key: ConnectRPC routes require auth,
+	// so a derived client that kept only the URL 401'd on every Subscribe.
+	return newGrpcSubscriptionClient(GrpcSubscriptionClientConfig{
 		ServerURL:     c.serverURL,
 		AutoReconnect: true,
-	})
+	}, c.apiKey)
 }

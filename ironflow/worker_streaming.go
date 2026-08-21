@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -109,6 +110,7 @@ func NewStreamingWorker(config WorkerConfig) *StreamingWorker {
 		functions: functions,
 		upcasters: config.Upcasters,
 		serverURL: config.ServerURL,
+		apiKey:    config.APIKey,
 		logger:    logger,
 		onError:   config.OnError,
 		stepReporter: &streamStepReporter{
@@ -141,6 +143,17 @@ func (w *StreamingWorker) Run(ctx context.Context) error {
 		if err := w.connectStream(ctx); err != nil {
 			if w.state.Load() == int32(stateStopped) {
 				return nil
+			}
+
+			// Auth failures do not fix themselves on the reconnect cadence
+			// (#1673). Covers both the HTTP register call and the stream itself,
+			// which surfaces auth as a Connect code rather than an ironflow error.
+			code := connect.CodeOf(err)
+			if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrForbidden) ||
+				code == connect.CodeUnauthenticated || code == connect.CodePermissionDenied {
+				w.logger.Error(fmt.Sprintf("stream authentication failed: %v. %s", err, AuthHelp))
+				w.Stop()
+				return err
 			}
 
 			w.logger.Error("Stream connection error", "error", err)

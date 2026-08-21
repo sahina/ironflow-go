@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -95,6 +96,12 @@ func (r *ProjectionRunner) pollLoop() {
 
 		processed, err := r.poll()
 		if err != nil {
+			// Auth failure: stop this runner with an actionable message rather
+			// than polling a 401 forever (#1673). The worker keeps running.
+			if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrForbidden) {
+				r.logger.Error(err.Error())
+				return
+			}
 			r.logger.Error("Projection poll error", "projection", r.projection.Config.Name, "error", err)
 			r.sleep(backoff)
 			backoff = minDuration(backoff*2, projectionMaxBackoff)
@@ -354,6 +361,9 @@ func (r *ProjectionRunner) post(method string, body any, result any) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
+		if authErr := authError(resp.StatusCode, fmt.Sprintf("projection %s %s", r.projection.Config.Name, method)); authErr != nil {
+			return authErr
+		}
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}

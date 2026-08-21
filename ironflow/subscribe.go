@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -302,6 +303,11 @@ const (
 type SubscriptionClient struct {
 	config SubscriptionClientConfig
 	logger Logger
+	// apiKey authenticates the /ws upgrade, which is not a public route.
+	// Set from the parent Client by CreateSubscriptionClient, otherwise from
+	// IRONFLOW_API_KEY. SubscriptionClientConfig has no key field yet, so a
+	// standalone client with an explicit key still depends on the env var.
+	apiKey string
 
 	mu               sync.RWMutex
 	writeMu          sync.Mutex // protects websocket writes
@@ -350,6 +356,7 @@ func NewSubscriptionClient(config SubscriptionClientConfig) *SubscriptionClient 
 	return &SubscriptionClient{
 		config:        config,
 		logger:        logger,
+		apiKey:        GetAPIKey(),
 		state:         StateDisconnected,
 		pending:       make(map[string]chan subscribeResult),
 		subscriptions: make(map[string]*Subscription),
@@ -387,7 +394,11 @@ func (c *SubscriptionClient) Connect(ctx context.Context) error {
 	c.state = StateConnecting
 	c.mu.Unlock()
 
-	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, c.config.WSURL, nil)
+	var dialHeader http.Header
+	if c.apiKey != "" {
+		dialHeader = http.Header{"Authorization": []string{"Bearer " + c.apiKey}}
+	}
+	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, c.config.WSURL, dialHeader)
 	if resp != nil && resp.Body != nil {
 		defer func() { _ = resp.Body.Close() }()
 	}
@@ -1122,8 +1133,14 @@ func (c *Client) CreateSubscriptionClient() *SubscriptionClient {
 		wsURL = wsURL + "/ws"
 	}
 
-	return NewSubscriptionClient(SubscriptionClientConfig{
+	sub := NewSubscriptionClient(SubscriptionClientConfig{
 		WSURL:         wsURL,
 		AutoReconnect: true,
 	})
+	// /ws requires auth, so a derived client that dropped the parent's key
+	// connected as an anonymous caller and 401'd.
+	if c.apiKey != "" {
+		sub.apiKey = c.apiKey
+	}
+	return sub
 }

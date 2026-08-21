@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -69,11 +70,73 @@ func newExecutionContext(req *PushRequest) *executionContext {
 	return ctx
 }
 
+// stepIDPartEscaper escapes one segment of a composite step id.
+//
+// Step ids are "{runID}:{name}:{index}", and a parallel branch scope is
+// "{runID}:{parallelName}:{branchIndex}". Unescaped, a top-level step literally
+// named "a:0:b" at index 0 and a step named "b" at index 0 inside parallel "a"
+// branch 0 both render as "run:a:0:b:0" — two different steps sharing one
+// memoization key and one steps row (#1694 item 4).
+//
+// The step id is the memoization key on BOTH sides of the wire, so this must
+// stay byte-identical to escapeStepIdPart in
+// sdk/js/node/src/internal/context.ts. Names containing neither ":" nor a
+// backslash are returned unchanged, which is what keeps ids stable for
+// in-flight runs.
+var stepIDPartEscaper = strings.NewReplacer(`\`, `\\`, `:`, `\:`)
+
+// stepIDNamespaces are the prefixes the SDK itself prepends to a user-supplied
+// name (step.Publish, compensation). They are structure, not user input:
+// escaping their colon would change the id of every existing publish and
+// compensation step, so the first resume after an upgrade would miss the
+// memoized row and re-run the side effect. Only the leaf after the prefix is
+// escaped, which is enough — a branch scope's index segment is always numeric,
+// so the escaped leaf cannot line up with one.
+var stepIDNamespaces = []string{"compensate:", "publish:"}
+
+func escapeStepIDPart(part string) string {
+	for _, ns := range stepIDNamespaces {
+		if after, ok := strings.CutPrefix(part, ns); ok {
+			return ns + stepIDPartEscaper.Replace(after)
+		}
+	}
+	return stepIDPartEscaper.Replace(part)
+}
+
 // generateStepID generates a unique step ID.
 func (c *executionContext) generateStepID(name string) string {
 	index := c.stepCounters[name]
 	c.stepCounters[name] = index + 1
-	return fmt.Sprintf("%s:%s:%d", c.runID, name, index)
+	return c.preferLegacyStepID(
+		fmt.Sprintf("%s:%s:%d", c.runID, escapeStepIDPart(name), index),
+		fmt.Sprintf("%s:%s:%d", c.runID, name, index),
+	)
+}
+
+// preferLegacyStepID bridges the escaping rollout (#1694 item 4).
+//
+// The step id is computed SDK-side, but completedSteps is indexed by whatever id
+// the server sent back — i.e. whatever a PRIOR invocation's SDK wrote. A run that
+// paused at a segment boundary (sleep / wait_for_event / invoke) before this
+// change shipped has rows keyed by the UNESCAPED name. After the deploy the newly
+// escaped id would miss that row and re-execute an already-completed step for
+// real: a double charge or a duplicate publish, once, at the upgrade boundary,
+// for exactly the colon-using names this fix targets.
+//
+// So: use the legacy id only when it is the one actually memoized. Names without
+// ":" or a backslash escape to themselves and never reach the lookup; new runs
+// have no legacy rows, so they always get the escaped id.
+func (c *executionContext) preferLegacyStepID(id, legacy string) string {
+	if legacy == id {
+		return id
+	}
+	if _, ok := c.completedSteps[id]; ok {
+		return id
+	}
+	if _, ok := c.completedSteps[legacy]; ok {
+		return legacy
+	}
+	return id
 }
 
 // isResumingFrom checks if we're resuming from a specific step.
@@ -86,11 +149,12 @@ func (c *executionContext) isResumingFrom(stepID, stepType string) bool {
 
 // createBranchContext creates a scoped context for a parallel branch.
 func (c *executionContext) createBranchContext(parallelName string, branchIndex int) *BranchContext {
-	scopePrefix := fmt.Sprintf("%s:%s:%d", c.runID, parallelName, branchIndex)
+	scopePrefix := fmt.Sprintf("%s:%s:%d", c.runID, escapeStepIDPart(parallelName), branchIndex)
 	return &BranchContext{
-		parent:       c,
-		scopePrefix:  scopePrefix,
-		stepCounters: make(map[string]int),
+		parent:            c,
+		scopePrefix:       scopePrefix,
+		legacyScopePrefix: fmt.Sprintf("%s:%s:%d", c.runID, parallelName, branchIndex),
+		stepCounters:      make(map[string]int),
 	}
 }
 
@@ -98,7 +162,10 @@ func (c *executionContext) createBranchContext(parallelName string, branchIndex 
 func (b *BranchContext) generateStepID(name string) string {
 	index := b.stepCounters[name]
 	b.stepCounters[name] = index + 1
-	return fmt.Sprintf("%s:%s:%d", b.scopePrefix, name, index)
+	return b.parent.preferLegacyStepID(
+		fmt.Sprintf("%s:%s:%d", b.scopePrefix, escapeStepIDPart(name), index),
+		fmt.Sprintf("%s:%s:%d", b.legacyScopePrefix, name, index),
+	)
 }
 
 // getCompletedStep returns a completed step by ID from the parent context.
@@ -139,11 +206,12 @@ func (b *BranchContext) registerCompensation(stepName string, fn func() error) {
 
 // createNestedBranchContext creates a nested branch context for nested parallel execution.
 func (b *BranchContext) createBranchContext(parallelName string, branchIndex int) *BranchContext {
-	scopePrefix := fmt.Sprintf("%s:%s:%d", b.scopePrefix, parallelName, branchIndex)
+	scopePrefix := fmt.Sprintf("%s:%s:%d", b.scopePrefix, escapeStepIDPart(parallelName), branchIndex)
 	return &BranchContext{
-		parent:       b.parent,
-		scopePrefix:  scopePrefix,
-		stepCounters: make(map[string]int),
+		parent:            b.parent,
+		scopePrefix:       scopePrefix,
+		legacyScopePrefix: fmt.Sprintf("%s:%s:%d", b.legacyScopePrefix, parallelName, branchIndex),
+		stepCounters:      make(map[string]int),
 	}
 }
 
@@ -394,6 +462,12 @@ func Publish(ctx Context, topic string, data any) error {
 		req.Header.Set("Content-Type", "application/json")
 		if ctx.exec.apiKey != "" {
 			req.Header.Set("Authorization", "Bearer "+ctx.exec.apiKey)
+		}
+		// Attribute the publish to this run so the flow map can learn
+		// function→topic edges (#1706). This request is hand-rolled rather than
+		// routed through Client.request, so it does not get the header for free.
+		if ctx.exec.runID != "" {
+			req.Header.Set(HeaderRunID, ctx.exec.runID)
 		}
 
 		resp, err := http.DefaultClient.Do(req)

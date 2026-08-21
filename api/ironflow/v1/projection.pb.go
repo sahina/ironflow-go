@@ -2393,8 +2393,14 @@ func (x *QuerySQLProjectionResponse) GetTotalCount() int32 {
 }
 
 type QuerySQLRow struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Values        []string               `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"` // Column values as strings (same order as columns)
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Values []string               `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"` // Column values as strings (same order as columns)
+	// Column values with their SQL type preserved (same order as columns): a
+	// numeric column arrives as a JSON number, a boolean as a boolean, NULL as
+	// null. Populated alongside `values`, which cannot be retyped (FILE-level
+	// buf breaking). Exact-precision types (numeric/decimal) arrive as strings
+	// so no digits are lost to the double that protobuf Value uses for numbers.
+	TypedValues   []*structpb.Value `protobuf:"bytes,2,rep,name=typed_values,json=typedValues,proto3" json:"typed_values,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2432,6 +2438,13 @@ func (*QuerySQLRow) Descriptor() ([]byte, []int) {
 func (x *QuerySQLRow) GetValues() []string {
 	if x != nil {
 		return x.Values
+	}
+	return nil
+}
+
+func (x *QuerySQLRow) GetTypedValues() []*structpb.Value {
+	if x != nil {
+		return x.TypedValues
 	}
 	return nil
 }
@@ -3145,9 +3158,10 @@ const file_ironflow_v1_projection_proto_rawDesc = "" +
 	"\acolumns\x18\x01 \x03(\tR\acolumns\x12,\n" +
 	"\x04rows\x18\x02 \x03(\v2\x18.ironflow.v1.QuerySQLRowR\x04rows\x12\x1f\n" +
 	"\vtotal_count\x18\x03 \x01(\x05R\n" +
-	"totalCount\"%\n" +
+	"totalCount\"`\n" +
 	"\vQuerySQLRow\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\tR\x06values\"\x9e\x01\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values\x129\n" +
+	"\ftyped_values\x18\x02 \x03(\v2\x16.google.protobuf.ValueR\vtypedValues\"\x9e\x01\n" +
 	"\x1cWaitProjectionCatchupRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x17\n" +
 	"\amin_seq\x18\x02 \x01(\x04R\x06minSeq\x123\n" +
@@ -3293,6 +3307,7 @@ var file_ironflow_v1_projection_proto_goTypes = []any{
 	(*structpb.Struct)(nil),       // 48: google.protobuf.Struct
 	(*timestamppb.Timestamp)(nil), // 49: google.protobuf.Timestamp
 	(*durationpb.Duration)(nil),   // 50: google.protobuf.Duration
+	(*structpb.Value)(nil),        // 51: google.protobuf.Value
 }
 var file_ironflow_v1_projection_proto_depIdxs = []int32{
 	48, // 0: ironflow.v1.ProjectionEvent.data:type_name -> google.protobuf.Struct
@@ -3317,60 +3332,61 @@ var file_ironflow_v1_projection_proto_depIdxs = []int32{
 	23, // 19: ironflow.v1.GetRebuildJobResponse.job:type_name -> ironflow.v1.RebuildJob
 	47, // 20: ironflow.v1.CreateSQLProjectionRequest.event_handlers:type_name -> ironflow.v1.CreateSQLProjectionRequest.EventHandlersEntry
 	38, // 21: ironflow.v1.QuerySQLProjectionResponse.rows:type_name -> ironflow.v1.QuerySQLRow
-	50, // 22: ironflow.v1.WaitProjectionCatchupRequest.timeout:type_name -> google.protobuf.Duration
-	41, // 23: ironflow.v1.WaitProjectionCatchupBatchRequest.items:type_name -> ironflow.v1.WaitItem
-	50, // 24: ironflow.v1.WaitProjectionCatchupBatchRequest.timeout:type_name -> google.protobuf.Duration
-	40, // 25: ironflow.v1.WaitItemResult.result:type_name -> ironflow.v1.WaitProjectionCatchupResponse
-	43, // 26: ironflow.v1.WaitProjectionCatchupBatchResponse.results:type_name -> ironflow.v1.WaitItemResult
-	50, // 27: ironflow.v1.WaitForEventRequest.timeout:type_name -> google.protobuf.Duration
-	1,  // 28: ironflow.v1.WaitProjectionCatchupStreamResponse.kind:type_name -> ironflow.v1.WaitStreamFrameKind
-	2,  // 29: ironflow.v1.ProjectionService.RegisterProjection:input_type -> ironflow.v1.RegisterProjectionRequest
-	4,  // 30: ironflow.v1.ProjectionService.UnregisterProjection:input_type -> ironflow.v1.UnregisterProjectionRequest
-	6,  // 31: ironflow.v1.ProjectionService.PollProjectionEvents:input_type -> ironflow.v1.PollProjectionEventsRequest
-	9,  // 32: ironflow.v1.ProjectionService.StreamProjectionEvents:input_type -> ironflow.v1.StreamProjectionEventsRequest
-	10, // 33: ironflow.v1.ProjectionService.SaveProjectionState:input_type -> ironflow.v1.SaveProjectionStateRequest
-	12, // 34: ironflow.v1.ProjectionService.AckProjectionEvents:input_type -> ironflow.v1.AckProjectionEventsRequest
-	14, // 35: ironflow.v1.ProjectionService.GetProjection:input_type -> ironflow.v1.GetProjectionRequest
-	16, // 36: ironflow.v1.ProjectionService.ListProjections:input_type -> ironflow.v1.ListProjectionsRequest
-	19, // 37: ironflow.v1.ProjectionService.GetProjectionStatus:input_type -> ironflow.v1.GetProjectionStatusRequest
-	21, // 38: ironflow.v1.ProjectionService.RebuildProjection:input_type -> ironflow.v1.RebuildProjectionRequest
-	24, // 39: ironflow.v1.ProjectionService.GetRebuildJob:input_type -> ironflow.v1.GetRebuildJobRequest
-	26, // 40: ironflow.v1.ProjectionService.CancelRebuild:input_type -> ironflow.v1.CancelRebuildRequest
-	28, // 41: ironflow.v1.ProjectionService.ReportRebuildProgress:input_type -> ironflow.v1.ReportRebuildProgressRequest
-	30, // 42: ironflow.v1.ProjectionService.PauseProjection:input_type -> ironflow.v1.PauseProjectionRequest
-	32, // 43: ironflow.v1.ProjectionService.ResumeProjection:input_type -> ironflow.v1.ResumeProjectionRequest
-	34, // 44: ironflow.v1.ProjectionService.CreateSQLProjection:input_type -> ironflow.v1.CreateSQLProjectionRequest
-	36, // 45: ironflow.v1.ProjectionService.QuerySQLProjection:input_type -> ironflow.v1.QuerySQLProjectionRequest
-	39, // 46: ironflow.v1.ProjectionService.WaitProjectionCatchup:input_type -> ironflow.v1.WaitProjectionCatchupRequest
-	42, // 47: ironflow.v1.ProjectionService.WaitProjectionCatchupBatch:input_type -> ironflow.v1.WaitProjectionCatchupBatchRequest
-	45, // 48: ironflow.v1.ProjectionService.WaitForEvent:input_type -> ironflow.v1.WaitForEventRequest
-	39, // 49: ironflow.v1.ProjectionService.WaitProjectionCatchupStream:input_type -> ironflow.v1.WaitProjectionCatchupRequest
-	3,  // 50: ironflow.v1.ProjectionService.RegisterProjection:output_type -> ironflow.v1.RegisterProjectionResponse
-	5,  // 51: ironflow.v1.ProjectionService.UnregisterProjection:output_type -> ironflow.v1.UnregisterProjectionResponse
-	8,  // 52: ironflow.v1.ProjectionService.PollProjectionEvents:output_type -> ironflow.v1.PollProjectionEventsResponse
-	7,  // 53: ironflow.v1.ProjectionService.StreamProjectionEvents:output_type -> ironflow.v1.ProjectionEvent
-	11, // 54: ironflow.v1.ProjectionService.SaveProjectionState:output_type -> ironflow.v1.SaveProjectionStateResponse
-	13, // 55: ironflow.v1.ProjectionService.AckProjectionEvents:output_type -> ironflow.v1.AckProjectionEventsResponse
-	15, // 56: ironflow.v1.ProjectionService.GetProjection:output_type -> ironflow.v1.GetProjectionResponse
-	18, // 57: ironflow.v1.ProjectionService.ListProjections:output_type -> ironflow.v1.ListProjectionsResponse
-	20, // 58: ironflow.v1.ProjectionService.GetProjectionStatus:output_type -> ironflow.v1.GetProjectionStatusResponse
-	22, // 59: ironflow.v1.ProjectionService.RebuildProjection:output_type -> ironflow.v1.RebuildProjectionResponse
-	25, // 60: ironflow.v1.ProjectionService.GetRebuildJob:output_type -> ironflow.v1.GetRebuildJobResponse
-	27, // 61: ironflow.v1.ProjectionService.CancelRebuild:output_type -> ironflow.v1.CancelRebuildResponse
-	29, // 62: ironflow.v1.ProjectionService.ReportRebuildProgress:output_type -> ironflow.v1.ReportRebuildProgressResponse
-	31, // 63: ironflow.v1.ProjectionService.PauseProjection:output_type -> ironflow.v1.PauseProjectionResponse
-	33, // 64: ironflow.v1.ProjectionService.ResumeProjection:output_type -> ironflow.v1.ResumeProjectionResponse
-	35, // 65: ironflow.v1.ProjectionService.CreateSQLProjection:output_type -> ironflow.v1.CreateSQLProjectionResponse
-	37, // 66: ironflow.v1.ProjectionService.QuerySQLProjection:output_type -> ironflow.v1.QuerySQLProjectionResponse
-	40, // 67: ironflow.v1.ProjectionService.WaitProjectionCatchup:output_type -> ironflow.v1.WaitProjectionCatchupResponse
-	44, // 68: ironflow.v1.ProjectionService.WaitProjectionCatchupBatch:output_type -> ironflow.v1.WaitProjectionCatchupBatchResponse
-	40, // 69: ironflow.v1.ProjectionService.WaitForEvent:output_type -> ironflow.v1.WaitProjectionCatchupResponse
-	46, // 70: ironflow.v1.ProjectionService.WaitProjectionCatchupStream:output_type -> ironflow.v1.WaitProjectionCatchupStreamResponse
-	50, // [50:71] is the sub-list for method output_type
-	29, // [29:50] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	51, // 22: ironflow.v1.QuerySQLRow.typed_values:type_name -> google.protobuf.Value
+	50, // 23: ironflow.v1.WaitProjectionCatchupRequest.timeout:type_name -> google.protobuf.Duration
+	41, // 24: ironflow.v1.WaitProjectionCatchupBatchRequest.items:type_name -> ironflow.v1.WaitItem
+	50, // 25: ironflow.v1.WaitProjectionCatchupBatchRequest.timeout:type_name -> google.protobuf.Duration
+	40, // 26: ironflow.v1.WaitItemResult.result:type_name -> ironflow.v1.WaitProjectionCatchupResponse
+	43, // 27: ironflow.v1.WaitProjectionCatchupBatchResponse.results:type_name -> ironflow.v1.WaitItemResult
+	50, // 28: ironflow.v1.WaitForEventRequest.timeout:type_name -> google.protobuf.Duration
+	1,  // 29: ironflow.v1.WaitProjectionCatchupStreamResponse.kind:type_name -> ironflow.v1.WaitStreamFrameKind
+	2,  // 30: ironflow.v1.ProjectionService.RegisterProjection:input_type -> ironflow.v1.RegisterProjectionRequest
+	4,  // 31: ironflow.v1.ProjectionService.UnregisterProjection:input_type -> ironflow.v1.UnregisterProjectionRequest
+	6,  // 32: ironflow.v1.ProjectionService.PollProjectionEvents:input_type -> ironflow.v1.PollProjectionEventsRequest
+	9,  // 33: ironflow.v1.ProjectionService.StreamProjectionEvents:input_type -> ironflow.v1.StreamProjectionEventsRequest
+	10, // 34: ironflow.v1.ProjectionService.SaveProjectionState:input_type -> ironflow.v1.SaveProjectionStateRequest
+	12, // 35: ironflow.v1.ProjectionService.AckProjectionEvents:input_type -> ironflow.v1.AckProjectionEventsRequest
+	14, // 36: ironflow.v1.ProjectionService.GetProjection:input_type -> ironflow.v1.GetProjectionRequest
+	16, // 37: ironflow.v1.ProjectionService.ListProjections:input_type -> ironflow.v1.ListProjectionsRequest
+	19, // 38: ironflow.v1.ProjectionService.GetProjectionStatus:input_type -> ironflow.v1.GetProjectionStatusRequest
+	21, // 39: ironflow.v1.ProjectionService.RebuildProjection:input_type -> ironflow.v1.RebuildProjectionRequest
+	24, // 40: ironflow.v1.ProjectionService.GetRebuildJob:input_type -> ironflow.v1.GetRebuildJobRequest
+	26, // 41: ironflow.v1.ProjectionService.CancelRebuild:input_type -> ironflow.v1.CancelRebuildRequest
+	28, // 42: ironflow.v1.ProjectionService.ReportRebuildProgress:input_type -> ironflow.v1.ReportRebuildProgressRequest
+	30, // 43: ironflow.v1.ProjectionService.PauseProjection:input_type -> ironflow.v1.PauseProjectionRequest
+	32, // 44: ironflow.v1.ProjectionService.ResumeProjection:input_type -> ironflow.v1.ResumeProjectionRequest
+	34, // 45: ironflow.v1.ProjectionService.CreateSQLProjection:input_type -> ironflow.v1.CreateSQLProjectionRequest
+	36, // 46: ironflow.v1.ProjectionService.QuerySQLProjection:input_type -> ironflow.v1.QuerySQLProjectionRequest
+	39, // 47: ironflow.v1.ProjectionService.WaitProjectionCatchup:input_type -> ironflow.v1.WaitProjectionCatchupRequest
+	42, // 48: ironflow.v1.ProjectionService.WaitProjectionCatchupBatch:input_type -> ironflow.v1.WaitProjectionCatchupBatchRequest
+	45, // 49: ironflow.v1.ProjectionService.WaitForEvent:input_type -> ironflow.v1.WaitForEventRequest
+	39, // 50: ironflow.v1.ProjectionService.WaitProjectionCatchupStream:input_type -> ironflow.v1.WaitProjectionCatchupRequest
+	3,  // 51: ironflow.v1.ProjectionService.RegisterProjection:output_type -> ironflow.v1.RegisterProjectionResponse
+	5,  // 52: ironflow.v1.ProjectionService.UnregisterProjection:output_type -> ironflow.v1.UnregisterProjectionResponse
+	8,  // 53: ironflow.v1.ProjectionService.PollProjectionEvents:output_type -> ironflow.v1.PollProjectionEventsResponse
+	7,  // 54: ironflow.v1.ProjectionService.StreamProjectionEvents:output_type -> ironflow.v1.ProjectionEvent
+	11, // 55: ironflow.v1.ProjectionService.SaveProjectionState:output_type -> ironflow.v1.SaveProjectionStateResponse
+	13, // 56: ironflow.v1.ProjectionService.AckProjectionEvents:output_type -> ironflow.v1.AckProjectionEventsResponse
+	15, // 57: ironflow.v1.ProjectionService.GetProjection:output_type -> ironflow.v1.GetProjectionResponse
+	18, // 58: ironflow.v1.ProjectionService.ListProjections:output_type -> ironflow.v1.ListProjectionsResponse
+	20, // 59: ironflow.v1.ProjectionService.GetProjectionStatus:output_type -> ironflow.v1.GetProjectionStatusResponse
+	22, // 60: ironflow.v1.ProjectionService.RebuildProjection:output_type -> ironflow.v1.RebuildProjectionResponse
+	25, // 61: ironflow.v1.ProjectionService.GetRebuildJob:output_type -> ironflow.v1.GetRebuildJobResponse
+	27, // 62: ironflow.v1.ProjectionService.CancelRebuild:output_type -> ironflow.v1.CancelRebuildResponse
+	29, // 63: ironflow.v1.ProjectionService.ReportRebuildProgress:output_type -> ironflow.v1.ReportRebuildProgressResponse
+	31, // 64: ironflow.v1.ProjectionService.PauseProjection:output_type -> ironflow.v1.PauseProjectionResponse
+	33, // 65: ironflow.v1.ProjectionService.ResumeProjection:output_type -> ironflow.v1.ResumeProjectionResponse
+	35, // 66: ironflow.v1.ProjectionService.CreateSQLProjection:output_type -> ironflow.v1.CreateSQLProjectionResponse
+	37, // 67: ironflow.v1.ProjectionService.QuerySQLProjection:output_type -> ironflow.v1.QuerySQLProjectionResponse
+	40, // 68: ironflow.v1.ProjectionService.WaitProjectionCatchup:output_type -> ironflow.v1.WaitProjectionCatchupResponse
+	44, // 69: ironflow.v1.ProjectionService.WaitProjectionCatchupBatch:output_type -> ironflow.v1.WaitProjectionCatchupBatchResponse
+	40, // 70: ironflow.v1.ProjectionService.WaitForEvent:output_type -> ironflow.v1.WaitProjectionCatchupResponse
+	46, // 71: ironflow.v1.ProjectionService.WaitProjectionCatchupStream:output_type -> ironflow.v1.WaitProjectionCatchupStreamResponse
+	51, // [51:72] is the sub-list for method output_type
+	30, // [30:51] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_projection_proto_init() }

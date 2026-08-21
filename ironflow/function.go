@@ -2,11 +2,53 @@ package ironflow
 
 import (
 	"fmt"
-	"regexp"
+	"strings"
 	"time"
+	"unicode"
 )
 
-var functionIDPattern = regexp.MustCompile(`^[a-zA-Z0-9-_]+$`)
+// validateFunctionID mirrors the server's pubsub.ValidateFunctionID (#1750).
+// The ID goes verbatim into the NATS subject system.function.{id}.{event}, so
+// it has to survive there as a literal: no wildcards, no empty segment, no
+// whitespace or control character.
+//
+// Duplicated rather than imported because sdk/go is its own module and must not
+// pull in the server. Kept in the same rule order so a divergence is obvious.
+//
+// This is LOOSER than the ^[a-zA-Z0-9-_]+$ pattern it replaces. Dots and
+// unicode are legal server-side, so the old pattern panicked on IDs the server
+// accepts — which is the divergence #1750's review flagged, not a safety net.
+//
+// Length is deliberately NOT bounded here. The server's cap is derived from its
+// own subject framing (MaxTopicLength minus the leaf it builds); a copy would
+// drift silently. An oversize ID gets a precise 400 from RegisterFunction.
+//
+// That IS an asymmetry, and it is a judgement call rather than an oversight:
+// the argument for checking whitespace locally — a server rejection aborts the
+// whole worker's registration loop, so failing at declaration is cheaper —
+// applies just as well to length. A 300-byte ID sails past this and takes the
+// worker down at registration. The drift risk of a copied constant is judged
+// the worse of the two, and the JS SDK now surfaces the server's reason
+// verbatim (internal/error-detail.ts), so the rejection at least says why.
+func validateFunctionID(id string) error {
+	if id == "" {
+		return fmt.Errorf("function ID is required")
+	}
+	if strings.ContainsAny(id, "*>") {
+		return fmt.Errorf("invalid function ID: %q (may not contain the NATS wildcards * or >)", id)
+	}
+	for _, segment := range strings.Split(id, ".") {
+		if segment == "" {
+			return fmt.Errorf("invalid function ID: %q (has an empty segment)", id)
+		}
+		for _, r := range segment {
+			if unicode.IsControl(r) || unicode.IsSpace(r) {
+				return fmt.Errorf("invalid function ID: %q (has whitespace or a control character)", id)
+			}
+		}
+	}
+	return nil
+}
 
 // CreateFunction creates a new Ironflow workflow function.
 //
@@ -46,12 +88,8 @@ func CreateFunction(config FunctionConfig, handler FunctionHandler) Function {
 
 // validateFunctionConfig validates the function configuration.
 func validateFunctionConfig(config FunctionConfig) error {
-	if config.ID == "" {
-		return fmt.Errorf("function ID is required")
-	}
-
-	if !functionIDPattern.MatchString(config.ID) {
-		return fmt.Errorf("invalid function ID: %q (must contain only alphanumeric, hyphens, underscores)", config.ID)
+	if err := validateFunctionID(config.ID); err != nil {
+		return err
 	}
 
 	// Triggers are optional — functions without triggers can be called via Invoke/InvokeAsync

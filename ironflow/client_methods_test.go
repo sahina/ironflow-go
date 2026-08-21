@@ -444,6 +444,86 @@ func TestListFunctions(t *testing.T) {
 }
 
 // ============================================================================
+// NewClient API key resolution
+// ============================================================================
+
+func TestNewClientAPIKey(t *testing.T) {
+	newAuthEchoServer := func(auth *string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			*auth = r.Header.Get("Authorization")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"functions":[]}`))
+		}))
+	}
+
+	t.Run("falls back to IRONFLOW_API_KEY", func(t *testing.T) {
+		t.Setenv(EnvAPIKey, "env-key")
+		var receivedAuth string
+		server := newAuthEchoServer(&receivedAuth)
+		defer server.Close()
+
+		client := NewClient(ClientConfig{ServerURL: server.URL, Logger: NewNoopLogger()})
+		if _, err := client.ListFunctions(context.Background()); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		if receivedAuth != "Bearer env-key" {
+			t.Errorf("expected 'Bearer env-key', got '%s'", receivedAuth)
+		}
+	})
+
+	t.Run("explicit APIKey wins over the env var", func(t *testing.T) {
+		t.Setenv(EnvAPIKey, "env-key")
+		var receivedAuth string
+		server := newAuthEchoServer(&receivedAuth)
+		defer server.Close()
+
+		client := NewClient(ClientConfig{ServerURL: server.URL, APIKey: "explicit-key", Logger: NewNoopLogger()})
+		if _, err := client.ListFunctions(context.Background()); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		if receivedAuth != "Bearer explicit-key" {
+			t.Errorf("expected 'Bearer explicit-key', got '%s'", receivedAuth)
+		}
+	})
+
+	// Empty means "not configured", not "force anonymous". JS matches this via
+	// `||` rather than `??`; pinned here so a later `!= ""` edit is caught.
+	t.Run("an explicitly empty APIKey still falls back", func(t *testing.T) {
+		t.Setenv(EnvAPIKey, "env-key")
+		var receivedAuth string
+		server := newAuthEchoServer(&receivedAuth)
+		defer server.Close()
+
+		client := NewClient(ClientConfig{ServerURL: server.URL, APIKey: "", Logger: NewNoopLogger()})
+		if _, err := client.ListFunctions(context.Background()); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		if receivedAuth != "Bearer env-key" {
+			t.Errorf("expected 'Bearer env-key', got '%s'", receivedAuth)
+		}
+	})
+
+	t.Run("sends no auth header when neither is set", func(t *testing.T) {
+		t.Setenv(EnvAPIKey, "")
+		var receivedAuth string
+		server := newAuthEchoServer(&receivedAuth)
+		defer server.Close()
+
+		client := NewClient(ClientConfig{ServerURL: server.URL, Logger: NewNoopLogger()})
+		if _, err := client.ListFunctions(context.Background()); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		if receivedAuth != "" {
+			t.Errorf("expected no Authorization header, got '%s'", receivedAuth)
+		}
+	})
+}
+
+// ============================================================================
 // Emit option tests (regression: verifies options formerly on Trigger)
 // ============================================================================
 

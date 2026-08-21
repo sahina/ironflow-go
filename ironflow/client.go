@@ -56,7 +56,8 @@ type ClientConfig struct {
 	// ServerURL is the Ironflow server URL.
 	ServerURL string
 
-	// APIKey is the API key for authentication (optional for local dev).
+	// APIKey is the API key for authentication. If empty, falls back to the
+	// IRONFLOW_API_KEY env var. Optional for local dev.
 	APIKey string
 
 	// Timeout is the request timeout (default: 30s).
@@ -109,6 +110,11 @@ func NewClient(config ClientConfig) *Client {
 	serverURL := config.ServerURL
 	if serverURL == "" {
 		serverURL = GetServerURL()
+	}
+
+	apiKey := config.APIKey
+	if apiKey == "" {
+		apiKey = GetAPIKey()
 	}
 
 	timeout := config.Timeout
@@ -172,7 +178,7 @@ func NewClient(config ClientConfig) *Client {
 
 	return &Client{
 		serverURL:   serverURL,
-		apiKey:      config.APIKey,
+		apiKey:      apiKey,
 		timeout:     timeout,
 		httpClient:  httpClient,
 		retryConfig: retryConfig,
@@ -1810,10 +1816,13 @@ func (c *Client) executeRequest(ctx context.Context, method, url string, bodyByt
 		switch resp.StatusCode {
 		case http.StatusUnauthorized:
 			ironflowErr.Cause = ErrUnauthorized
+			// Name the env var and the key file, not just the status (#1673).
+			ironflowErr.Message += " — " + AuthHelp
 		case http.StatusPaymentRequired:
 			ironflowErr.Cause = ErrEnterpriseLicenseRequired
 		case http.StatusForbidden:
 			ironflowErr.Cause = ErrForbidden
+			ironflowErr.Message += " — " + AuthHelp
 		}
 
 		// Parse Retry-After header if present
