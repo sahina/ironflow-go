@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -533,6 +535,18 @@ type ParallelOptions struct {
 	// - "failFast": First failure cancels pending branches and returns immediately
 	// - "allSettled": All branches complete, errors are returned in results
 	OnError string
+
+	// SkipScopedClientCheck silences the unscoped-branch warning for a fan-out
+	// that deliberately has nothing to memoize — a pure in-memory transform run
+	// through Map only for its concurrency limit.
+	//
+	// It suppresses the diagnostic only; nothing about durability changes
+	// either way. This is the Go spelling of the JS SDK's
+	// `expectScopedClient: false` (#1671). The polarity is inverted because Go
+	// struct fields zero-value to false: an `ExpectScopedClient bool` would
+	// default every existing caller into the opt-out and the warning would
+	// never fire.
+	SkipScopedClientCheck bool
 }
 
 // BranchContext is a scoped execution context for a parallel branch.
@@ -551,6 +565,29 @@ type BranchContext struct {
 
 	// stepCounters tracks step invocation counts for this branch
 	stepCounters map[string]int
+
+	// stepCountersMu guards stepCounters.
+	//
+	// A branch context is NOT goroutine-confined in practice: the misuse this
+	// warning exists to catch is a callback ignoring the scope it was handed,
+	// and in a NESTED fan-out that means N inner goroutines all reaching for
+	// the same ENCLOSING *BranchContext. Unguarded that is a concurrent map
+	// write — a runtime throw that kills the worker before the diagnostic can
+	// fire (#1792).
+	stepCountersMu sync.Mutex
+
+	// scopedClientUsed is true once this branch used the scope it was handed —
+	// claimed a step ID through it, opened a nested parallel/map on it, or
+	// registered a compensation through it.
+	//
+	// Deliberately narrower than "was durable": a callback that reaches for the
+	// ENCLOSING function's context still records real steps, they just land
+	// outside this branch's scope. #1792 flags both, so this tracks use of the
+	// scope, not durability.
+	//
+	// atomic.Bool, not a plain bool: same nested-misuse path writes it from
+	// several goroutines at once.
+	scopedClientUsed atomic.Bool
 }
 
 // ============================================================================

@@ -66,6 +66,7 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 		completedSteps: make(map[string]*CompletedStep),
 		executedSteps:  make([]*StepResult, 0),
 		stepReporter:   e.stepReporter,
+		logger:         e.logger,
 	}
 
 	for _, step := range job.CompletedSteps {

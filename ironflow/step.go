@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,10 +24,17 @@ type compensationEntry struct {
 
 // executionContext manages step execution state.
 type executionContext struct {
-	runID           string
-	functionID      string
-	attempt         int
-	stepCounters    map[string]int
+	runID        string
+	functionID   string
+	attempt      int
+	stepCounters map[string]int
+	// stepCountersMu guards stepCounters. Every branch of a Parallel/Map that
+	// reaches for the ENCLOSING context — rather than the *BranchContext it was
+	// handed — lands in generateStepID concurrently. Unguarded that is a
+	// concurrent map write, which is a runtime throw, not a recoverable panic
+	// (#1792). BranchContext.stepCounters carries its own lock for the same
+	// reason — see the note on BranchContext.stepCountersMu.
+	stepCountersMu  sync.Mutex
 	completedSteps  map[string]*CompletedStep
 	executedSteps   []*StepResult
 	executedStepsMu sync.Mutex
@@ -47,6 +55,54 @@ type executionContext struct {
 	serverURL string
 	// apiKey is the API key for authenticated requests from steps.
 	apiKey string
+	// logger receives SDK-level diagnostics raised from inside a step, such as
+	// the #1671/#1792 unscoped-branch warning. Nil in push mode (serve.go has
+	// no logger to give) and in tests; warnLogger falls back to the default.
+	logger Logger
+	// fanOutDepth is the number of Parallel/Map calls currently in flight on
+	// this run. While it is > 0 the handler goroutine is parked in wg.Wait(),
+	// so the ONLY goroutines able to claim a root step id are branch
+	// goroutines — which makes a root claim during a fan-out an unambiguous
+	// signal that a callback reached for the enclosing context (#1792).
+	fanOutDepth atomic.Int64
+
+	// enclosingClaims counts root step ids claimed while fanOutDepth > 0.
+	// Parallel snapshots it before spawning and compares after wg.Wait(); any
+	// increase means at least one branch bypassed the scope it was handed.
+	//
+	// This is the detector for the MIXED shape, which the all-inert gate in
+	// warnUnscopedBranches cannot see: a branch that calls both Run(ctx, ...)
+	// and RunWithBranch(b, ...) marks itself scoped, so unscoped == 0 and that
+	// gate stays silent — while the Run(ctx, ...) call quietly draws its index
+	// from the shared root counter in goroutine-scheduling order. Measured on
+	// the pre-fix tree: 25 distinct step-id -> output mappings across 30
+	// identical runs, 0 warnings. On resume one branch reads another's output.
+	enclosingClaims atomic.Int64
+
+	// warnedUnscoped dedupes the unscoped-branch warning to one line per
+	// distinct parallel/map name per run. Without it a nested fan-out emits one
+	// identical line per outer item, which is how a warning stops being read.
+	//
+	// sync.Map rather than a map+mutex because its zero value is usable: the
+	// existing tests build &executionContext{...} literals directly, and a nil
+	// plain map would panic on first write.
+	warnedUnscoped sync.Map
+}
+
+// warnLogger returns the logger SDK diagnostics should go to.
+func (c *executionContext) warnLogger() Logger {
+	if c.logger != nil {
+		return c.logger
+	}
+	return NewLogger(LoggerConfig{})
+}
+
+// shouldWarnUnscoped reports whether this is the first unscoped-branch warning
+// for `name` in this run, and records it. Keyed by name rather than a single
+// per-run flag so two genuinely different call sites still both report.
+func (c *executionContext) shouldWarnUnscoped(name string) bool {
+	_, loaded := c.warnedUnscoped.LoadOrStore(name, struct{}{})
+	return !loaded
 }
 
 // newExecutionContext creates a new execution context from a push request.
@@ -105,8 +161,15 @@ func escapeStepIDPart(part string) string {
 
 // generateStepID generates a unique step ID.
 func (c *executionContext) generateStepID(name string) string {
+	// One atomic load per step on the hot path. Only a claim made DURING a
+	// fan-out is recorded; steps before or after one are ordinary root steps.
+	if c.fanOutDepth.Load() > 0 {
+		c.enclosingClaims.Add(1)
+	}
+	c.stepCountersMu.Lock()
 	index := c.stepCounters[name]
 	c.stepCounters[name] = index + 1
+	c.stepCountersMu.Unlock()
 	return c.preferLegacyStepID(
 		fmt.Sprintf("%s:%s:%d", c.runID, escapeStepIDPart(name), index),
 		fmt.Sprintf("%s:%s:%d", c.runID, name, index),
@@ -160,8 +223,10 @@ func (c *executionContext) createBranchContext(parallelName string, branchIndex 
 
 // generateStepID generates a unique step ID with the branch scope prefix.
 func (b *BranchContext) generateStepID(name string) string {
+	b.stepCountersMu.Lock()
 	index := b.stepCounters[name]
 	b.stepCounters[name] = index + 1
+	b.stepCountersMu.Unlock()
 	return b.parent.preferLegacyStepID(
 		fmt.Sprintf("%s:%s:%d", b.scopePrefix, escapeStepIDPart(name), index),
 		fmt.Sprintf("%s:%s:%d", b.legacyScopePrefix, name, index),
@@ -197,6 +262,21 @@ func (b *BranchContext) getResumeData() any {
 // markResumeHandled marks the resume as handled.
 func (b *BranchContext) markResumeHandled() {
 	b.parent.resumeHandled = true
+}
+
+// execution returns the run-wide execution context behind this branch scope.
+func (b *BranchContext) execution() *executionContext {
+	return b.parent
+}
+
+// markScopedUsed records that this branch used the scope it was handed.
+//
+// Called at the ENTRY of every branch-scoped primitive, deliberately ahead of
+// their test-interceptor early returns. Marking inside generateStepID instead
+// looked equivalent but was skipped whenever an interceptor was installed, so
+// correct code warned under ironflowtest (#1792).
+func (b *BranchContext) markScopedUsed() {
+	b.scopedClientUsed.Store(true)
 }
 
 // registerCompensation delegates to the parent context.
@@ -437,58 +517,91 @@ func Compensate(ctx Context, stepName string, fn func() error) {
 //	    "orderId": event.Data.OrderID,
 //	})
 func Publish(ctx Context, topic string, data any) error {
-	_, err := Run[any](ctx, "publish:"+topic, func() (any, error) {
-		serverURL := ctx.exec.serverURL
-		if serverURL == "" {
-			return nil, fmt.Errorf("server URL not configured for publish step")
-		}
-
-		reqBody := map[string]any{
-			"topic": topic,
-			"data":  data,
-		}
-		bodyJSON, err := json.Marshal(reqBody)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal publish request: %w", err)
-		}
-
-		publishCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		req, err := http.NewRequestWithContext(publishCtx, http.MethodPost, serverURL+"/ironflow.v1.PubSubService/Publish", bytes.NewReader(bodyJSON))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		if ctx.exec.apiKey != "" {
-			req.Header.Set("Authorization", "Bearer "+ctx.exec.apiKey)
-		}
-		// Attribute the publish to this run so the flow map can learn
-		// function→topic edges (#1706). This request is hand-rolled rather than
-		// routed through Client.request, so it does not get the header for free.
-		if ctx.exec.runID != "" {
-			req.Header.Set(HeaderRunID, ctx.exec.runID)
-		}
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return nil, fmt.Errorf("publish failed: %s %s", resp.Status, string(body))
-		}
-
-		var result map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return nil, fmt.Errorf("failed to decode publish response: %w", err)
-		}
-
-		return result, nil
+	_, err := Run[any](ctx, publishStepName(topic), func() (any, error) {
+		return doPublish(ctx.exec, topic, data)
 	})
 	return err
+}
+
+// PublishWithBranch is the branch-scoped equivalent of Publish.
+//
+// WHY: Publish is a durable step under the hood, named "publish:{topic}". From
+// inside a branch the root-scoped form recorded that step at the function's top
+// level, drawing its index from the run-wide counter. N branches publishing to
+// the SAME topic therefore get DISTINCT ids — but which branch gets ":0"
+// depends on goroutine scheduling, so on resume the assignment can flip and a
+// branch reads another branch's memoized publish result (#1792). Same defect as
+// InvokeWithBranch; see there.
+//
+// The "publish:" prefix is a stepIDNamespaces entry, so it is deliberately NOT
+// escaped — a topic without a colon still yields legacy == id and takes
+// preferLegacyStepID's early-return path, same as a plain step name.
+func PublishWithBranch(b *BranchContext, topic string, data any) error {
+	_, err := RunWithBranch[any](b, publishStepName(topic), func() (any, error) {
+		return doPublish(b.parent, topic, data)
+	})
+	return err
+}
+
+// publishStepName is the step name a publish is memoized under. One definition
+// so the root and branch forms cannot drift apart.
+func publishStepName(topic string) string {
+	return "publish:" + topic
+}
+
+// doPublish performs the publish HTTP call. It reads only run-wide config, so
+// it is identical at the root and inside a branch; the scoping lives entirely
+// in which Run variant wraps it.
+func doPublish(exec *executionContext, topic string, data any) (any, error) {
+	serverURL := exec.serverURL
+	if serverURL == "" {
+		return nil, fmt.Errorf("server URL not configured for publish step")
+	}
+
+	reqBody := map[string]any{
+		"topic": topic,
+		"data":  data,
+	}
+	bodyJSON, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal publish request: %w", err)
+	}
+
+	publishCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(publishCtx, http.MethodPost, serverURL+"/ironflow.v1.PubSubService/Publish", bytes.NewReader(bodyJSON))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if exec.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+exec.apiKey)
+	}
+	// Attribute the publish to this run so the flow map can learn
+	// function→topic edges (#1706). This request is hand-rolled rather than
+	// routed through Client.request, so it does not get the header for free.
+	if exec.runID != "" {
+		req.Header.Set(HeaderRunID, exec.runID)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("publish failed: %s %s", resp.Status, string(body))
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode publish response: %w", err)
+	}
+
+	return result, nil
 }
 
 // registerCompensation appends a compensation entry to the registry.
@@ -616,7 +729,25 @@ func Sleep(ctx Context, name string, duration time.Duration) error {
 //
 //	err := ironflow.SleepUntil(ctx, "wait-until-midnight", midnight)
 func SleepUntil(ctx Context, name string, until time.Time) error {
-	exec := ctx.exec
+	return sleepUntilImpl(ctx, name, until)
+}
+
+// SleepUntilWithBranch is the branch-scoped equivalent of SleepUntil.
+//
+// WHY: SleepWithBranch already existed but SleepUntilWithBranch did not, so a
+// branch could sleep for a duration durably but not until a wall-clock time —
+// the latter silently took its step ID from the enclosing function instead
+// (#1792).
+func SleepUntilWithBranch(b *BranchContext, name string, until time.Time) error {
+	return sleepUntilImpl(b, name, until)
+}
+
+// sleepUntilImpl is the shared body. It takes its step ID from whichever scope
+// it was handed, so the same code is correct at the root and inside a branch.
+func sleepUntilImpl(sc StepContext, name string, until time.Time) error {
+	sc.markScopedUsed()
+
+	exec := sc.execution()
 
 	if exec.testInterceptor != nil {
 		exec.testInterceptor.SleepStep(name)
@@ -624,16 +755,16 @@ func SleepUntil(ctx Context, name string, until time.Time) error {
 		return nil
 	}
 
-	stepID := exec.generateStepID(name)
+	stepID := sc.generateStepID(name)
 
 	// Check if resuming from this sleep
-	if exec.isResumingFrom(stepID, "sleep") {
-		exec.resumeHandled = true
+	if sc.isResumingFrom(stepID, "sleep") {
+		sc.markResumeHandled()
 		return nil
 	}
 
 	// Check if step is already completed (memoized)
-	if completed, ok := exec.completedSteps[stepID]; ok && completed.Status == "completed" {
+	if completed, ok := sc.getCompletedStep(stepID); ok && completed.Status == "completed" {
 		return nil
 	}
 
@@ -727,17 +858,36 @@ func WaitForEvent[T any](ctx Context, name string, filter EventFilter) (Event, e
 //	    "amount":     orderData.Total,
 //	})
 func Invoke[T any](ctx Context, functionID string, input any, opts ...InvokeOptions) (T, error) {
+	return invokeImpl[T](ctx, functionID, input, opts...)
+}
+
+// InvokeWithBranch is the branch-scoped equivalent of Invoke.
+//
+// WHY: Invoke keys its step ID on the functionID, not on a name you choose. At
+// the root, two branches invoking the SAME function got "{runID}:{fnID}:0" and
+// "{runID}:{fnID}:1" — but which branch got which depended on goroutine
+// scheduling, so on resume the assignment could flip and a branch would read
+// the other branch's memoized output. Scoping the ID to the branch removes the
+// shared counter, and with it the nondeterminism (#1792).
+func InvokeWithBranch[T any](b *BranchContext, functionID string, input any, opts ...InvokeOptions) (T, error) {
+	return invokeImpl[T](b, functionID, input, opts...)
+}
+
+// invokeImpl is the shared body — see sleepUntilImpl for why this seam exists.
+func invokeImpl[T any](sc StepContext, functionID string, input any, opts ...InvokeOptions) (T, error) {
+	sc.markScopedUsed()
+
 	var zero T
-	exec := ctx.exec
+	exec := sc.execution()
 
 	if exec.testInterceptor != nil {
 		return testInvokeStep[T](exec, functionID, input)
 	}
 
-	stepID := exec.generateStepID(functionID)
+	stepID := sc.generateStepID(functionID)
 
 	// Check memoization
-	if completed, ok := exec.completedSteps[stepID]; ok {
+	if completed, ok := sc.getCompletedStep(stepID); ok {
 		switch completed.Status {
 		case "completed":
 			outputBytes, err := json.Marshal(completed.Output)
@@ -781,7 +931,20 @@ func Invoke[T any](ctx Context, functionID string, input any, opts ...InvokeOpti
 //	    "userID": order.UserID,
 //	})
 func InvokeAsync(ctx Context, functionID string, input any) (InvokeAsyncResult, error) {
-	exec := ctx.exec
+	return invokeAsyncImpl(ctx, functionID, input)
+}
+
+// InvokeAsyncWithBranch is the branch-scoped equivalent of InvokeAsync.
+// See InvokeWithBranch for why the root-scoped form is unsafe in a branch.
+func InvokeAsyncWithBranch(b *BranchContext, functionID string, input any) (InvokeAsyncResult, error) {
+	return invokeAsyncImpl(b, functionID, input)
+}
+
+// invokeAsyncImpl is the shared body — see sleepUntilImpl for why this seam exists.
+func invokeAsyncImpl(sc StepContext, functionID string, input any) (InvokeAsyncResult, error) {
+	sc.markScopedUsed()
+
+	exec := sc.execution()
 
 	if exec.testInterceptor != nil {
 		result, err := exec.testInterceptor.InvokeAsyncStep(functionID, input)
@@ -792,10 +955,10 @@ func InvokeAsync(ctx Context, functionID string, input any) (InvokeAsyncResult, 
 		return result, nil
 	}
 
-	stepID := exec.generateStepID(functionID)
+	stepID := sc.generateStepID(functionID)
 
 	// Check memoization
-	if completed, ok := exec.completedSteps[stepID]; ok {
+	if completed, ok := sc.getCompletedStep(stepID); ok {
 		switch completed.Status {
 		case "completed":
 			outputBytes, err := json.Marshal(completed.Output)

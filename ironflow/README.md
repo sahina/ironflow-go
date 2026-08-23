@@ -283,12 +283,17 @@ results, err := ironflow.Parallel(ctx, "checks", branches, ironflow.ParallelOpti
 })
 ```
 
-Branch-scoped variants (the complete set -- `SleepUntil`, `Map`, `Invoke`, `InvokeAsync`, and `Publish` have no branch variant):
+Branch-scoped variants (the complete set -- every step primitive has one):
 - `RunWithBranch[T](b, name, fn, opts...)`
 - `SleepWithBranch(b, name, duration)`
+- `SleepUntilWithBranch(b, name, until)`
 - `WaitForEventWithBranch(b, name, filter)`
 - `CompensateInBranch(b, stepName, fn)`
 - `ParallelWithBranch[T](b, name, branches, opts...)` (nested parallel)
+- `MapWithBranch[T, R](b, name, items, fn, opts...)`
+- `InvokeWithBranch[T](b, functionID, input, opts...)`
+- `InvokeAsyncWithBranch(b, functionID, input)`
+- `PublishWithBranch(b, topic, data)`
 
 ### Map -- Parallel Map Over Items
 
@@ -1308,7 +1313,7 @@ errors.Is(err, ironflow.ErrRunNotFound)
 errors.Is(err, ironflow.ErrTimeout)
 errors.Is(err, ironflow.ErrUnauthorized)           // HTTP 401
 errors.Is(err, ironflow.ErrForbidden)               // HTTP 403
-errors.Is(err, ironflow.ErrEnterpriseLicenseRequired) // HTTP 402
+errors.Is(err, ironflow.ErrEnterpriseLicenseRequired) // HTTP 402 (legacy; single-tier build never returns it — ADR 0015)
 errors.Is(err, ironflow.ErrInvalidSignature)
 errors.Is(err, ironflow.ErrSignatureExpired)
 errors.Is(err, ironflow.ErrMissingSignature)
