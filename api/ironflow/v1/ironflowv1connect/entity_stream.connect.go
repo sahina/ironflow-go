@@ -88,24 +88,28 @@ func NewEntityStreamServiceClient(httpClient connect.HTTPClient, baseURL string,
 			httpClient,
 			baseURL+EntityStreamServiceReadStreamProcedure,
 			connect.WithSchema(entityStreamServiceMethods.ByName("ReadStream")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		getStreamInfo: connect.NewClient[v1.GetStreamInfoRequest, v1.GetStreamInfoResponse](
 			httpClient,
 			baseURL+EntityStreamServiceGetStreamInfoProcedure,
 			connect.WithSchema(entityStreamServiceMethods.ByName("GetStreamInfo")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		listStreams: connect.NewClient[v1.ListStreamsRequest, v1.ListStreamsResponse](
 			httpClient,
 			baseURL+EntityStreamServiceListStreamsProcedure,
 			connect.WithSchema(entityStreamServiceMethods.ByName("ListStreams")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		getEntityHistory: connect.NewClient[v1.GetEntityHistoryRequest, v1.GetEntityHistoryResponse](
 			httpClient,
 			baseURL+EntityStreamServiceGetEntityHistoryProcedure,
 			connect.WithSchema(entityStreamServiceMethods.ByName("GetEntityHistory")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		createSnapshot: connect.NewClient[v1.CreateSnapshotRequest, v1.CreateSnapshotResponse](
@@ -118,6 +122,7 @@ func NewEntityStreamServiceClient(httpClient connect.HTTPClient, baseURL string,
 			httpClient,
 			baseURL+EntityStreamServiceGetSnapshotProcedure,
 			connect.WithSchema(entityStreamServiceMethods.ByName("GetSnapshot")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -197,24 +202,28 @@ func NewEntityStreamServiceHandler(svc EntityStreamServiceHandler, opts ...conne
 		EntityStreamServiceReadStreamProcedure,
 		svc.ReadStream,
 		connect.WithSchema(entityStreamServiceMethods.ByName("ReadStream")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	entityStreamServiceGetStreamInfoHandler := connect.NewUnaryHandler(
 		EntityStreamServiceGetStreamInfoProcedure,
 		svc.GetStreamInfo,
 		connect.WithSchema(entityStreamServiceMethods.ByName("GetStreamInfo")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	entityStreamServiceListStreamsHandler := connect.NewUnaryHandler(
 		EntityStreamServiceListStreamsProcedure,
 		svc.ListStreams,
 		connect.WithSchema(entityStreamServiceMethods.ByName("ListStreams")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	entityStreamServiceGetEntityHistoryHandler := connect.NewUnaryHandler(
 		EntityStreamServiceGetEntityHistoryProcedure,
 		svc.GetEntityHistory,
 		connect.WithSchema(entityStreamServiceMethods.ByName("GetEntityHistory")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	entityStreamServiceCreateSnapshotHandler := connect.NewUnaryHandler(
@@ -227,6 +236,7 @@ func NewEntityStreamServiceHandler(svc EntityStreamServiceHandler, opts ...conne
 		EntityStreamServiceGetSnapshotProcedure,
 		svc.GetSnapshot,
 		connect.WithSchema(entityStreamServiceMethods.ByName("GetSnapshot")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/ironflow.v1.EntityStreamService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

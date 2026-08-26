@@ -80,12 +80,14 @@ func NewEventSchemaServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			httpClient,
 			baseURL+EventSchemaServiceGetSchemaProcedure,
 			connect.WithSchema(eventSchemaServiceMethods.ByName("GetSchema")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		listSchemas: connect.NewClient[v1.ListSchemasRequest, v1.ListSchemasResponse](
 			httpClient,
 			baseURL+EventSchemaServiceListSchemasProcedure,
 			connect.WithSchema(eventSchemaServiceMethods.ByName("ListSchemas")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		deleteSchema: connect.NewClient[v1.DeleteSchemaRequest, v1.DeleteSchemaResponse](
@@ -98,6 +100,7 @@ func NewEventSchemaServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			httpClient,
 			baseURL+EventSchemaServiceTestUpcastProcedure,
 			connect.WithSchema(eventSchemaServiceMethods.ByName("TestUpcast")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -163,12 +166,14 @@ func NewEventSchemaServiceHandler(svc EventSchemaServiceHandler, opts ...connect
 		EventSchemaServiceGetSchemaProcedure,
 		svc.GetSchema,
 		connect.WithSchema(eventSchemaServiceMethods.ByName("GetSchema")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	eventSchemaServiceListSchemasHandler := connect.NewUnaryHandler(
 		EventSchemaServiceListSchemasProcedure,
 		svc.ListSchemas,
 		connect.WithSchema(eventSchemaServiceMethods.ByName("ListSchemas")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	eventSchemaServiceDeleteSchemaHandler := connect.NewUnaryHandler(
@@ -181,6 +186,7 @@ func NewEventSchemaServiceHandler(svc EventSchemaServiceHandler, opts ...connect
 		EventSchemaServiceTestUpcastProcedure,
 		svc.TestUpcast,
 		connect.WithSchema(eventSchemaServiceMethods.ByName("TestUpcast")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/ironflow.v1.EventSchemaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

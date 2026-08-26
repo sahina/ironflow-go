@@ -468,10 +468,10 @@ const file_ironflow_v1_audit_proto_rawDesc = "" +
 	"\vtotal_count\x18\x02 \x01(\x05R\n" +
 	"totalCount\x12\x1f\n" +
 	"\vnext_cursor\x18\x03 \x01(\tR\n" +
-	"nextCursor2\xca\x01\n" +
-	"\fAuditService\x12V\n" +
-	"\rGetAuditTrail\x12!.ironflow.v1.GetAuditTrailRequest\x1a\".ironflow.v1.GetAuditTrailResponse\x12b\n" +
-	"\x11GetAuthAuditTrail\x12%.ironflow.v1.GetAuthAuditTrailRequest\x1a&.ironflow.v1.GetAuthAuditTrailResponseB:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
+	"nextCursor2\xd4\x01\n" +
+	"\fAuditService\x12[\n" +
+	"\rGetAuditTrail\x12!.ironflow.v1.GetAuditTrailRequest\x1a\".ironflow.v1.GetAuditTrailResponse\"\x03\x90\x02\x01\x12g\n" +
+	"\x11GetAuthAuditTrail\x12%.ironflow.v1.GetAuthAuditTrailRequest\x1a&.ironflow.v1.GetAuthAuditTrailResponse\"\x03\x90\x02\x01B:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
 
 var (
 	file_ironflow_v1_audit_proto_rawDescOnce sync.Once

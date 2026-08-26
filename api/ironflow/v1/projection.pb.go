@@ -3217,25 +3217,25 @@ const file_ironflow_v1_projection_proto_rawDesc = "" +
 	"\"WAIT_STREAM_FRAME_KIND_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fWAIT_STREAM_FRAME_KIND_PROGRESS\x10\x01\x12$\n" +
 	" WAIT_STREAM_FRAME_KIND_HEARTBEAT\x10\x02\x12\x1f\n" +
-	"\x1bWAIT_STREAM_FRAME_KIND_DONE\x10\x032\x8d\x11\n" +
+	"\x1bWAIT_STREAM_FRAME_KIND_DONE\x10\x032\xa6\x11\n" +
 	"\x11ProjectionService\x12e\n" +
 	"\x12RegisterProjection\x12&.ironflow.v1.RegisterProjectionRequest\x1a'.ironflow.v1.RegisterProjectionResponse\x12k\n" +
 	"\x14UnregisterProjection\x12(.ironflow.v1.UnregisterProjectionRequest\x1a).ironflow.v1.UnregisterProjectionResponse\x12k\n" +
 	"\x14PollProjectionEvents\x12(.ironflow.v1.PollProjectionEventsRequest\x1a).ironflow.v1.PollProjectionEventsResponse\x12d\n" +
 	"\x16StreamProjectionEvents\x12*.ironflow.v1.StreamProjectionEventsRequest\x1a\x1c.ironflow.v1.ProjectionEvent0\x01\x12h\n" +
 	"\x13SaveProjectionState\x12'.ironflow.v1.SaveProjectionStateRequest\x1a(.ironflow.v1.SaveProjectionStateResponse\x12h\n" +
-	"\x13AckProjectionEvents\x12'.ironflow.v1.AckProjectionEventsRequest\x1a(.ironflow.v1.AckProjectionEventsResponse\x12V\n" +
-	"\rGetProjection\x12!.ironflow.v1.GetProjectionRequest\x1a\".ironflow.v1.GetProjectionResponse\x12\\\n" +
-	"\x0fListProjections\x12#.ironflow.v1.ListProjectionsRequest\x1a$.ironflow.v1.ListProjectionsResponse\x12h\n" +
-	"\x13GetProjectionStatus\x12'.ironflow.v1.GetProjectionStatusRequest\x1a(.ironflow.v1.GetProjectionStatusResponse\x12b\n" +
-	"\x11RebuildProjection\x12%.ironflow.v1.RebuildProjectionRequest\x1a&.ironflow.v1.RebuildProjectionResponse\x12V\n" +
-	"\rGetRebuildJob\x12!.ironflow.v1.GetRebuildJobRequest\x1a\".ironflow.v1.GetRebuildJobResponse\x12V\n" +
+	"\x13AckProjectionEvents\x12'.ironflow.v1.AckProjectionEventsRequest\x1a(.ironflow.v1.AckProjectionEventsResponse\x12[\n" +
+	"\rGetProjection\x12!.ironflow.v1.GetProjectionRequest\x1a\".ironflow.v1.GetProjectionResponse\"\x03\x90\x02\x01\x12a\n" +
+	"\x0fListProjections\x12#.ironflow.v1.ListProjectionsRequest\x1a$.ironflow.v1.ListProjectionsResponse\"\x03\x90\x02\x01\x12m\n" +
+	"\x13GetProjectionStatus\x12'.ironflow.v1.GetProjectionStatusRequest\x1a(.ironflow.v1.GetProjectionStatusResponse\"\x03\x90\x02\x01\x12b\n" +
+	"\x11RebuildProjection\x12%.ironflow.v1.RebuildProjectionRequest\x1a&.ironflow.v1.RebuildProjectionResponse\x12[\n" +
+	"\rGetRebuildJob\x12!.ironflow.v1.GetRebuildJobRequest\x1a\".ironflow.v1.GetRebuildJobResponse\"\x03\x90\x02\x01\x12V\n" +
 	"\rCancelRebuild\x12!.ironflow.v1.CancelRebuildRequest\x1a\".ironflow.v1.CancelRebuildResponse\x12n\n" +
 	"\x15ReportRebuildProgress\x12).ironflow.v1.ReportRebuildProgressRequest\x1a*.ironflow.v1.ReportRebuildProgressResponse\x12\\\n" +
 	"\x0fPauseProjection\x12#.ironflow.v1.PauseProjectionRequest\x1a$.ironflow.v1.PauseProjectionResponse\x12_\n" +
 	"\x10ResumeProjection\x12$.ironflow.v1.ResumeProjectionRequest\x1a%.ironflow.v1.ResumeProjectionResponse\x12h\n" +
-	"\x13CreateSQLProjection\x12'.ironflow.v1.CreateSQLProjectionRequest\x1a(.ironflow.v1.CreateSQLProjectionResponse\x12e\n" +
-	"\x12QuerySQLProjection\x12&.ironflow.v1.QuerySQLProjectionRequest\x1a'.ironflow.v1.QuerySQLProjectionResponse\x12n\n" +
+	"\x13CreateSQLProjection\x12'.ironflow.v1.CreateSQLProjectionRequest\x1a(.ironflow.v1.CreateSQLProjectionResponse\x12j\n" +
+	"\x12QuerySQLProjection\x12&.ironflow.v1.QuerySQLProjectionRequest\x1a'.ironflow.v1.QuerySQLProjectionResponse\"\x03\x90\x02\x01\x12n\n" +
 	"\x15WaitProjectionCatchup\x12).ironflow.v1.WaitProjectionCatchupRequest\x1a*.ironflow.v1.WaitProjectionCatchupResponse\x12}\n" +
 	"\x1aWaitProjectionCatchupBatch\x12..ironflow.v1.WaitProjectionCatchupBatchRequest\x1a/.ironflow.v1.WaitProjectionCatchupBatchResponse\x12\\\n" +
 	"\fWaitForEvent\x12 .ironflow.v1.WaitForEventRequest\x1a*.ironflow.v1.WaitProjectionCatchupResponse\x12|\n" +

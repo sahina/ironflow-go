@@ -11,8 +11,6 @@ disagree, this file controls.
 > resolved before this license is published on the public release mirror:
 >
 >   - `[LICENSOR_ENTITY]` placeholder filled with the legal entity name
->   - `[LICENSE_EMAIL]` placeholder filled with the commercial-licensing
->     contact address
 >   - "Personal-Use and Evaluation Carve-Out" section reviewed by counsel —
 >     this is supplemental to the FSL Permitted Purpose and was added to
 >     match the worked examples in `docs/explanation/licensing.md` per the
@@ -173,7 +171,7 @@ you consent to the personal jurisdiction of those courts.
 
 For uses that fall outside the Permitted Purpose — including any Competing
 Use, or any commercial use case for which a separate paid license is required
-under our Cloud or Enterprise terms — contact `[LICENSE_EMAIL]` to discuss
+under our Cloud or Enterprise terms — contact license@ironflow.run to discuss
 a commercial license.
 
 ## SPDX Identifier

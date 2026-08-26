@@ -443,9 +443,30 @@ type SubscribeOptions struct {
 	// Acknowledgment mode (default: AUTO)
 	AckMode AckMode `protobuf:"varint,6,opt,name=ack_mode,json=ackMode,proto3,enum=ironflow.v1.AckMode" json:"ack_mode,omitempty"`
 	// Backpressure handling (default: BUFFER)
-	Backpressure  BackpressureMode `protobuf:"varint,7,opt,name=backpressure,proto3,enum=ironflow.v1.BackpressureMode" json:"backpressure,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Backpressure BackpressureMode `protobuf:"varint,7,opt,name=backpressure,proto3,enum=ironflow.v1.BackpressureMode" json:"backpressure,omitempty"`
+	// Resume delivery AFTER this stream sequence, as last seen on
+	// SubscriptionEvent.sequence (#1848).
+	//
+	// This is a position, not a count — which is what makes it a resume rather
+	// than a guess. `replay` asks for the last N events and cannot express "the
+	// ones I have not seen", so reconnecting with it either repeats work or
+	// skips events depending on how long the disconnect lasted.
+	//
+	// Rules:
+	//   - Mutually exclusive with `replay`. Setting both is INVALID_ARGUMENT
+	//     rather than a silent merge.
+	//   - Rejected when `consumer_group` is set. That path is durable and
+	//     server-positioned already, so a client cursor could rewind a consumer
+	//     other members share.
+	//   - `optional` because 0 is a legitimate "from the very beginning" and
+	//     must be distinguishable from unset.
+	//
+	// Delivery is at-least-once: the server sending a frame is not the client
+	// having processed it, so a resumed stream may repeat the frame in flight
+	// when the connection dropped.
+	StartAfterSequence *uint64 `protobuf:"varint,8,opt,name=start_after_sequence,json=startAfterSequence,proto3,oneof" json:"start_after_sequence,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *SubscribeOptions) Reset() {
@@ -525,6 +546,13 @@ func (x *SubscribeOptions) GetBackpressure() BackpressureMode {
 		return x.Backpressure
 	}
 	return BackpressureMode_BACKPRESSURE_MODE_UNSPECIFIED
+}
+
+func (x *SubscribeOptions) GetStartAfterSequence() uint64 {
+	if x != nil && x.StartAfterSequence != nil {
+		return *x.StartAfterSequence
+	}
+	return 0
 }
 
 type SubscriptionEvent struct {
@@ -1923,7 +1951,7 @@ const file_ironflow_v1_pubsub_proto_rawDesc = "" +
 	"\bevent_id\x18\x02 \x01(\tR\aeventId\"e\n" +
 	"\x10SubscribeRequest\x12\x18\n" +
 	"\apattern\x18\x01 \x01(\tR\apattern\x127\n" +
-	"\aoptions\x18\x02 \x01(\v2\x1d.ironflow.v1.SubscribeOptionsR\aoptions\"\xa6\x02\n" +
+	"\aoptions\x18\x02 \x01(\v2\x1d.ironflow.v1.SubscribeOptionsR\aoptions\"\xf6\x02\n" +
 	"\x10SubscribeOptions\x12\x16\n" +
 	"\x06replay\x18\x01 \x01(\x05R\x06replay\x12)\n" +
 	"\x10include_metadata\x18\x02 \x01(\bR\x0fincludeMetadata\x12\x16\n" +
@@ -1931,7 +1959,9 @@ const file_ironflow_v1_pubsub_proto_rawDesc = "" +
 	"\tnamespace\x18\x04 \x01(\tR\tnamespace\x12%\n" +
 	"\x0econsumer_group\x18\x05 \x01(\tR\rconsumerGroup\x12/\n" +
 	"\back_mode\x18\x06 \x01(\x0e2\x14.ironflow.v1.AckModeR\aackMode\x12A\n" +
-	"\fbackpressure\x18\a \x01(\x0e2\x1d.ironflow.v1.BackpressureModeR\fbackpressure\"\x99\x02\n" +
+	"\fbackpressure\x18\a \x01(\x0e2\x1d.ironflow.v1.BackpressureModeR\fbackpressure\x125\n" +
+	"\x14start_after_sequence\x18\b \x01(\x04H\x00R\x12startAfterSequence\x88\x01\x01B\x17\n" +
+	"\x15_start_after_sequence\"\x99\x02\n" +
 	"\x11SubscriptionEvent\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x19\n" +
 	"\bevent_id\x18\x02 \x01(\tR\aeventId\x12\x14\n" +
@@ -2059,21 +2089,21 @@ const file_ironflow_v1_pubsub_proto_rawDesc = "" +
 	"\x14ACK_TYPE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fACK_TYPE_ACK\x10\x01\x12\x10\n" +
 	"\fACK_TYPE_NAK\x10\x02\x12\x11\n" +
-	"\rACK_TYPE_TERM\x10\x032\x8e\b\n" +
+	"\rACK_TYPE_TERM\x10\x032\xa2\b\n" +
 	"\rPubSubService\x12;\n" +
 	"\x04Emit\x12\x18.ironflow.v1.EmitRequest\x1a\x19.ironflow.v1.EmitResponse\x12L\n" +
 	"\tSubscribe\x12\x1d.ironflow.v1.SubscribeRequest\x1a\x1e.ironflow.v1.SubscriptionEvent0\x01\x12Z\n" +
 	"\x16SubscribeBidirectional\x12\x1c.ironflow.v1.SubscriptionAck\x1a\x1e.ironflow.v1.SubscriptionEvent(\x010\x01\x12Z\n" +
-	"\x13CreateConsumerGroup\x12'.ironflow.v1.CreateConsumerGroupRequest\x1a\x1a.ironflow.v1.ConsumerGroup\x12T\n" +
-	"\x10GetConsumerGroup\x12$.ironflow.v1.GetConsumerGroupRequest\x1a\x1a.ironflow.v1.ConsumerGroup\x12e\n" +
-	"\x12ListConsumerGroups\x12&.ironflow.v1.ListConsumerGroupsRequest\x1a'.ironflow.v1.ListConsumerGroupsResponse\x12Z\n" +
+	"\x13CreateConsumerGroup\x12'.ironflow.v1.CreateConsumerGroupRequest\x1a\x1a.ironflow.v1.ConsumerGroup\x12Y\n" +
+	"\x10GetConsumerGroup\x12$.ironflow.v1.GetConsumerGroupRequest\x1a\x1a.ironflow.v1.ConsumerGroup\"\x03\x90\x02\x01\x12j\n" +
+	"\x12ListConsumerGroups\x12&.ironflow.v1.ListConsumerGroupsRequest\x1a'.ironflow.v1.ListConsumerGroupsResponse\"\x03\x90\x02\x01\x12Z\n" +
 	"\x13UpdateConsumerGroup\x12'.ironflow.v1.UpdateConsumerGroupRequest\x1a\x1a.ironflow.v1.ConsumerGroup\x12V\n" +
 	"\x13DeleteConsumerGroup\x12'.ironflow.v1.DeleteConsumerGroupRequest\x1a\x16.google.protobuf.Empty\x12\\\n" +
 	"\x11JoinConsumerGroup\x12%.ironflow.v1.JoinConsumerGroupRequest\x1a\x1e.ironflow.v1.SubscriptionEvent0\x01\x12D\n" +
-	"\aPublish\x12\x1b.ironflow.v1.PublishRequest\x1a\x1c.ironflow.v1.PublishResponse\x12M\n" +
+	"\aPublish\x12\x1b.ironflow.v1.PublishRequest\x1a\x1c.ironflow.v1.PublishResponse\x12R\n" +
 	"\n" +
-	"ListTopics\x12\x1e.ironflow.v1.ListTopicsRequest\x1a\x1f.ironflow.v1.ListTopicsResponse\x12V\n" +
-	"\rGetTopicStats\x12!.ironflow.v1.GetTopicStatsRequest\x1a\".ironflow.v1.GetTopicStatsResponseB:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
+	"ListTopics\x12\x1e.ironflow.v1.ListTopicsRequest\x1a\x1f.ironflow.v1.ListTopicsResponse\"\x03\x90\x02\x01\x12[\n" +
+	"\rGetTopicStats\x12!.ironflow.v1.GetTopicStatsRequest\x1a\".ironflow.v1.GetTopicStatsResponse\"\x03\x90\x02\x01B:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
 
 var (
 	file_ironflow_v1_pubsub_proto_rawDescOnce sync.Once
@@ -2186,6 +2216,7 @@ func file_ironflow_v1_pubsub_proto_init() {
 	if File_ironflow_v1_pubsub_proto != nil {
 		return
 	}
+	file_ironflow_v1_pubsub_proto_msgTypes[3].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

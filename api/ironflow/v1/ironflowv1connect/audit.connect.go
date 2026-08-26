@@ -64,12 +64,14 @@ func NewAuditServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+AuditServiceGetAuditTrailProcedure,
 			connect.WithSchema(auditServiceMethods.ByName("GetAuditTrail")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		getAuthAuditTrail: connect.NewClient[v1.GetAuthAuditTrailRequest, v1.GetAuthAuditTrailResponse](
 			httpClient,
 			baseURL+AuditServiceGetAuthAuditTrailProcedure,
 			connect.WithSchema(auditServiceMethods.ByName("GetAuthAuditTrail")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -110,12 +112,14 @@ func NewAuditServiceHandler(svc AuditServiceHandler, opts ...connect.HandlerOpti
 		AuditServiceGetAuditTrailProcedure,
 		svc.GetAuditTrail,
 		connect.WithSchema(auditServiceMethods.ByName("GetAuditTrail")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	auditServiceGetAuthAuditTrailHandler := connect.NewUnaryHandler(
 		AuditServiceGetAuthAuditTrailProcedure,
 		svc.GetAuthAuditTrail,
 		connect.WithSchema(auditServiceMethods.ByName("GetAuthAuditTrail")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/ironflow.v1.AuditService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

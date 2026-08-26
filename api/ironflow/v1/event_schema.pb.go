@@ -775,14 +775,14 @@ const file_ironflow_v1_event_schema_proto_rawDesc = "" +
 	"\ffrom_version\x18\x01 \x01(\x05R\vfromVersion\x12\x1d\n" +
 	"\n" +
 	"to_version\x18\x02 \x01(\x05R\ttoVersion\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription2\xb1\x03\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription2\xc0\x03\n" +
 	"\x12EventSchemaService\x12Y\n" +
-	"\x0eRegisterSchema\x12\".ironflow.v1.RegisterSchemaRequest\x1a#.ironflow.v1.RegisterSchemaResponse\x12J\n" +
-	"\tGetSchema\x12\x1d.ironflow.v1.GetSchemaRequest\x1a\x1e.ironflow.v1.GetSchemaResponse\x12P\n" +
-	"\vListSchemas\x12\x1f.ironflow.v1.ListSchemasRequest\x1a .ironflow.v1.ListSchemasResponse\x12S\n" +
-	"\fDeleteSchema\x12 .ironflow.v1.DeleteSchemaRequest\x1a!.ironflow.v1.DeleteSchemaResponse\x12M\n" +
+	"\x0eRegisterSchema\x12\".ironflow.v1.RegisterSchemaRequest\x1a#.ironflow.v1.RegisterSchemaResponse\x12O\n" +
+	"\tGetSchema\x12\x1d.ironflow.v1.GetSchemaRequest\x1a\x1e.ironflow.v1.GetSchemaResponse\"\x03\x90\x02\x01\x12U\n" +
+	"\vListSchemas\x12\x1f.ironflow.v1.ListSchemasRequest\x1a .ironflow.v1.ListSchemasResponse\"\x03\x90\x02\x01\x12S\n" +
+	"\fDeleteSchema\x12 .ironflow.v1.DeleteSchemaRequest\x1a!.ironflow.v1.DeleteSchemaResponse\x12R\n" +
 	"\n" +
-	"TestUpcast\x12\x1e.ironflow.v1.TestUpcastRequest\x1a\x1f.ironflow.v1.TestUpcastResponseB:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
+	"TestUpcast\x12\x1e.ironflow.v1.TestUpcastRequest\x1a\x1f.ironflow.v1.TestUpcastResponse\"\x03\x90\x02\x01B:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
 
 var (
 	file_ironflow_v1_event_schema_proto_rawDescOnce sync.Once

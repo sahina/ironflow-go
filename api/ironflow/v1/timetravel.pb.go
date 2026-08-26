@@ -734,11 +734,11 @@ const file_ironflow_v1_timetravel_proto_rawDesc = "" +
 	"\x06output\x18\x03 \x01(\fR\x06output\x12'\n" +
 	"\x0foriginal_output\x18\x04 \x01(\fR\x0eoriginalOutput\x12\x18\n" +
 	"\apatched\x18\x05 \x01(\bR\apatched\x12\x1a\n" +
-	"\binjected\x18\x06 \x01(\bR\binjected2\xa4\x02\n" +
-	"\x11TimeTravelService\x12V\n" +
-	"\rGetRunStateAt\x12!.ironflow.v1.GetRunStateAtRequest\x1a\".ironflow.v1.GetRunStateAtResponse\x12Y\n" +
-	"\x0eGetRunTimeline\x12\".ironflow.v1.GetRunTimelineRequest\x1a#.ironflow.v1.GetRunTimelineResponse\x12\\\n" +
-	"\x0fGetStepOutputAt\x12#.ironflow.v1.GetStepOutputAtRequest\x1a$.ironflow.v1.GetStepOutputAtResponseB:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
+	"\binjected\x18\x06 \x01(\bR\binjected2\xb3\x02\n" +
+	"\x11TimeTravelService\x12[\n" +
+	"\rGetRunStateAt\x12!.ironflow.v1.GetRunStateAtRequest\x1a\".ironflow.v1.GetRunStateAtResponse\"\x03\x90\x02\x01\x12^\n" +
+	"\x0eGetRunTimeline\x12\".ironflow.v1.GetRunTimelineRequest\x1a#.ironflow.v1.GetRunTimelineResponse\"\x03\x90\x02\x01\x12a\n" +
+	"\x0fGetStepOutputAt\x12#.ironflow.v1.GetStepOutputAtRequest\x1a$.ironflow.v1.GetStepOutputAtResponse\"\x03\x90\x02\x01B:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
 
 var (
 	file_ironflow_v1_timetravel_proto_rawDescOnce sync.Once

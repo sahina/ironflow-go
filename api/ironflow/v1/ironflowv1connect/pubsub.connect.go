@@ -135,12 +135,14 @@ func NewPubSubServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+PubSubServiceGetConsumerGroupProcedure,
 			connect.WithSchema(pubSubServiceMethods.ByName("GetConsumerGroup")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		listConsumerGroups: connect.NewClient[v1.ListConsumerGroupsRequest, v1.ListConsumerGroupsResponse](
 			httpClient,
 			baseURL+PubSubServiceListConsumerGroupsProcedure,
 			connect.WithSchema(pubSubServiceMethods.ByName("ListConsumerGroups")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		updateConsumerGroup: connect.NewClient[v1.UpdateConsumerGroupRequest, v1.ConsumerGroup](
@@ -171,12 +173,14 @@ func NewPubSubServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+PubSubServiceListTopicsProcedure,
 			connect.WithSchema(pubSubServiceMethods.ByName("ListTopics")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		getTopicStats: connect.NewClient[v1.GetTopicStatsRequest, v1.GetTopicStatsResponse](
 			httpClient,
 			baseURL+PubSubServiceGetTopicStatsProcedure,
 			connect.WithSchema(pubSubServiceMethods.ByName("GetTopicStats")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -320,12 +324,14 @@ func NewPubSubServiceHandler(svc PubSubServiceHandler, opts ...connect.HandlerOp
 		PubSubServiceGetConsumerGroupProcedure,
 		svc.GetConsumerGroup,
 		connect.WithSchema(pubSubServiceMethods.ByName("GetConsumerGroup")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	pubSubServiceListConsumerGroupsHandler := connect.NewUnaryHandler(
 		PubSubServiceListConsumerGroupsProcedure,
 		svc.ListConsumerGroups,
 		connect.WithSchema(pubSubServiceMethods.ByName("ListConsumerGroups")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	pubSubServiceUpdateConsumerGroupHandler := connect.NewUnaryHandler(
@@ -356,12 +362,14 @@ func NewPubSubServiceHandler(svc PubSubServiceHandler, opts ...connect.HandlerOp
 		PubSubServiceListTopicsProcedure,
 		svc.ListTopics,
 		connect.WithSchema(pubSubServiceMethods.ByName("ListTopics")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	pubSubServiceGetTopicStatsHandler := connect.NewUnaryHandler(
 		PubSubServiceGetTopicStatsProcedure,
 		svc.GetTopicStats,
 		connect.WithSchema(pubSubServiceMethods.ByName("GetTopicStats")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/ironflow.v1.PubSubService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

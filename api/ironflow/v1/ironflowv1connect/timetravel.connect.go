@@ -66,18 +66,21 @@ func NewTimeTravelServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+TimeTravelServiceGetRunStateAtProcedure,
 			connect.WithSchema(timeTravelServiceMethods.ByName("GetRunStateAt")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		getRunTimeline: connect.NewClient[v1.GetRunTimelineRequest, v1.GetRunTimelineResponse](
 			httpClient,
 			baseURL+TimeTravelServiceGetRunTimelineProcedure,
 			connect.WithSchema(timeTravelServiceMethods.ByName("GetRunTimeline")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		getStepOutputAt: connect.NewClient[v1.GetStepOutputAtRequest, v1.GetStepOutputAtResponse](
 			httpClient,
 			baseURL+TimeTravelServiceGetStepOutputAtProcedure,
 			connect.WithSchema(timeTravelServiceMethods.ByName("GetStepOutputAt")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -123,18 +126,21 @@ func NewTimeTravelServiceHandler(svc TimeTravelServiceHandler, opts ...connect.H
 		TimeTravelServiceGetRunStateAtProcedure,
 		svc.GetRunStateAt,
 		connect.WithSchema(timeTravelServiceMethods.ByName("GetRunStateAt")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	timeTravelServiceGetRunTimelineHandler := connect.NewUnaryHandler(
 		TimeTravelServiceGetRunTimelineProcedure,
 		svc.GetRunTimeline,
 		connect.WithSchema(timeTravelServiceMethods.ByName("GetRunTimeline")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	timeTravelServiceGetStepOutputAtHandler := connect.NewUnaryHandler(
 		TimeTravelServiceGetStepOutputAtProcedure,
 		svc.GetStepOutputAt,
 		connect.WithSchema(timeTravelServiceMethods.ByName("GetStepOutputAt")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/ironflow.v1.TimeTravelService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

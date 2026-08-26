@@ -132,12 +132,14 @@ func NewWebhookServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+WebhookServiceGetWebhookSourceProcedure,
 			connect.WithSchema(webhookServiceMethods.ByName("GetWebhookSource")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		listWebhookSources: connect.NewClient[v1.ListWebhookSourcesRequest, v1.ListWebhookSourcesResponse](
 			httpClient,
 			baseURL+WebhookServiceListWebhookSourcesProcedure,
 			connect.WithSchema(webhookServiceMethods.ByName("ListWebhookSources")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		updateWebhookSource: connect.NewClient[v1.UpdateWebhookSourceRequest, v1.WebhookSource](
@@ -186,6 +188,7 @@ func NewWebhookServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			httpClient,
 			baseURL+WebhookServiceListWebhookDeliveriesProcedure,
 			connect.WithSchema(webhookServiceMethods.ByName("ListWebhookDeliveries")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -321,12 +324,14 @@ func NewWebhookServiceHandler(svc WebhookServiceHandler, opts ...connect.Handler
 		WebhookServiceGetWebhookSourceProcedure,
 		svc.GetWebhookSource,
 		connect.WithSchema(webhookServiceMethods.ByName("GetWebhookSource")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	webhookServiceListWebhookSourcesHandler := connect.NewUnaryHandler(
 		WebhookServiceListWebhookSourcesProcedure,
 		svc.ListWebhookSources,
 		connect.WithSchema(webhookServiceMethods.ByName("ListWebhookSources")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	webhookServiceUpdateWebhookSourceHandler := connect.NewUnaryHandler(
@@ -375,6 +380,7 @@ func NewWebhookServiceHandler(svc WebhookServiceHandler, opts ...connect.Handler
 		WebhookServiceListWebhookDeliveriesProcedure,
 		svc.ListWebhookDeliveries,
 		connect.WithSchema(webhookServiceMethods.ByName("ListWebhookDeliveries")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/ironflow.v1.WebhookService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

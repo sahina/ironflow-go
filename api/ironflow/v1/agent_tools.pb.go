@@ -728,13 +728,13 @@ const file_ironflow_v1_agent_tools_proto_rawDesc = "" +
 	"\x0equalified_name\x18\x01 \x01(\tR\rqualifiedName\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12*\n" +
 	"\x11input_schema_json\x18\x03 \x01(\tR\x0finputSchemaJson\x12'\n" +
-	"\x0frequired_scopes\x18\x04 \x03(\tR\x0erequiredScopes2\xde\x02\n" +
+	"\x0frequired_scopes\x18\x04 \x03(\tR\x0erequiredScopes2\xe3\x02\n" +
 	"\x11AgentToolsService\x12S\n" +
 	"\fRegisterTool\x12 .ironflow.v1.RegisterToolRequest\x1a!.ironflow.v1.RegisterToolResponse\x12M\n" +
 	"\n" +
 	"InvokeTool\x12\x1e.ironflow.v1.InvokeToolRequest\x1a\x1f.ironflow.v1.InvokeToolResponse\x12Y\n" +
-	"\x0eUnregisterTool\x12\".ironflow.v1.UnregisterToolRequest\x1a#.ironflow.v1.UnregisterToolResponse\x12J\n" +
-	"\tListTools\x12\x1d.ironflow.v1.ListToolsRequest\x1a\x1e.ironflow.v1.ListToolsResponseB:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
+	"\x0eUnregisterTool\x12\".ironflow.v1.UnregisterToolRequest\x1a#.ironflow.v1.UnregisterToolResponse\x12O\n" +
+	"\tListTools\x12\x1d.ironflow.v1.ListToolsRequest\x1a\x1e.ironflow.v1.ListToolsResponse\"\x03\x90\x02\x01B:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
 
 var (
 	file_ironflow_v1_agent_tools_proto_rawDescOnce sync.Once

@@ -12,6 +12,11 @@ import (
 // Helper: build a minimal valid PushRequest JSON body
 // ============================================================================
 
+// The PushRequest / PushResponse JSON shapes are user-facing: they are the spec a
+// Tier-2 language (Java, C#, Rust) writes its push handler against, published as
+// docs/reference/api/push-protocol.md. drift-check hashes markdown only and cannot
+// see these structs, so if you add, rename, or retype a field here, update that
+// page in the same PR.
 func validPushBody(functionID string) string {
 	req := PushRequest{
 		RunID:      "run-001",

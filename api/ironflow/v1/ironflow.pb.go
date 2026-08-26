@@ -2698,28 +2698,28 @@ const file_ironflow_v1_ironflow_proto_rawDesc = "" +
 	"\aversion\x18\x02 \x01(\x03R\aversion\x12#\n" +
 	"\rchange_reason\x18\x03 \x01(\tR\fchangeReason\"M\n" +
 	"\x18RollbackFunctionResponse\x121\n" +
-	"\bfunction\x18\x01 \x01(\v2\x15.ironflow.v1.FunctionR\bfunction2\xb3\x0e\n" +
+	"\bfunction\x18\x01 \x01(\v2\x15.ironflow.v1.FunctionR\bfunction2\xdb\x0e\n" +
 	"\x0fIronflowService\x12_\n" +
-	"\x10RegisterFunction\x12$.ironflow.v1.RegisterFunctionRequest\x1a%.ironflow.v1.RegisterFunctionResponse\x12E\n" +
-	"\vGetFunction\x12\x1f.ironflow.v1.GetFunctionRequest\x1a\x15.ironflow.v1.Function\x12V\n" +
-	"\rListFunctions\x12!.ironflow.v1.ListFunctionsRequest\x1a\".ironflow.v1.ListFunctionsResponse\x12W\n" +
+	"\x10RegisterFunction\x12$.ironflow.v1.RegisterFunctionRequest\x1a%.ironflow.v1.RegisterFunctionResponse\x12J\n" +
+	"\vGetFunction\x12\x1f.ironflow.v1.GetFunctionRequest\x1a\x15.ironflow.v1.Function\"\x03\x90\x02\x01\x12[\n" +
+	"\rListFunctions\x12!.ironflow.v1.ListFunctionsRequest\x1a\".ironflow.v1.ListFunctionsResponse\"\x03\x90\x02\x01\x12W\n" +
 	"\x14UpdateFunctionStatus\x12(.ironflow.v1.UpdateFunctionStatusRequest\x1a\x15.ironflow.v1.Function\x12L\n" +
-	"\x0eDeleteFunction\x12\".ironflow.v1.DeleteFunctionRequest\x1a\x16.google.protobuf.Empty\x12h\n" +
-	"\x13ListFunctionHistory\x12'.ironflow.v1.ListFunctionHistoryRequest\x1a(.ironflow.v1.ListFunctionHistoryResponse\x12k\n" +
-	"\x14GetFunctionAtVersion\x12(.ironflow.v1.GetFunctionAtVersionRequest\x1a).ironflow.v1.GetFunctionAtVersionResponse\x12_\n" +
+	"\x0eDeleteFunction\x12\".ironflow.v1.DeleteFunctionRequest\x1a\x16.google.protobuf.Empty\x12m\n" +
+	"\x13ListFunctionHistory\x12'.ironflow.v1.ListFunctionHistoryRequest\x1a(.ironflow.v1.ListFunctionHistoryResponse\"\x03\x90\x02\x01\x12p\n" +
+	"\x14GetFunctionAtVersion\x12(.ironflow.v1.GetFunctionAtVersionRequest\x1a).ironflow.v1.GetFunctionAtVersionResponse\"\x03\x90\x02\x01\x12_\n" +
 	"\x10RollbackFunction\x12$.ironflow.v1.RollbackFunctionRequest\x1a%.ironflow.v1.RollbackFunctionResponse\x12D\n" +
 	"\aTrigger\x12\x1b.ironflow.v1.TriggerRequest\x1a\x1c.ironflow.v1.TriggerResponse\x12A\n" +
 	"\x04Emit\x12\x1b.ironflow.v1.TriggerRequest\x1a\x1c.ironflow.v1.TriggerResponse\x12P\n" +
 	"\vTriggerSync\x12\x1f.ironflow.v1.TriggerSyncRequest\x1a .ironflow.v1.TriggerSyncResponse\x12S\n" +
-	"\fTriggerBatch\x12 .ironflow.v1.TriggerBatchRequest\x1a!.ironflow.v1.TriggerBatchResponse\x126\n" +
-	"\x06GetRun\x12\x1a.ironflow.v1.GetRunRequest\x1a\x10.ironflow.v1.Run\x12G\n" +
-	"\bListRuns\x12\x1c.ironflow.v1.ListRunsRequest\x1a\x1d.ironflow.v1.ListRunsResponse\x12P\n" +
-	"\vGetRunSteps\x12\x1f.ironflow.v1.GetRunStepsRequest\x1a .ironflow.v1.GetRunStepsResponse\x12<\n" +
+	"\fTriggerBatch\x12 .ironflow.v1.TriggerBatchRequest\x1a!.ironflow.v1.TriggerBatchResponse\x12;\n" +
+	"\x06GetRun\x12\x1a.ironflow.v1.GetRunRequest\x1a\x10.ironflow.v1.Run\"\x03\x90\x02\x01\x12L\n" +
+	"\bListRuns\x12\x1c.ironflow.v1.ListRunsRequest\x1a\x1d.ironflow.v1.ListRunsResponse\"\x03\x90\x02\x01\x12U\n" +
+	"\vGetRunSteps\x12\x1f.ironflow.v1.GetRunStepsRequest\x1a .ironflow.v1.GetRunStepsResponse\"\x03\x90\x02\x01\x12<\n" +
 	"\tCancelRun\x12\x1d.ironflow.v1.CancelRunRequest\x1a\x10.ironflow.v1.Run\x12=\n" +
 	"\tPatchStep\x12\x1d.ironflow.v1.PatchStepRequest\x1a\x11.ironflow.v1.Step\x12<\n" +
 	"\tResumeRun\x12\x1d.ironflow.v1.ResumeRunRequest\x1a\x10.ironflow.v1.Run\x12G\n" +
-	"\bPauseRun\x12\x1c.ironflow.v1.PauseRunRequest\x1a\x1d.ironflow.v1.PauseRunResponse\x12Y\n" +
-	"\x0eGetPausedState\x12\".ironflow.v1.GetPausedStateRequest\x1a#.ironflow.v1.GetPausedStateResponse\x12_\n" +
+	"\bPauseRun\x12\x1c.ironflow.v1.PauseRunRequest\x1a\x1d.ironflow.v1.PauseRunResponse\x12^\n" +
+	"\x0eGetPausedState\x12\".ironflow.v1.GetPausedStateRequest\x1a#.ironflow.v1.GetPausedStateResponse\"\x03\x90\x02\x01\x12_\n" +
 	"\x10InjectStepOutput\x12$.ironflow.v1.InjectStepOutputRequest\x1a%.ironflow.v1.InjectStepOutputResponse\x12A\n" +
 	"\x06Health\x12\x1a.ironflow.v1.HealthRequest\x1a\x1b.ironflow.v1.HealthResponse\x12;\n" +
 	"\x04Info\x12\x18.ironflow.v1.InfoRequest\x1a\x19.ironflow.v1.InfoResponseB:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"

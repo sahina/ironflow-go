@@ -171,12 +171,14 @@ func NewIronflowServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+IronflowServiceGetFunctionProcedure,
 			connect.WithSchema(ironflowServiceMethods.ByName("GetFunction")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		listFunctions: connect.NewClient[v1.ListFunctionsRequest, v1.ListFunctionsResponse](
 			httpClient,
 			baseURL+IronflowServiceListFunctionsProcedure,
 			connect.WithSchema(ironflowServiceMethods.ByName("ListFunctions")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		updateFunctionStatus: connect.NewClient[v1.UpdateFunctionStatusRequest, v1.Function](
@@ -195,12 +197,14 @@ func NewIronflowServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+IronflowServiceListFunctionHistoryProcedure,
 			connect.WithSchema(ironflowServiceMethods.ByName("ListFunctionHistory")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		getFunctionAtVersion: connect.NewClient[v1.GetFunctionAtVersionRequest, v1.GetFunctionAtVersionResponse](
 			httpClient,
 			baseURL+IronflowServiceGetFunctionAtVersionProcedure,
 			connect.WithSchema(ironflowServiceMethods.ByName("GetFunctionAtVersion")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		rollbackFunction: connect.NewClient[v1.RollbackFunctionRequest, v1.RollbackFunctionResponse](
@@ -237,18 +241,21 @@ func NewIronflowServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+IronflowServiceGetRunProcedure,
 			connect.WithSchema(ironflowServiceMethods.ByName("GetRun")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		listRuns: connect.NewClient[v1.ListRunsRequest, v1.ListRunsResponse](
 			httpClient,
 			baseURL+IronflowServiceListRunsProcedure,
 			connect.WithSchema(ironflowServiceMethods.ByName("ListRuns")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		getRunSteps: connect.NewClient[v1.GetRunStepsRequest, v1.GetRunStepsResponse](
 			httpClient,
 			baseURL+IronflowServiceGetRunStepsProcedure,
 			connect.WithSchema(ironflowServiceMethods.ByName("GetRunSteps")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		cancelRun: connect.NewClient[v1.CancelRunRequest, v1.Run](
@@ -279,6 +286,7 @@ func NewIronflowServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+IronflowServiceGetPausedStateProcedure,
 			connect.WithSchema(ironflowServiceMethods.ByName("GetPausedState")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		injectStepOutput: connect.NewClient[v1.InjectStepOutputRequest, v1.InjectStepOutputResponse](
@@ -511,12 +519,14 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 		IronflowServiceGetFunctionProcedure,
 		svc.GetFunction,
 		connect.WithSchema(ironflowServiceMethods.ByName("GetFunction")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	ironflowServiceListFunctionsHandler := connect.NewUnaryHandler(
 		IronflowServiceListFunctionsProcedure,
 		svc.ListFunctions,
 		connect.WithSchema(ironflowServiceMethods.ByName("ListFunctions")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	ironflowServiceUpdateFunctionStatusHandler := connect.NewUnaryHandler(
@@ -535,12 +545,14 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 		IronflowServiceListFunctionHistoryProcedure,
 		svc.ListFunctionHistory,
 		connect.WithSchema(ironflowServiceMethods.ByName("ListFunctionHistory")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	ironflowServiceGetFunctionAtVersionHandler := connect.NewUnaryHandler(
 		IronflowServiceGetFunctionAtVersionProcedure,
 		svc.GetFunctionAtVersion,
 		connect.WithSchema(ironflowServiceMethods.ByName("GetFunctionAtVersion")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	ironflowServiceRollbackFunctionHandler := connect.NewUnaryHandler(
@@ -577,18 +589,21 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 		IronflowServiceGetRunProcedure,
 		svc.GetRun,
 		connect.WithSchema(ironflowServiceMethods.ByName("GetRun")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	ironflowServiceListRunsHandler := connect.NewUnaryHandler(
 		IronflowServiceListRunsProcedure,
 		svc.ListRuns,
 		connect.WithSchema(ironflowServiceMethods.ByName("ListRuns")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	ironflowServiceGetRunStepsHandler := connect.NewUnaryHandler(
 		IronflowServiceGetRunStepsProcedure,
 		svc.GetRunSteps,
 		connect.WithSchema(ironflowServiceMethods.ByName("GetRunSteps")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	ironflowServiceCancelRunHandler := connect.NewUnaryHandler(
@@ -619,6 +634,7 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 		IronflowServiceGetPausedStateProcedure,
 		svc.GetPausedState,
 		connect.WithSchema(ironflowServiceMethods.ByName("GetPausedState")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	ironflowServiceInjectStepOutputHandler := connect.NewUnaryHandler(

@@ -103,6 +103,7 @@ func NewAgentToolsServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+AgentToolsServiceListToolsProcedure,
 			connect.WithSchema(agentToolsServiceMethods.ByName("ListTools")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -188,6 +189,7 @@ func NewAgentToolsServiceHandler(svc AgentToolsServiceHandler, opts ...connect.H
 		AgentToolsServiceListToolsProcedure,
 		svc.ListTools,
 		connect.WithSchema(agentToolsServiceMethods.ByName("ListTools")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/ironflow.v1.AgentToolsService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

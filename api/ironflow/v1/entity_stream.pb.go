@@ -1525,16 +1525,16 @@ const file_ironflow_v1_entity_stream_proto_rawDesc = "" +
 	"\x0eentity_version\x18\x04 \x01(\x03R\rentityVersion\x12-\n" +
 	"\x05state\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x05state\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt2\xee\x04\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt2\x87\x05\n" +
 	"\x13EntityStreamService\x12P\n" +
-	"\vAppendEvent\x12\x1f.ironflow.v1.AppendEventRequest\x1a .ironflow.v1.AppendEventResponse\x12M\n" +
+	"\vAppendEvent\x12\x1f.ironflow.v1.AppendEventRequest\x1a .ironflow.v1.AppendEventResponse\x12R\n" +
 	"\n" +
-	"ReadStream\x12\x1e.ironflow.v1.ReadStreamRequest\x1a\x1f.ironflow.v1.ReadStreamResponse\x12V\n" +
-	"\rGetStreamInfo\x12!.ironflow.v1.GetStreamInfoRequest\x1a\".ironflow.v1.GetStreamInfoResponse\x12P\n" +
-	"\vListStreams\x12\x1f.ironflow.v1.ListStreamsRequest\x1a .ironflow.v1.ListStreamsResponse\x12_\n" +
-	"\x10GetEntityHistory\x12$.ironflow.v1.GetEntityHistoryRequest\x1a%.ironflow.v1.GetEntityHistoryResponse\x12Y\n" +
-	"\x0eCreateSnapshot\x12\".ironflow.v1.CreateSnapshotRequest\x1a#.ironflow.v1.CreateSnapshotResponse\x12P\n" +
-	"\vGetSnapshot\x12\x1f.ironflow.v1.GetSnapshotRequest\x1a .ironflow.v1.GetSnapshotResponseB:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
+	"ReadStream\x12\x1e.ironflow.v1.ReadStreamRequest\x1a\x1f.ironflow.v1.ReadStreamResponse\"\x03\x90\x02\x01\x12[\n" +
+	"\rGetStreamInfo\x12!.ironflow.v1.GetStreamInfoRequest\x1a\".ironflow.v1.GetStreamInfoResponse\"\x03\x90\x02\x01\x12U\n" +
+	"\vListStreams\x12\x1f.ironflow.v1.ListStreamsRequest\x1a .ironflow.v1.ListStreamsResponse\"\x03\x90\x02\x01\x12d\n" +
+	"\x10GetEntityHistory\x12$.ironflow.v1.GetEntityHistoryRequest\x1a%.ironflow.v1.GetEntityHistoryResponse\"\x03\x90\x02\x01\x12Y\n" +
+	"\x0eCreateSnapshot\x12\".ironflow.v1.CreateSnapshotRequest\x1a#.ironflow.v1.CreateSnapshotResponse\x12U\n" +
+	"\vGetSnapshot\x12\x1f.ironflow.v1.GetSnapshotRequest\x1a .ironflow.v1.GetSnapshotResponse\"\x03\x90\x02\x01B:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
 
 var (
 	file_ironflow_v1_entity_stream_proto_rawDescOnce sync.Once

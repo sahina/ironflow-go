@@ -199,18 +199,21 @@ func NewProjectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+ProjectionServiceGetProjectionProcedure,
 			connect.WithSchema(projectionServiceMethods.ByName("GetProjection")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		listProjections: connect.NewClient[v1.ListProjectionsRequest, v1.ListProjectionsResponse](
 			httpClient,
 			baseURL+ProjectionServiceListProjectionsProcedure,
 			connect.WithSchema(projectionServiceMethods.ByName("ListProjections")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		getProjectionStatus: connect.NewClient[v1.GetProjectionStatusRequest, v1.GetProjectionStatusResponse](
 			httpClient,
 			baseURL+ProjectionServiceGetProjectionStatusProcedure,
 			connect.WithSchema(projectionServiceMethods.ByName("GetProjectionStatus")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		rebuildProjection: connect.NewClient[v1.RebuildProjectionRequest, v1.RebuildProjectionResponse](
@@ -223,6 +226,7 @@ func NewProjectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+ProjectionServiceGetRebuildJobProcedure,
 			connect.WithSchema(projectionServiceMethods.ByName("GetRebuildJob")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		cancelRebuild: connect.NewClient[v1.CancelRebuildRequest, v1.CancelRebuildResponse](
@@ -259,6 +263,7 @@ func NewProjectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+ProjectionServiceQuerySQLProjectionProcedure,
 			connect.WithSchema(projectionServiceMethods.ByName("QuerySQLProjection")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		waitProjectionCatchup: connect.NewClient[v1.WaitProjectionCatchupRequest, v1.WaitProjectionCatchupResponse](
@@ -515,18 +520,21 @@ func NewProjectionServiceHandler(svc ProjectionServiceHandler, opts ...connect.H
 		ProjectionServiceGetProjectionProcedure,
 		svc.GetProjection,
 		connect.WithSchema(projectionServiceMethods.ByName("GetProjection")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	projectionServiceListProjectionsHandler := connect.NewUnaryHandler(
 		ProjectionServiceListProjectionsProcedure,
 		svc.ListProjections,
 		connect.WithSchema(projectionServiceMethods.ByName("ListProjections")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	projectionServiceGetProjectionStatusHandler := connect.NewUnaryHandler(
 		ProjectionServiceGetProjectionStatusProcedure,
 		svc.GetProjectionStatus,
 		connect.WithSchema(projectionServiceMethods.ByName("GetProjectionStatus")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	projectionServiceRebuildProjectionHandler := connect.NewUnaryHandler(
@@ -539,6 +547,7 @@ func NewProjectionServiceHandler(svc ProjectionServiceHandler, opts ...connect.H
 		ProjectionServiceGetRebuildJobProcedure,
 		svc.GetRebuildJob,
 		connect.WithSchema(projectionServiceMethods.ByName("GetRebuildJob")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	projectionServiceCancelRebuildHandler := connect.NewUnaryHandler(
@@ -575,6 +584,7 @@ func NewProjectionServiceHandler(svc ProjectionServiceHandler, opts ...connect.H
 		ProjectionServiceQuerySQLProjectionProcedure,
 		svc.QuerySQLProjection,
 		connect.WithSchema(projectionServiceMethods.ByName("QuerySQLProjection")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	projectionServiceWaitProjectionCatchupHandler := connect.NewUnaryHandler(

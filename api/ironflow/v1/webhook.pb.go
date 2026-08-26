@@ -1584,19 +1584,19 @@ const file_ironflow_v1_webhook_proto_rawDesc = "" +
 	"\x12resolved_timestamp\x18\x05 \x01(\tR\x11resolvedTimestamp\x12.\n" +
 	"\x13resolved_event_name\x18\x06 \x01(\tR\x11resolvedEventName\x12*\n" +
 	"\x11resolved_dedup_id\x18\a \x01(\tR\x0fresolvedDedupId\x12\x14\n" +
-	"\x05error\x18\b \x01(\tR\x05error2\xe5\b\n" +
+	"\x05error\x18\b \x01(\tR\x05error2\xf4\b\n" +
 	"\x0eWebhookService\x12Z\n" +
-	"\x13CreateWebhookSource\x12'.ironflow.v1.CreateWebhookSourceRequest\x1a\x1a.ironflow.v1.WebhookSource\x12T\n" +
-	"\x10GetWebhookSource\x12$.ironflow.v1.GetWebhookSourceRequest\x1a\x1a.ironflow.v1.WebhookSource\x12e\n" +
-	"\x12ListWebhookSources\x12&.ironflow.v1.ListWebhookSourcesRequest\x1a'.ironflow.v1.ListWebhookSourcesResponse\x12Z\n" +
+	"\x13CreateWebhookSource\x12'.ironflow.v1.CreateWebhookSourceRequest\x1a\x1a.ironflow.v1.WebhookSource\x12Y\n" +
+	"\x10GetWebhookSource\x12$.ironflow.v1.GetWebhookSourceRequest\x1a\x1a.ironflow.v1.WebhookSource\"\x03\x90\x02\x01\x12j\n" +
+	"\x12ListWebhookSources\x12&.ironflow.v1.ListWebhookSourcesRequest\x1a'.ironflow.v1.ListWebhookSourcesResponse\"\x03\x90\x02\x01\x12Z\n" +
 	"\x13UpdateWebhookSource\x12'.ironflow.v1.UpdateWebhookSourceRequest\x1a\x1a.ironflow.v1.WebhookSource\x12Z\n" +
 	"\x13RotateWebhookSecret\x12'.ironflow.v1.RotateWebhookSecretRequest\x1a\x1a.ironflow.v1.WebhookSource\x12b\n" +
 	"\x17ExpireWebhookSecretPrev\x12+.ironflow.v1.ExpireWebhookSecretPrevRequest\x1a\x1a.ironflow.v1.WebhookSource\x12z\n" +
 	"#DisableWebhookSignatureVerification\x127.ironflow.v1.DisableWebhookSignatureVerificationRequest\x1a\x1a.ironflow.v1.WebhookSource\x12d\n" +
 	"\x18RotateWebhookIngestToken\x12,.ironflow.v1.RotateWebhookIngestTokenRequest\x1a\x1a.ironflow.v1.WebhookSource\x12t\n" +
 	"\x17TestWebhookVerifyConfig\x12+.ironflow.v1.TestWebhookVerifyConfigRequest\x1a,.ironflow.v1.TestWebhookVerifyConfigResponse\x12V\n" +
-	"\x13DeleteWebhookSource\x12'.ironflow.v1.DeleteWebhookSourceRequest\x1a\x16.google.protobuf.Empty\x12n\n" +
-	"\x15ListWebhookDeliveries\x12).ironflow.v1.ListWebhookDeliveriesRequest\x1a*.ironflow.v1.ListWebhookDeliveriesResponseB:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
+	"\x13DeleteWebhookSource\x12'.ironflow.v1.DeleteWebhookSourceRequest\x1a\x16.google.protobuf.Empty\x12s\n" +
+	"\x15ListWebhookDeliveries\x12).ironflow.v1.ListWebhookDeliveriesRequest\x1a*.ironflow.v1.ListWebhookDeliveriesResponse\"\x03\x90\x02\x01B:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
 
 var (
 	file_ironflow_v1_webhook_proto_rawDescOnce sync.Once

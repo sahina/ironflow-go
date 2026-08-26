@@ -57,6 +57,7 @@ func NewQueryServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+QueryServiceExecuteSQLProcedure,
 			connect.WithSchema(queryServiceMethods.ByName("ExecuteSQL")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -88,6 +89,7 @@ func NewQueryServiceHandler(svc QueryServiceHandler, opts ...connect.HandlerOpti
 		QueryServiceExecuteSQLProcedure,
 		svc.ExecuteSQL,
 		connect.WithSchema(queryServiceMethods.ByName("ExecuteSQL")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/ironflow.v1.QueryService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -201,10 +201,10 @@ const file_ironflow_v1_query_proto_rawDesc = "" +
 	"\n" +
 	"total_rows\x18\x03 \x01(\x05R\ttotalRows\" \n" +
 	"\x06SQLRow\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\tR\x06values2]\n" +
-	"\fQueryService\x12M\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values2b\n" +
+	"\fQueryService\x12R\n" +
 	"\n" +
-	"ExecuteSQL\x12\x1e.ironflow.v1.ExecuteSQLRequest\x1a\x1f.ironflow.v1.ExecuteSQLResponseB:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
+	"ExecuteSQL\x12\x1e.ironflow.v1.ExecuteSQLRequest\x1a\x1f.ironflow.v1.ExecuteSQLResponse\"\x03\x90\x02\x01B:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
 
 var (
 	file_ironflow_v1_query_proto_rawDescOnce sync.Once
