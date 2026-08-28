@@ -73,6 +73,23 @@ func TestCreateAPIKey(t *testing.T) {
 	})
 }
 
+func TestListRolePolicies(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/api/v1/roles/role%2F1/policies" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.EscapedPath())
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"policies": []map[string]any{{"id": "policy-1", "name": "reader"}},
+		})
+	}))
+	defer server.Close()
+
+	policies, err := newAuthTestClient(server).ListRolePolicies(context.Background(), "role/1")
+	if err != nil || len(policies) != 1 || policies[0].ID != "policy-1" {
+		t.Fatalf("ListRolePolicies = %#v, %v", policies, err)
+	}
+}
+
 func TestListAPIKeys(t *testing.T) {
 	t.Run("sends GET and parses array response", func(t *testing.T) {
 		var receivedMethod, receivedPath string

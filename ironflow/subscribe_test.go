@@ -3,6 +3,8 @@ package ironflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,14 +21,14 @@ import (
 
 // mockWSServer creates a mock WebSocket server for testing
 type mockWSServer struct {
-	server     *httptest.Server
-	upgrader   websocket.Upgrader
-	mu         sync.Mutex
-	writeMu    sync.Mutex // protects websocket writes
-	conn       *websocket.Conn
-	messages   []json.RawMessage
-	onMessage  func([]byte)
-	shouldFail bool
+	server    *httptest.Server
+	upgrader  websocket.Upgrader
+	mu        sync.Mutex
+	writeMu   sync.Mutex // protects websocket writes
+	conn      *websocket.Conn
+	messages  []json.RawMessage
+	onMessage func([]byte)
+	failDials int
 }
 
 func newMockWSServer() *mockWSServer {
@@ -37,7 +39,13 @@ func newMockWSServer() *mockWSServer {
 	}
 
 	m.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if m.shouldFail {
+		m.mu.Lock()
+		failDial := m.failDials > 0
+		if failDial {
+			m.failDials--
+		}
+		m.mu.Unlock()
+		if failDial {
 			http.Error(w, "connection refused", http.StatusInternalServerError)
 			return
 		}
@@ -97,6 +105,21 @@ func (m *mockWSServer) GetMessages() []json.RawMessage {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]json.RawMessage{}, m.messages...)
+}
+
+func (m *mockWSServer) DropConnection() {
+	m.mu.Lock()
+	conn := m.conn
+	m.mu.Unlock()
+	if conn != nil {
+		_ = conn.Close()
+	}
+}
+
+func (m *mockWSServer) FailNextDials(count int) {
+	m.mu.Lock()
+	m.failDials = count
+	m.mu.Unlock()
 }
 
 // ============================================================================
@@ -403,6 +426,992 @@ func TestSubscriptionClient_SubscribeWithOptions(t *testing.T) {
 
 	if !sentMsg.Subscription.Options.IncludeMetadata {
 		t.Error("expected includeMetadata to be true")
+	}
+}
+
+func TestSubscriptionClient_SubscribeWithZeroResumeCursor(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) == nil && msg.Type == "subscribe" {
+			_ = server.SendMessage(map[string]any{
+				"type": "subscription_result",
+				"results": []map[string]any{{
+					"pattern": msg.Subscription.Pattern, "status": "ok", "subscriptionId": "sub-zero",
+				}},
+			})
+		}
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{WSURL: server.URL()})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	zero := uint64(0)
+	if _, err := client.Subscribe(context.Background(), "orders.*", &SubscribeOptions{
+		StartAfterSequence: &zero,
+	}); err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	messages := waitForMessages(t, server, 1, time.Second)
+	var request wsSubscribeRequest
+	if err := json.Unmarshal(messages[0], &request); err != nil {
+		t.Fatalf("unmarshal subscribe request: %v", err)
+	}
+	if request.Subscription.Options == nil || request.Subscription.Options.StartAfterSequence == nil {
+		t.Fatal("expected an explicit startAfterSequence cursor")
+	}
+	if got := *request.Subscription.Options.StartAfterSequence; got != 0 {
+		t.Fatalf("startAfterSequence = %d, want 0", got)
+	}
+	if !request.Subscription.Options.IncludeMetadata {
+		t.Fatal("cursor subscriptions must request sequence metadata")
+	}
+}
+
+func TestSubscriptionClient_ResumeCursorRejections(t *testing.T) {
+	tests := []struct {
+		name    string
+		options func(*uint64) *SubscribeOptions
+		message string
+	}{
+		{
+			name: "replay",
+			options: func(cursor *uint64) *SubscribeOptions {
+				return &SubscribeOptions{Replay: 3, StartAfterSequence: cursor}
+			},
+			message: "replay and start_after_sequence are mutually exclusive",
+		},
+		{
+			name: "consumer group",
+			options: func(cursor *uint64) *SubscribeOptions {
+				return &SubscribeOptions{ConsumerGroup: "processors", StartAfterSequence: cursor}
+			},
+			message: "start_after_sequence cannot be combined with consumer_group",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := newMockWSServer()
+			defer server.Close()
+			server.onMessage = func(data []byte) {
+				var msg wsSubscribeRequest
+				if json.Unmarshal(data, &msg) == nil && msg.Type == "subscribe" {
+					_ = server.SendMessage(map[string]any{
+						"type": "subscription_result",
+						"results": []map[string]any{{
+							"pattern": msg.Subscription.Pattern, "status": "error",
+							"code": "INVALID_ARGUMENT", "message": tt.message,
+						}},
+					})
+				}
+			}
+
+			client := NewSubscriptionClient(SubscriptionClientConfig{WSURL: server.URL()})
+			defer client.Close()
+			if err := client.Connect(context.Background()); err != nil {
+				t.Fatalf("Connect failed: %v", err)
+			}
+
+			cursor := uint64(400)
+			_, err := client.Subscribe(context.Background(), "orders.*", tt.options(&cursor))
+			if err == nil || !strings.Contains(err.Error(), "INVALID_ARGUMENT") || !strings.Contains(err.Error(), tt.message) {
+				t.Fatalf("Subscribe error = %v, want INVALID_ARGUMENT containing %q", err, tt.message)
+			}
+		})
+	}
+}
+
+func TestSubscriptionClient_ReconnectAdvancesResumeCursor(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	var mu sync.Mutex
+	subscribeCount := 0
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		mu.Lock()
+		subscribeCount++
+		count := subscribeCount
+		mu.Unlock()
+		subscriptionID := "sub-1"
+		if count > 1 {
+			subscriptionID = "sub-2"
+		}
+		_ = server.SendMessage(map[string]any{
+			"type": "subscription_result",
+			"results": []map[string]any{{
+				"pattern": msg.Subscription.Pattern, "status": "ok", "subscriptionId": subscriptionID,
+			}},
+		})
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{
+		WSURL:             server.URL(),
+		ReconnectDelay:    time.Millisecond,
+		MaxReconnectDelay: time.Millisecond,
+		Logger:            NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	cursor := uint64(400)
+	sub, err := client.Subscribe(context.Background(), "orders.*", &SubscribeOptions{
+		StartAfterSequence: &cursor,
+	})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	_ = server.SendMessage(map[string]any{
+		"type": "event", "subscriptionId": "sub-1", "topic": "orders.created",
+		"data": map[string]any{"orderId": "o-405"},
+		"meta": map[string]any{"timestamp": "2026-08-27T00:00:00Z", "sequence": 405},
+	})
+	select {
+	case event := <-sub.Events():
+		if event.Meta == nil || event.Meta.Sequence != 405 {
+			t.Fatalf("first event sequence = %v, want 405", event.Meta)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first event")
+	}
+
+	server.DropConnection()
+	messages := waitForMessages(t, server, 2, 2*time.Second)
+	var reconnectRequest wsSubscribeRequest
+	if err := json.Unmarshal(messages[1], &reconnectRequest); err != nil {
+		t.Fatalf("unmarshal reconnect request: %v", err)
+	}
+	if reconnectRequest.Subscription.Options == nil || reconnectRequest.Subscription.Options.StartAfterSequence == nil {
+		t.Fatal("reconnect request omitted the cursor")
+	}
+	if got := *reconnectRequest.Subscription.Options.StartAfterSequence; got != 405 {
+		t.Fatalf("reconnect cursor = %d, want 405", got)
+	}
+	if reconnectRequest.Subscription.Options.Replay != 0 {
+		t.Fatalf("reconnect replay = %d, want 0", reconnectRequest.Subscription.Options.Replay)
+	}
+
+	waitForCondition(t, time.Second, func() bool {
+		return sub.CurrentID() == "sub-2"
+	})
+	if sub.ID != "sub-1" {
+		t.Fatalf("stable handle ID = %q, want sub-1", sub.ID)
+	}
+	_ = server.SendMessage(map[string]any{
+		"type": "event", "subscriptionId": "sub-2", "topic": "orders.created",
+		"data": map[string]any{"orderId": "o-406"},
+		"meta": map[string]any{"timestamp": "2026-08-27T00:00:01Z", "sequence": 406},
+	})
+	select {
+	case event := <-sub.Events():
+		if event.Meta == nil || event.Meta.Sequence != 406 {
+			t.Fatalf("resumed event sequence = %v, want 406", event.Meta)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for resumed event")
+	}
+
+	sub.Unsubscribe()
+	messages = waitForMessages(t, server, 3, time.Second)
+	var unsubscribe wsUnsubscribeRequest
+	if err := json.Unmarshal(messages[2], &unsubscribe); err != nil {
+		t.Fatalf("unmarshal unsubscribe request: %v", err)
+	}
+	if unsubscribe.SubscriptionID != "sub-2" {
+		t.Fatalf("unsubscribe ID = %q, want replacement sub-2", unsubscribe.SubscriptionID)
+	}
+}
+
+func TestSubscriptionClient_ReconnectRetriesAfterFailedRedial(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	var mu sync.Mutex
+	subscribeCount := 0
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		mu.Lock()
+		subscribeCount++
+		count := subscribeCount
+		mu.Unlock()
+		_ = server.SendMessage(map[string]any{
+			"type": "subscription_result",
+			"results": []map[string]any{{
+				"pattern": msg.Subscription.Pattern, "status": "ok",
+				"subscriptionId": fmt.Sprintf("sub-%d", count),
+			}},
+		})
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{
+		WSURL:             server.URL(),
+		ReconnectDelay:    time.Millisecond,
+		MaxReconnectDelay: time.Millisecond,
+		ReconnectBackoff:  1,
+		Logger:            NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	cursor := uint64(400)
+	if _, err := client.Subscribe(context.Background(), "orders.*", &SubscribeOptions{
+		StartAfterSequence: &cursor,
+	}); err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	server.FailNextDials(1)
+	server.DropConnection()
+	waitForMessages(t, server, 2, 2*time.Second)
+}
+
+func TestSubscriptionClient_PendingCursorRetriesAfterConnectionLoss(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	var mu sync.Mutex
+	subscribeCount := 0
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		mu.Lock()
+		subscribeCount++
+		count := subscribeCount
+		mu.Unlock()
+		if count == 1 {
+			server.DropConnection()
+			return
+		}
+		_ = server.SendMessage(map[string]any{
+			"type": "subscription_result",
+			"results": []map[string]any{{
+				"pattern": msg.Subscription.Pattern, "status": "ok",
+				"subscriptionId": "sub-2",
+			}},
+		})
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{
+		WSURL:             server.URL(),
+		ReconnectDelay:    time.Millisecond,
+		MaxReconnectDelay: time.Millisecond,
+		Logger:            NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	cursor := uint64(400)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	sub, err := client.Subscribe(ctx, "orders.*", &SubscribeOptions{
+		StartAfterSequence: &cursor,
+	})
+	if err != nil {
+		t.Fatalf("pending cursor subscribe failed instead of reconnecting: %v", err)
+	}
+	if got := sub.CurrentID(); got != "sub-2" {
+		t.Fatalf("subscription ID = %q, want sub-2", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if subscribeCount != 2 {
+		t.Fatalf("subscribe request count = %d, want 2", subscribeCount)
+	}
+}
+
+func TestSubscriptionClient_PendingUnpositionedSubscribeDoesNotReconnect(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	var mu sync.Mutex
+	subscribeCount := 0
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		mu.Lock()
+		subscribeCount++
+		mu.Unlock()
+		server.DropConnection()
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{
+		WSURL:             server.URL(),
+		ReconnectDelay:    time.Millisecond,
+		MaxReconnectDelay: time.Millisecond,
+		Logger:            NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	if _, err := client.Subscribe(context.Background(), "orders.*", nil); err == nil {
+		t.Fatal("unpositioned subscribe unexpectedly survived connection loss")
+	}
+	time.Sleep(10 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if subscribeCount != 1 {
+		t.Fatalf("subscribe request count = %d, want 1", subscribeCount)
+	}
+}
+
+func TestSubscriptionClient_UnsubscribeCancelsLateResubscribeResult(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	reconnectRequestSeen := make(chan struct{}, 1)
+	allowReconnectResult := make(chan struct{})
+	var mu sync.Mutex
+	subscribeCount := 0
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		mu.Lock()
+		subscribeCount++
+		count := subscribeCount
+		mu.Unlock()
+		if count == 2 {
+			reconnectRequestSeen <- struct{}{}
+			<-allowReconnectResult
+		}
+		_ = server.SendMessage(map[string]any{
+			"type": "subscription_result",
+			"results": []map[string]any{{
+				"pattern": msg.Subscription.Pattern, "status": "ok",
+				"subscriptionId": fmt.Sprintf("sub-%d", count),
+			}},
+		})
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{
+		WSURL:             server.URL(),
+		ReconnectDelay:    time.Millisecond,
+		MaxReconnectDelay: time.Millisecond,
+		Logger:            NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	cursor := uint64(400)
+	sub, err := client.Subscribe(context.Background(), "orders.*", &SubscribeOptions{
+		StartAfterSequence: &cursor,
+	})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	server.DropConnection()
+	select {
+	case <-reconnectRequestSeen:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for resubscribe request")
+	}
+	sub.Unsubscribe()
+	close(allowReconnectResult)
+
+	messages := waitForMessages(t, server, 4, 2*time.Second)
+	foundReplacementUnsubscribe := false
+	for _, data := range messages {
+		var request wsUnsubscribeRequest
+		if json.Unmarshal(data, &request) == nil &&
+			request.Type == "unsubscribe" && request.SubscriptionID == "sub-2" {
+			foundReplacementUnsubscribe = true
+		}
+	}
+	if !foundReplacementUnsubscribe {
+		t.Fatal("late replacement subscription sub-2 was not unsubscribed")
+	}
+}
+
+func TestSubscriptionClient_SerializesSamePatternAfterCanceledResubscribe(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	reconnectRequestSeen := make(chan struct{}, 1)
+	allowReconnectResult := make(chan struct{})
+	var mu sync.Mutex
+	subscribeCount := 0
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		mu.Lock()
+		subscribeCount++
+		count := subscribeCount
+		mu.Unlock()
+		if count == 2 {
+			reconnectRequestSeen <- struct{}{}
+			<-allowReconnectResult
+		}
+		_ = server.SendMessage(map[string]any{
+			"type": "subscription_result",
+			"results": []map[string]any{{
+				"pattern": msg.Subscription.Pattern, "status": "ok",
+				"subscriptionId": fmt.Sprintf("sub-%d", count),
+			}},
+		})
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{
+		WSURL:             server.URL(),
+		ReconnectDelay:    time.Millisecond,
+		MaxReconnectDelay: time.Millisecond,
+		Logger:            NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	cursor := uint64(400)
+	oldSub, err := client.Subscribe(context.Background(), "orders.*", &SubscribeOptions{
+		StartAfterSequence: &cursor,
+	})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	server.DropConnection()
+	select {
+	case <-reconnectRequestSeen:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for resubscribe request")
+	}
+	oldSub.Unsubscribe()
+
+	type subscribeResponse struct {
+		sub *Subscription
+		err error
+	}
+	response := make(chan subscribeResponse, 1)
+	go func() {
+		sub, subscribeErr := client.Subscribe(context.Background(), "orders.*", nil)
+		response <- subscribeResponse{sub: sub, err: subscribeErr}
+	}()
+
+	select {
+	case <-response:
+		t.Fatal("new same-pattern subscribe completed before the old acknowledgment")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(allowReconnectResult)
+
+	select {
+	case result := <-response:
+		if result.err != nil {
+			t.Fatalf("replacement subscribe failed: %v", result.err)
+		}
+		if got := result.sub.CurrentID(); got != "sub-3" {
+			t.Fatalf("replacement subscription ID = %q, want sub-3", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("replacement subscribe did not complete")
+	}
+}
+
+func TestSubscriptionClient_CanceledResubscribeRejectionDoesNotPanic(t *testing.T) {
+	client := NewSubscriptionClient(SubscriptionClientConfig{Logger: NewNoopLogger()})
+	sub := &Subscription{
+		ID:      "sub-1",
+		Pattern: "orders.*",
+		events:  make(chan *SubscriptionEvent, 1),
+		errors:  make(chan *SubscriptionError, 1),
+		client:  client,
+		done:    make(chan struct{}),
+	}
+	client.subscriptions[sub.ID] = sub
+	client.subByPattern[sub.Pattern] = sub.ID
+	attempt := &pendingSubscribeAttempt{
+		done:        make(chan struct{}),
+		resubscribe: sub,
+	}
+	client.pending[sub.Pattern] = attempt
+
+	sub.Unsubscribe()
+	client.handleMessage([]byte(`{
+		"type":"subscription_result",
+		"results":[{"pattern":"orders.*","status":"error","code":"INVALID_ARGUMENT","message":"rejected"}]
+	}`))
+
+	select {
+	case <-attempt.done:
+	default:
+		t.Fatal("canceled reconnect attempt was not completed")
+	}
+}
+
+func TestSubscriptionClient_ContextCanceledAttemptKeepsPatternUntilLateAck(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	firstSeen := make(chan struct{}, 1)
+	secondSeen := make(chan struct{}, 1)
+	allowFirstResult := make(chan struct{})
+	var mu sync.Mutex
+	subscribeCount := 0
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		mu.Lock()
+		subscribeCount++
+		count := subscribeCount
+		mu.Unlock()
+		if count == 1 {
+			firstSeen <- struct{}{}
+			go func() {
+				<-allowFirstResult
+				_ = server.SendMessage(map[string]any{
+					"type": "subscription_result",
+					"results": []map[string]any{{
+						"pattern": "orders.*", "status": "ok", "subscriptionId": "sub-1",
+					}},
+				})
+			}()
+			return
+		}
+		secondSeen <- struct{}{}
+		_ = server.SendMessage(map[string]any{
+			"type": "subscription_result",
+			"results": []map[string]any{{
+				"pattern": msg.Subscription.Pattern, "status": "ok", "subscriptionId": "sub-2",
+			}},
+		})
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{
+		WSURL:  server.URL(),
+		Logger: NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	firstResult := make(chan error, 1)
+	go func() {
+		_, err := client.Subscribe(ctx, "orders.*", nil)
+		firstResult <- err
+	}()
+	<-firstSeen
+	cancel()
+	if err := <-firstResult; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first subscribe error = %v, want context.Canceled", err)
+	}
+
+	type subscribeResponse struct {
+		sub *Subscription
+		err error
+	}
+	replacement := make(chan subscribeResponse, 1)
+	go func() {
+		sub, err := client.Subscribe(context.Background(), "orders.*", nil)
+		replacement <- subscribeResponse{sub: sub, err: err}
+	}()
+	select {
+	case <-secondSeen:
+		t.Fatal("replacement request was sent before the canceled attempt settled")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	close(allowFirstResult)
+	select {
+	case <-secondSeen:
+	case <-time.After(time.Second):
+		t.Fatal("replacement request was not sent after the late acknowledgment")
+	}
+	select {
+	case result := <-replacement:
+		if result.err != nil {
+			t.Fatalf("replacement subscribe failed: %v", result.err)
+		}
+		if result.sub.CurrentID() != "sub-2" {
+			t.Fatalf("replacement ID = %q, want sub-2", result.sub.CurrentID())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("replacement subscribe did not complete")
+	}
+
+	messages := waitForMessages(t, server, 3, time.Second)
+	foundLateUnsubscribe := false
+	for _, data := range messages {
+		var request wsUnsubscribeRequest
+		if json.Unmarshal(data, &request) == nil &&
+			request.Type == "unsubscribe" && request.SubscriptionID == "sub-1" {
+			foundLateUnsubscribe = true
+		}
+	}
+	if !foundLateUnsubscribe {
+		t.Fatal("late canceled subscription sub-1 was not unsubscribed")
+	}
+}
+
+func TestSubscriptionClient_ResubscribeRejectionRemovesPublicState(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	var mu sync.Mutex
+	subscribeCount := 0
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		mu.Lock()
+		subscribeCount++
+		count := subscribeCount
+		mu.Unlock()
+		if count == 2 {
+			_ = server.SendMessage(map[string]any{
+				"type": "subscription_result",
+				"results": []map[string]any{{
+					"pattern": msg.Subscription.Pattern,
+					"status":  "error",
+					"code":    "INVALID_ARGUMENT",
+					"message": "cursor rejected",
+				}},
+			})
+			return
+		}
+		_ = server.SendMessage(map[string]any{
+			"type": "subscription_result",
+			"results": []map[string]any{{
+				"pattern": msg.Subscription.Pattern, "status": "ok",
+				"subscriptionId": fmt.Sprintf("sub-%d", count),
+			}},
+		})
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{
+		WSURL:             server.URL(),
+		ReconnectDelay:    time.Millisecond,
+		MaxReconnectDelay: time.Millisecond,
+		Logger:            NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	cursor := uint64(400)
+	sub, err := client.Subscribe(context.Background(), "orders.*", &SubscribeOptions{
+		StartAfterSequence: &cursor,
+	})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	server.DropConnection()
+	select {
+	case subErr := <-sub.Errors():
+		if subErr == nil || subErr.Code != "RESUBSCRIBE_FAILED" {
+			t.Fatalf("resubscribe error = %#v, want RESUBSCRIBE_FAILED", subErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for resubscribe rejection")
+	}
+
+	replacement, err := client.Subscribe(context.Background(), "orders.*", nil)
+	if err != nil {
+		t.Fatalf("replacement subscribe failed: %v", err)
+	}
+	if replacement.CurrentID() != "sub-3" {
+		t.Fatalf("replacement ID = %q, want sub-3", replacement.CurrentID())
+	}
+}
+
+func TestSubscriptionClient_CanceledCursorDoesNotKeepRetrying(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	firstSeen := make(chan struct{}, 1)
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		firstSeen <- struct{}{}
+		server.DropConnection()
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{
+		WSURL:             server.URL(),
+		ReconnectDelay:    20 * time.Millisecond,
+		MaxReconnectDelay: 20 * time.Millisecond,
+		Logger:            NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	cursor := uint64(400)
+	ctx, cancel := context.WithCancel(context.Background())
+	firstResult := make(chan error, 1)
+	go func() {
+		_, err := client.Subscribe(ctx, "orders.*", &SubscribeOptions{
+			StartAfterSequence: &cursor,
+		})
+		firstResult <- err
+	}()
+	<-firstSeen
+	waitForCondition(t, time.Second, func() bool {
+		return client.State() == StateReconnecting
+	})
+	cancel()
+	if err := <-firstResult; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first subscribe error = %v, want context.Canceled", err)
+	}
+	waitForCondition(t, time.Second, client.IsConnected)
+
+	server.mu.Lock()
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		_ = server.SendMessage(map[string]any{
+			"type": "subscription_result",
+			"results": []map[string]any{{
+				"pattern": msg.Subscription.Pattern, "status": "ok", "subscriptionId": "sub-2",
+			}},
+		})
+	}
+	server.mu.Unlock()
+	replacementCtx, replacementCancel := context.WithTimeout(context.Background(), time.Second)
+	defer replacementCancel()
+	if _, err := client.Subscribe(replacementCtx, "orders.*", nil); err != nil {
+		t.Fatalf("replacement subscribe remained blocked by canceled tombstone: %v", err)
+	}
+}
+
+func TestSubscriptionClient_ResubscribeRegistersNewIDBeforeNextEvent(t *testing.T) {
+	client := NewSubscriptionClient(SubscriptionClientConfig{Logger: NewNoopLogger()})
+	sub := &Subscription{
+		ID:      "sub-1",
+		Pattern: "orders.*",
+		events:  make(chan *SubscriptionEvent, 1),
+		errors:  make(chan *SubscriptionError, 1),
+		client:  client,
+		done:    make(chan struct{}),
+	}
+	client.subscriptions[sub.ID] = sub
+	client.subByPattern[sub.Pattern] = sub.ID
+	client.pending[sub.Pattern] = &pendingSubscribeAttempt{
+		done:        make(chan struct{}),
+		resubscribe: sub,
+	}
+
+	client.handleMessage([]byte(`{
+		"type":"subscription_result",
+		"results":[{"pattern":"orders.*","status":"ok","subscriptionId":"sub-2"}]
+	}`))
+	client.handleMessage([]byte(`{
+		"type":"event",
+		"subscriptionId":"sub-2",
+		"topic":"orders.created",
+		"data":{"orderId":"o-406"},
+		"meta":{"timestamp":"2026-08-27T00:00:01Z","sequence":406}
+	}`))
+
+	select {
+	case event := <-sub.Events():
+		if event.Meta == nil || event.Meta.Sequence != 406 {
+			t.Fatalf("resumed event sequence = %v, want 406", event.Meta)
+		}
+	default:
+		t.Fatal("first resumed event was dropped before the replacement subscription ID was registered")
+	}
+}
+
+func TestSubscriptionClient_ReconnectPreservesOptionsWithoutReplay(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	var mu sync.Mutex
+	subscribeCount := 0
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		mu.Lock()
+		subscribeCount++
+		count := subscribeCount
+		mu.Unlock()
+		_ = server.SendMessage(map[string]any{
+			"type": "subscription_result",
+			"results": []map[string]any{{
+				"pattern": msg.Subscription.Pattern, "status": "ok",
+				"subscriptionId": fmt.Sprintf("sub-%d", count),
+			}},
+		})
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{
+		WSURL:             server.URL(),
+		AutoReconnect:     true,
+		ReconnectDelay:    time.Millisecond,
+		MaxReconnectDelay: time.Millisecond,
+		Logger:            NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	_, err := client.Subscribe(context.Background(), "orders.*", &SubscribeOptions{
+		Replay:          25,
+		IncludeMetadata: true,
+		Filter:          "data.total > 100",
+		Namespace:       "production",
+		ConsumerGroup:   "processors",
+		AckMode:         AckModeManual,
+		Backpressure:    BackpressureBlock,
+	})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	server.DropConnection()
+	messages := waitForMessages(t, server, 2, 2*time.Second)
+	var initial, reconnect wsSubscribeRequest
+	if err := json.Unmarshal(messages[0], &initial); err != nil {
+		t.Fatalf("unmarshal initial request: %v", err)
+	}
+	if err := json.Unmarshal(messages[1], &reconnect); err != nil {
+		t.Fatalf("unmarshal reconnect request: %v", err)
+	}
+	if initial.Subscription.Options == nil || reconnect.Subscription.Options == nil {
+		t.Fatal("initial and reconnect requests must include options")
+	}
+	if initial.Subscription.Options.Replay != 25 {
+		t.Fatalf("initial replay = %d, want 25", initial.Subscription.Options.Replay)
+	}
+	if reconnect.Subscription.Options.Replay != 0 {
+		t.Fatalf("reconnect replay = %d, want 0", reconnect.Subscription.Options.Replay)
+	}
+	if reconnect.Subscription.Options.IncludeMetadata != initial.Subscription.Options.IncludeMetadata ||
+		reconnect.Subscription.Options.Filter != initial.Subscription.Options.Filter ||
+		reconnect.Subscription.Options.Namespace != initial.Subscription.Options.Namespace ||
+		reconnect.Subscription.Options.ConsumerGroup != initial.Subscription.Options.ConsumerGroup ||
+		reconnect.Subscription.Options.AckMode != initial.Subscription.Options.AckMode ||
+		reconnect.Subscription.Options.Backpressure != initial.Subscription.Options.Backpressure {
+		t.Fatalf("reconnect options differ from initial options: initial=%+v reconnect=%+v",
+			initial.Subscription.Options, reconnect.Subscription.Options)
+	}
+}
+
+func TestSubscriptionClient_ReconnectKeepsConsumerGroupDelivery(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	var mu sync.Mutex
+	subscribeCount := 0
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		mu.Lock()
+		subscribeCount++
+		count := subscribeCount
+		mu.Unlock()
+		_ = server.SendMessage(map[string]any{
+			"type": "subscription_result",
+			"results": []map[string]any{{
+				"pattern": msg.Subscription.Pattern, "status": "ok",
+				"subscriptionId": fmt.Sprintf("sub-%d", count),
+			}},
+		})
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{
+		WSURL:             server.URL(),
+		AutoReconnect:     true,
+		ReconnectDelay:    time.Millisecond,
+		MaxReconnectDelay: time.Millisecond,
+		Logger:            NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	sub, err := client.Subscribe(context.Background(), "orders.*", &SubscribeOptions{
+		ConsumerGroup: "processors",
+	})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	server.DropConnection()
+	messages := waitForMessages(t, server, 2, 2*time.Second)
+	var reconnect wsSubscribeRequest
+	if err := json.Unmarshal(messages[1], &reconnect); err != nil {
+		t.Fatalf("unmarshal reconnect request: %v", err)
+	}
+	if reconnect.Subscription.Options == nil || reconnect.Subscription.Options.ConsumerGroup != "processors" {
+		t.Fatalf("reconnect consumer group = %+v, want processors", reconnect.Subscription.Options)
+	}
+
+	waitForCondition(t, time.Second, func() bool {
+		client.mu.RLock()
+		defer client.mu.RUnlock()
+		return client.subByPattern["orders.*"] == "sub-2"
+	})
+
+	// The mock models group delivery by sending one event when the group is
+	// present and broadcasting two when it is missing.
+	deliveries := 2
+	if reconnect.Subscription.Options.ConsumerGroup == "processors" {
+		deliveries = 1
+	}
+	for i := 0; i < deliveries; i++ {
+		_ = server.SendMessage(map[string]any{
+			"type": "event", "subscriptionId": "sub-2", "topic": "orders.created",
+			"data": map[string]any{"orderId": fmt.Sprintf("o-%d", i)},
+		})
+	}
+
+	select {
+	case <-sub.Events():
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for group delivery after reconnect")
+	}
+	select {
+	case event := <-sub.Events():
+		t.Fatalf("consumer group became broadcast after reconnect: extra event %+v", event)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 

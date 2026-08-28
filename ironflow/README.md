@@ -14,18 +14,24 @@ Go SDK for [Ironflow](https://github.com/sahina/ironflow) -- an event-driven bac
 - [HTTP Handler (Push Mode)](#http-handler-push-mode)
 - [Worker (Pull Mode)](#worker-pull-mode)
 - [Client](#client)
+- [Function Lifecycle and Versioning](#function-lifecycle-and-versioning)
 - [Real-Time Subscriptions](#real-time-subscriptions)
 - [Entity Streams (Event Sourcing)](#entity-streams-event-sourcing)
 - [Projections](#projections)
+- [Projects and Environments](#projects-and-environments)
+- [Event Schema Registry](#event-schema-registry)
+- [Command Idempotency](#command-idempotency)
 - [KV Store](#kv-store)
 - [Config Management](#config-management)
 - [Auth Management](#auth-management)
 - [Audit Trail](#audit-trail)
 - [Webhooks](#webhooks)
+- [Webhook Source Management](#webhook-source-management)
 - [Signature Verification](#signature-verification)
 - [Event Versioning (Upcasters)](#event-versioning-upcasters)
 - [Secrets](#secrets)
 - [Testing (ironflowtest)](#testing-ironflowtest)
+- [Agent Primitives](#agent-primitives)
 - [Error Handling](#error-handling)
 - [Environment Variables](#environment-variables)
 - [Constants](#constants)
@@ -169,6 +175,30 @@ The `Context` passed to handlers provides:
 | `ctx.Secrets` | `SecretsReader` | Resolved secrets (see [Secrets](#secrets)) |
 
 Use `ctx.Event.Data(&target)` to unmarshal the event payload into a typed struct.
+
+### CreateHandler -- Typed Event Handlers
+
+`CreateHandler[TEvent]` is a thinner generic front for the common case: one
+event, a typed payload, no manual `Data()` unmarshal. It returns the same
+`Function` that `CreateFunction` does.
+
+```go
+var OrderHandler = ironflow.CreateHandler(ironflow.HandlerConfig[OrderData]{
+    Event: "order.placed", // ID is derived from the event name unless Options.ID is set
+    Handler: func(order OrderData, ctx *ironflow.HandlerContext) (any, error) {
+        return ctx.Step.Run("process", func() (any, error) { return processOrder(order) })
+    },
+    Options: &ironflow.HandlerOptions{
+        ID:     "high-value-order-handler",
+        Filter: `data.total > 1000`,
+        Retry:  &ironflow.RetryConfig{MaxAttempts: 5},
+    },
+})
+```
+
+`ctx` here is a `*HandlerContext` with `Event`, `EventMeta`, `Run`, `Secrets`,
+`Step`, and `Logger` fields; `ctx.Step` is a `StepClient` exposing `Run`,
+`Sleep`, `SleepUntil`, `WaitForEvent`, `Parallel`, `Map`, and `Compensate`.
 
 ---
 
@@ -448,6 +478,21 @@ if err := worker.Run(ctx); err != nil {
 - `Drain()` -- gracefully stops: finishes active jobs, then stops. Blocks until drained.
 - `Stop()` -- immediately stops: cancels active jobs and projection runners.
 
+### Streaming Worker
+
+`NewStreamingWorker` takes the same `WorkerConfig` and exposes the same
+`Run` / `Drain` / `Stop` lifecycle, but receives jobs over a ConnectRPC
+bidirectional stream instead of HTTP polling.
+
+```go
+worker := ironflow.NewStreamingWorker(ironflow.WorkerConfig{
+    Functions: []ironflow.Function{GenerateVideo},
+})
+if err := worker.Run(ctx); err != nil {
+    log.Fatal(err)
+}
+```
+
 ---
 
 ## Client
@@ -499,6 +544,28 @@ syncResult, err := client.EmitSync(ctx, "order.placed", data, 30*time.Second)
 if syncResult.Status == ironflow.RunStatusCompleted {
     fmt.Printf("Output: %v\n", syncResult.Output)
 }
+
+// Batch emit -- one round trip, one EmitResult per event
+results, err := client.TriggerBatch(ctx, []ironflow.TriggerBatchEvent{
+    {Event: "order.placed", Data: map[string]any{"orderId": "1"}},
+    {Event: "order.placed", Data: map[string]any{"orderId": "2"}},
+})
+```
+
+### Reading Stored Events
+
+```go
+// Page the environment's event log
+page, err := client.ListEvents(ctx, ironflow.ListEventsOptions{
+    Name:  "order.placed",
+    Limit: 50,
+})
+
+// Fetch one stored event
+event, err := client.GetEvent(ctx, "evt_abc123")
+
+// Distinct event names with counts (for pickers and dashboards)
+names, err := client.ListEventNames(ctx, ironflow.ListEventNamesOptions{})
 ```
 
 ### Run Management
@@ -551,6 +618,32 @@ prevOutput, err := client.InjectStepOutput(ctx, "run_abc123", "step_xyz",
 run, err := client.ResumeRun(ctx, "run_abc123", "")
 ```
 
+### Run Introspection
+
+```go
+// Every step recorded for a run, in execution order
+steps, err := client.GetRunSteps(ctx, "run_abc123")
+
+// Entity streams the run touched
+streams, err := client.GetRunStreams(ctx, "run_abc123")
+```
+
+### Time-Travel Debugging
+
+Requires `Recording: true` on the function. Reconstructs historical run state
+from the audit record.
+
+```go
+// Full run state as of a timestamp
+snapshot, err := client.GetRunStateAt(ctx, "run_abc123", time.Now().Add(-time.Hour))
+
+// Ordered timeline of significant events
+timeline, err := client.GetRunTimeline(ctx, "run_abc123")
+
+// One step's output as of a timestamp (reports patched/injected)
+out, err := client.GetStepOutputAt(ctx, "run_abc123", "step_xyz", at)
+```
+
 ### Developer Pub/Sub
 
 ```go
@@ -595,6 +688,10 @@ fmt.Println(caps.Transports, caps.Features, caps.Version)
 
 // Auto-detect best subscription transport
 transport, err := client.DetectTransport(ctx) // "grpc" or "websocket"
+
+// Escape hatch for REST routes the client does not wrap
+var out map[string]any
+err = client.RestRequest(ctx, "GET", "/api/v1/capacity/stats", nil, &out)
 ```
 
 ### Consumer Groups
@@ -610,7 +707,8 @@ group, err := client.CreateConsumerGroup(ctx, ironflow.ConsumerGroupConfig{
     RedeliverDelayMs: 5000,
 })
 
-// Join a consumer group (auto-detects transport)
+// Join a consumer group (auto-detects transport). Options:
+// WithJoinNamespace, WithJoinConsumerID, WithJoinTransport ("grpc" | "websocket").
 sub, err := client.JoinConsumerGroup(ctx, "order-processors")
 defer sub.Unsubscribe()
 
@@ -622,10 +720,46 @@ for event := range sub.Events() {
     sub.Ack(event.ID)
 }
 
-// List/Get/Delete consumer groups
+// List/Get/Update/Delete consumer groups
 groups, err := client.ListConsumerGroups(ctx)
 group, err := client.GetConsumerGroup(ctx, "order-processors")
+group, err = client.UpdateConsumerGroup(ctx, "order-processors", ironflow.UpdateConsumerGroupInput{
+    MaxInflight: &newLimit,
+})
 err := client.DeleteConsumerGroup(ctx, "order-processors")
+```
+
+Every consumer-group call takes `ironflow.WithConsumerGroupNamespace(...)` to
+target a namespace other than `default`.
+
+### Agent Tool Discovery
+
+```go
+tools, err := client.ListAgentTools(ctx, "")
+for _, tool := range tools.Tools {
+    fmt.Println(tool.QualifiedName, tool.Description)
+}
+```
+
+---
+
+## Function Lifecycle and Versioning
+
+Every `RegisterFunction` writes a new version. The registry keeps the history so
+a bad deploy can be rolled back without redeploying code.
+
+```go
+fn, err := client.GetFunction(ctx, "process-order")
+
+// Pause or resume dispatch without deregistering
+fn, err = client.UpdateFunctionStatus(ctx, "process-order", ironflow.FunctionStatusPaused)
+
+err = client.DeleteFunction(ctx, "process-order")
+
+// Version history
+history, err := client.ListFunctionHistory(ctx, "process-order", ironflow.ListFunctionHistoryOptions{Limit: 20})
+old, err := client.GetFunctionAtVersion(ctx, "process-order", 3)
+fn, err = client.RollbackFunction(ctx, "process-order", 3, "bad concurrency key")
 ```
 
 ---
@@ -732,6 +866,31 @@ grpcClient := ironflow.NewGrpcSubscriptionClient(ironflow.GrpcSubscriptionClient
 })
 ```
 
+### Resume from a sequence
+
+Both subscription transports accept a global sequence cursor. A pointer keeps
+an explicit `0` (resume from the beginning) distinct from an unset cursor:
+
+```go
+cursor := uint64(400)
+sub, err := subClient.Subscribe(ctx, "events:order.*", &ironflow.SubscribeOptions{
+    StartAfterSequence: &cursor,
+})
+```
+
+`StartAfterSequence` cannot be combined with `Replay` or `ConsumerGroup`; the
+server rejects either combination with `INVALID_ARGUMENT`. Setting the cursor
+also opts the subscription into reconnect-on-transport-failure. After each
+event is delivered to `Events()`, the client advances the reconnect cursor to
+that event's sequence. Delivery is at least once, so a reconnect can repeat an
+event that was in flight when the connection dropped.
+
+The WebSocket client applies `Replay` only to the initial subscribe request.
+Reconnects preserve `Filter`, `ConsumerGroup`, `IncludeMetadata`, `AckMode`,
+`Backpressure`, and `Namespace`, but omit the original replay count. A fan-out
+subscription without a cursor reconnects at the current tail and can miss
+events published while it was offline.
+
 ### Consumer Groups with Manual Ack
 
 **WebSocket:**
@@ -784,6 +943,7 @@ result, err := client.AppendStreamEvent(ctx, "order-123", ironflow.AppendEventIn
     ironflow.WithExpectedVersion(3),
     ironflow.WithAppendIdempotencyKey("remove-widget-1"),
     ironflow.WithEventVersion(2), // event schema version
+    ironflow.WithAppendMetadata(map[string]any{"correlationId": "req-1"}),
 )
 
 // Read events from a stream
@@ -802,6 +962,18 @@ events, err := client.ReadStream(ctx, "order-123", ironflow.ReadStreamOpts{
 // Get stream metadata
 info, err := client.GetStreamInfo(ctx, "order-123")
 fmt.Printf("Entity %s at version %d (%d events)\n", info.EntityID, info.Version, info.EventCount)
+
+// Enumerate every stream in the environment, or one entity's unified history
+streams, err := client.ListStreams(ctx)
+history, err := client.GetEntityHistory(ctx, "order-123")
+
+// Snapshots -- skip replaying a long stream from version 0
+snap, err := client.CreateSnapshot(ctx, "order-123", ironflow.CreateSnapshotInput{
+    EntityType:    "order",
+    EntityVersion: 1000,
+    State:         materialized,
+})
+latest, err := client.GetSnapshot(ctx, "order-123")
 
 // Subscribe to entity stream updates (real-time)
 sub, err := subClient.SubscribeEntityStream(ctx, "order-123", ironflow.EntitySubscribeOptions{
@@ -877,6 +1049,144 @@ Managed reducers run under at-least-once delivery. PG-backed rebuild (#486) and 
 
 See [`docs/explanation/projections.md`](../../../docs/explanation/projections.md#reducer-contract-managed-mode) for examples and rationale.
 
+### Projection Administration
+
+`client.Projections()` reads materialized state and drives the operational
+lifecycle.
+
+```go
+p := client.Projections()
+
+state, err := p.Get(ctx, "order-totals")                 // add ironflow.WithPartition(...) for partitioned state
+statuses, err := p.List(ctx)
+status, err := p.GetStatus(ctx, "order-totals")
+
+job, err := p.Rebuild(ctx, "order-totals")
+job, err = p.GetRebuildJob(ctx, "order-totals")
+err = p.CancelRebuild(ctx, "order-totals")
+
+err = p.Pause(ctx, "order-totals")
+err = p.Resume(ctx, "order-totals")
+err = p.Delete(ctx, "order-totals")
+
+// SQL projections (PostgreSQL backend)
+rows, err := p.ExecuteSQL(ctx, "SELECT * FROM proj_board WHERE status = 'OPEN'")
+
+// Partitions of a partitioned projection
+parts, err := client.ListProjectionPartitions(ctx, "order-detail-view",
+    ironflow.ListProjectionPartitionsOptions{Limit: 50})
+```
+
+### Read-Your-Writes
+
+`AppendStreamEvent` returns no NATS sequence under the transactional outbox, so
+resolve the event ID to a sequence first, then wait on it.
+
+```go
+res, err := client.AppendStreamEvent(ctx, "order-123", input)
+
+wait, err := client.WaitForEvent(ctx, res.EventID, "order-detail-view",
+    ironflow.WaitForProjectionOpts{Timeout: 5 * time.Second})
+
+// Or wait directly on a known sequence, one projection or many
+_, err = client.WaitForProjection(ctx, "order-detail-view", ironflow.WaitForProjectionOpts{
+    MinSeq:    wait.TargetSeq,
+    Partition: "order-123",
+    Timeout:   5 * time.Second,
+})
+_, err = client.WaitForProjections(ctx, []ironflow.WaitItem{
+    {Name: "order-detail-view", MinSeq: wait.TargetSeq, Partition: "order-123"},
+}, 5*time.Second)
+
+// Streaming variant -- progress frames instead of one blocking call. The
+// returned func cancels the stream; drain the channel until it closes.
+progress, cancel, err := client.WaitForProjectionStream(ctx, "order-detail-view",
+    ironflow.WaitForProjectionOpts{MinSeq: wait.TargetSeq})
+defer cancel()
+for p := range progress {
+    fmt.Println(p.CurrentSeq, p.TargetSeq, p.BehindByEvents, p.Terminal)
+}
+```
+
+---
+
+## Projects and Environments
+
+```go
+projects := client.Projects()
+
+p, err := projects.Create(ctx, ironflow.CreateProjectInput{Name: "my-service"})
+all, err := projects.List(ctx)
+p, err = projects.Update(ctx, p.ID, ironflow.UpdateProjectInput{Name: "renamed"})
+err = projects.Delete(ctx, p.ID)
+
+envs, err := projects.ListEnvironments(ctx)
+env, err := projects.CreateEnvironment(ctx, ironflow.CreateEnvironmentInput{
+    Name:      "staging",
+    ProjectID: p.ID,
+})
+env, err = projects.UpdateEnvironment(ctx, env.ID, ironflow.UpdateEnvironmentInput{Name: "staging-v2"})
+err = projects.DeleteEnvironment(ctx, env.ID)
+```
+
+---
+
+## Event Schema Registry
+
+Server-side JSON Schema registry, distinct from the SDK-side `UpcasterRegistry`
+below. Use it to publish contracts and to dry-run an upcast the server owns.
+
+```go
+schemas := client.Schemas()
+
+s, err := schemas.Register(ctx, ironflow.RegisterSchemaInput{
+    Name:    "order.placed",
+    Version: 2,
+    Schema:  map[string]any{"type": "object"},
+})
+all, err := schemas.List(ctx)
+latest, err := schemas.Get(ctx, "order.placed")
+v1, err := schemas.GetVersion(ctx, "order.placed", 1)
+err = schemas.Delete(ctx, "order.placed", 1)
+
+out, err := schemas.TestUpcast(ctx, ironflow.TestUpcastInput{
+    EventName:   "order.placed",
+    FromVersion: 1,
+    ToVersion:   2,
+    Data:        map[string]any{"orderId": "123"},
+})
+```
+
+---
+
+## Command Idempotency
+
+Atomic claim-first dedup backed by NATS KV, for commands that must run exactly
+once across retries and duplicate submissions.
+
+```go
+dedup, err := ironflow.NewCommandDedup[OrderResult](ctx, client.KV(), "order-commands",
+    ironflow.CommandDedupOptions{TTL: ironflow.DefaultCommandDedupTTL})
+
+prior, err := dedup.TryClaim(ctx, commandID, claim)
+if err != nil {
+    return err
+}
+if prior != nil {
+    return *prior, nil // duplicate -- return the cached result
+}
+
+result, err := runHandler()
+if err != nil {
+    _ = dedup.Release(ctx, commandID) // frees the claim for a genuine retry
+    return err
+}
+return result, dedup.Finalize(ctx, commandID, result)
+```
+
+Never call `Release` after `Finalize` — it deletes the finalized result and lets
+the command replay. `CommandDedupOptions.TTL` of `0` means no expiry.
+
 ---
 
 ## KV Store
@@ -927,6 +1237,14 @@ err = bucket.Delete(ctx, "user:456")
 
 // Purge (hard delete, removes all history)
 err = bucket.Purge(ctx, "user:456")
+
+// Watch a bucket over WebSocket. Omit WithWatchKey to watch every key.
+watcher, err := bucket.Watch(ctx, ironflow.KVWatchCallbacks{
+    OnUpdate: func(e ironflow.KVWatchEvent) { fmt.Println(e.Key, e.Operation, e.Revision) },
+    OnError:  func(err error) { log.Println(err) }, // the watch stops after an error
+    OnClose:  func() { log.Println("watch closed") },
+}, ironflow.WithWatchKey("user.*"))
+defer watcher.Stop()
 ```
 
 ---
@@ -963,6 +1281,15 @@ for _, c := range all {
 
 // Delete
 err = config.Delete(ctx, "old-config")
+
+// Watch one config over WebSocket. Drop events whose Revision is lower than
+// the last one you applied -- retries can deliver out of order.
+watcher, err := config.Watch(ctx, "app-settings", ironflow.ConfigWatchCallbacks{
+    OnUpdate: func(e ironflow.ConfigWatchEvent) { fmt.Println(e.Name, e.Revision, e.Data) },
+    OnError:  func(err error) { log.Println(err) }, // the watch stops after an error
+    OnClose:  func() { log.Println("watch closed") },
+})
+defer watcher.Stop()
 ```
 
 ---
@@ -1019,6 +1346,7 @@ err = client.DeleteRole(ctx, role.ID)
 // Assign/remove policies
 err = client.AssignPolicyToRole(ctx, role.ID, policyID)
 err = client.RemovePolicyFromRole(ctx, role.ID, policyID)
+assigned, err := client.ListRolePolicies(ctx, role.ID)
 ```
 
 ### Policies
@@ -1040,6 +1368,21 @@ policy, err = client.UpdatePolicy(ctx, policy.ID, ironflow.UpdatePolicyInput{
 err = client.DeletePolicy(ctx, policy.ID)
 ```
 
+### Password and Tenant Provisioning
+
+```go
+err := client.Users().ChangePassword(ctx, userID, ironflow.ChangePasswordInput{
+    CurrentPassword: "old-password",
+    NewPassword:     "new-password",
+})
+
+tenant, err := client.Tenants().Provision(ctx, ironflow.ProvisionTenantInput{
+    OrgName: "Acme",
+    EnvName: "production",
+})
+// tenant.APIKey.Key is shown only in this response.
+```
+
 ---
 
 ## Audit Trail
@@ -1059,6 +1402,12 @@ result, err := client.GetAuditTrail(ctx, runID, ironflow.GetAuditTrailOpts{
     Cursor:        "next-page-cursor",
 })
 fmt.Println("Total:", result.TotalCount, "Next:", result.NextCursor)
+
+// Environment-wide audit stream
+audit, err := client.ListAuditEvents(ctx, ironflow.ListAuditEventsOpts{
+    EventType: "run.failed",
+    Limit:     50,
+})
 ```
 
 ---
@@ -1106,6 +1455,55 @@ The `WebhookRequest` provides:
 | `Header` | `http.Header` | HTTP headers         |
 | `Method` | `string`      | HTTP method          |
 | `URL`    | `string`      | Request URL          |
+
+---
+
+## Webhook Source Management
+
+`CreateWebhook` above defines an in-process handler. `client.Webhooks()` manages
+the *server-side* registry that the dashboard and delivery tracking read.
+
+```go
+wh := client.Webhooks()
+
+// ingestToken is returned only here and on rotate (ADR 0048) -- capture it now.
+src, err := wh.CreateSource(ctx, ironflow.CreateWebhookSourceInput{
+    Name:        "Stripe production",
+    EventPrefix: "stripe",
+})
+
+sources, err := wh.ListSources(ctx)
+current, err := wh.GetSource(ctx, src.ID)
+
+// Name is required on every update. Empty VerifyHeader/VerifyAlgorithm and an
+// omitted VerifyConfig PRESERVE the stored values; Metadata replaces wholesale
+// and nil clears it. ExpectedUpdatedAt is optimistic concurrency -- ABORTED if
+// the row moved.
+src, err = wh.UpdateSource(ctx, ironflow.UpdateWebhookSourceInput{
+    ID:                src.ID,
+    Name:              "Stripe production (EU)",
+    ExpectedUpdatedAt: current.UpdatedAt,
+})
+
+// Secret rotation. GracePeriod is tri-state: nil = server default (24h),
+// a zero duration = instant cutover, N = the window prev keeps verifying
+// (server clamps above 7 days).
+src, err = wh.RotateSecret(ctx, ironflow.RotateWebhookSecretInput{ID: src.ID, VerifySecret: "whsec_new"})
+src, err = wh.ExpireSecretPrev(ctx, src.ID)
+src, err = wh.DisableSignatureVerification(ctx, src.ID, nil)
+src, err = wh.RotateIngestToken(ctx, ironflow.RotateWebhookIngestTokenInput{ID: src.ID})
+
+deliveries, total, err := wh.ListDeliveries(ctx, ironflow.ListWebhookDeliveriesOpts{
+    SourceID: src.ID,
+    Status:   "failed",
+    Limit:    25,
+})
+
+err = wh.DeleteSource(ctx, src.ID)
+```
+
+`ExpireSecretPrevWithInput` and `DisableSignatureVerificationWithInput` take the
+full input struct when you need `ExpectedUpdatedAt` optimistic concurrency.
 
 ---
 
@@ -1209,6 +1607,16 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
 | `Get(name string, dest *string)` | Get secret value. Error if missing |
 | `Has(name string) bool`          | Check if secret exists             |
 
+The administrative client can also patch secret metadata without replacing its
+value:
+
+```go
+description := "Rotated by payments"
+secret, err := client.Secrets().Patch(ctx, "STRIPE_KEY", ironflow.PatchSecretInput{
+    Description: &description,
+})
+```
+
 ---
 
 ## Testing (ironflowtest)
@@ -1301,6 +1709,22 @@ func TestProcessOrder(t *testing.T) {
 
 ---
 
+## Agent Primitives
+
+Durable AI-agent helpers (`Agent`, `DefineTool`, `Tool`, `LLM`, `Approve`,
+`Spawn`, `Memory`, `ExposeMcp`) live in the `agent` subpackage. They record
+ordinary steps under the hood, so agents inherit crash-resume, replay, and
+audit with no new server primitives.
+
+```go
+import "github.com/sahina/ironflow-go/ironflow/agent"
+```
+
+See [`agent/README.md`](agent/README.md) for the full surface, stable error
+codes, and the MCP dispatch mount.
+
+---
+
 ## Error Handling
 
 ### Sentinel Errors
@@ -1380,6 +1804,8 @@ url := ironflow.GetServerURL()      // IRONFLOW_SERVER_URL or default
 key := ironflow.GetSigningKey()      // IRONFLOW_SIGNING_KEY
 apiKey := ironflow.GetAPIKey()       // IRONFLOW_API_KEY
 wsURL := ironflow.GetWebSocketURL("") // converts server URL to ws:// + /ws
+
+d, err := ironflow.ParseDuration("30m") // "1s"/"5m"/"2h"/"7d" -> time.Duration
 ```
 
 ---
@@ -1391,6 +1817,12 @@ ironflow.DefaultServerURL     // "http://localhost:9123"
 ironflow.DefaultWebSocketURL  // "ws://localhost:9123/ws"
 ironflow.DefaultPort          // 9123
 ironflow.DefaultHost          // "localhost"
+
+// Environment variable names
+ironflow.EnvServerURL   // "IRONFLOW_SERVER_URL"
+ironflow.EnvSigningKey  // "IRONFLOW_SIGNING_KEY"
+ironflow.EnvAPIKey      // "IRONFLOW_API_KEY"
+ironflow.EnvLogLevel    // "IRONFLOW_LOG_LEVEL"
 
 // Timeouts
 ironflow.DefaultClientTimeout       // 30s

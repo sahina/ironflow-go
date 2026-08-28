@@ -84,6 +84,12 @@ type SubscribeOptions struct {
 	// Replay is the number of historical events to replay (0 = no replay).
 	Replay int
 
+	// StartAfterSequence resumes delivery after this global event sequence.
+	// A pointer is used because zero is a valid cursor. It cannot be combined
+	// with Replay or ConsumerGroup. When set, reconnects resume after the last
+	// event delivered to the subscription, providing at-least-once delivery.
+	StartAfterSequence *uint64
+
 	// IncludeMetadata includes event metadata (timestamp, sequence).
 	IncludeMetadata bool
 
@@ -125,6 +131,10 @@ type EventMeta struct {
 
 	// Sequence is the event sequence number.
 	Sequence uint64 `json:"sequence,omitempty"`
+
+	// SequenceExact is the decimal uint64 representation used by JavaScript
+	// clients when Sequence exceeds their safe integer range.
+	SequenceExact string `json:"sequenceExact,omitempty"`
 }
 
 // SubscriptionError represents an error from a subscription.
@@ -148,7 +158,8 @@ func (e *SubscriptionError) Error() string {
 
 // Subscription represents an active subscription.
 type Subscription struct {
-	// ID is the subscription ID.
+	// ID is the stable handle ID assigned by the first successful subscribe.
+	// Use CurrentID to inspect the current server ID after a reconnect.
 	ID string
 
 	// Pattern is the subscription pattern.
@@ -162,6 +173,9 @@ type Subscription struct {
 
 	// client is the parent client
 	client *SubscriptionClient
+
+	// options retains the subscription identity for reconnects.
+	options *SubscribeOptions
 
 	// done signals subscription closure
 	done chan struct{}
@@ -178,11 +192,16 @@ func (s *Subscription) Errors() <-chan *SubscriptionError {
 	return s.errors
 }
 
+// CurrentID returns the server subscription ID currently bound to this handle.
+func (s *Subscription) CurrentID() string {
+	return s.client.currentSubscriptionID(s.Pattern, s.ID)
+}
+
 // Unsubscribe stops the subscription.
 func (s *Subscription) Unsubscribe() {
 	s.once.Do(func() {
 		close(s.done)
-		s.client.unsubscribe(s.ID)
+		s.client.unsubscribeByPattern(s.Pattern)
 	})
 }
 
@@ -252,7 +271,8 @@ type SubscriptionClientConfig struct {
 	// WSURL is the WebSocket server URL (e.g., "ws://localhost:9123/ws").
 	WSURL string
 
-	// AutoReconnect enables automatic reconnection (default: true).
+	// AutoReconnect enables automatic reconnection for subscriptions without a
+	// resume cursor. StartAfterSequence opts its subscription into reconnects.
 	AutoReconnect bool
 
 	// ReconnectDelay is the initial reconnect delay (default: 1s).
@@ -317,9 +337,9 @@ type SubscriptionClient struct {
 
 	// Subscription tracking
 	pendingMu     sync.Mutex
-	pending       map[string]chan subscribeResult // pattern -> result channel
-	subscriptions map[string]*Subscription        // subscriptionID -> subscription
-	subByPattern  map[string]string               // pattern -> subscriptionID
+	pending       map[string]*pendingSubscribeAttempt // pattern -> in-flight wire request
+	subscriptions map[string]*Subscription            // subscriptionID -> subscription
+	subByPattern  map[string]string                   // pattern -> subscriptionID
 
 	// Connection callbacks
 	onConnectionChange func(connected bool)
@@ -333,6 +353,18 @@ type SubscriptionClient struct {
 type subscribeResult struct {
 	subscriptionID string
 	err            error
+}
+
+// pendingSubscribeAttempt serializes subscribe requests for the same pattern.
+// The WebSocket protocol correlates results by pattern, so allowing two requests
+// for one pattern in flight would make their acknowledgments ambiguous.
+type pendingSubscribeAttempt struct {
+	result      chan subscribeResult
+	done        chan struct{}
+	canceledCh  chan struct{}
+	options     *SubscribeOptions
+	resubscribe *Subscription
+	canceled    bool
 }
 
 // NewSubscriptionClient creates a new subscription client.
@@ -358,7 +390,7 @@ func NewSubscriptionClient(config SubscriptionClientConfig) *SubscriptionClient 
 		logger:        logger,
 		apiKey:        GetAPIKey(),
 		state:         StateDisconnected,
-		pending:       make(map[string]chan subscribeResult),
+		pending:       make(map[string]*pendingSubscribeAttempt),
 		subscriptions: make(map[string]*Subscription),
 		subByPattern:  make(map[string]string),
 		done:          make(chan struct{}),
@@ -430,8 +462,12 @@ func (c *SubscriptionClient) Connect(ctx context.Context) error {
 	// Start message reader (uses c.done for lifecycle, not context)
 	go c.readMessages() //nolint:contextcheck
 
-	// Resubscribe any existing subscriptions
+	// Restore accepted subscriptions, then retry initial requests whose result
+	// was interrupted by the previous connection.
 	c.resubscribeAll()
+	if wasReconnecting {
+		c.resendPendingInitialSubscriptions()
+	}
 
 	return nil
 }
@@ -454,13 +490,68 @@ func (c *SubscriptionClient) Close() {
 		c.subscriptions = make(map[string]*Subscription)
 		c.subByPattern = make(map[string]string)
 		c.mu.Unlock()
+		c.clearPendingSubscribeAttempts()
 
 		if conn != nil {
+			c.writeMu.Lock()
 			_ = conn.WriteMessage(websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 			_ = conn.Close()
+			c.writeMu.Unlock()
 		}
 	})
+}
+
+func cloneSubscribeOptions(opts *SubscribeOptions) *SubscribeOptions {
+	if opts == nil {
+		return nil
+	}
+
+	cloned := *opts
+	if opts.StartAfterSequence != nil {
+		cursor := *opts.StartAfterSequence
+		cloned.StartAfterSequence = &cursor
+	}
+	return &cloned
+}
+
+func reconnectSubscribeOptions(opts *SubscribeOptions) *SubscribeOptions {
+	cloned := cloneSubscribeOptions(opts)
+	if cloned != nil {
+		cloned.Replay = 0
+	}
+	return cloned
+}
+
+func newWSSubscribeRequest(pattern string, opts *SubscribeOptions) wsSubscribeRequest {
+	req := wsSubscribeRequest{
+		Type: "subscribe",
+		Subscription: wsSubscription{
+			Pattern: pattern,
+		},
+	}
+	if opts == nil {
+		return req
+	}
+
+	needsOptions := opts.Replay > 0 || opts.StartAfterSequence != nil ||
+		opts.IncludeMetadata || opts.Filter != "" || opts.ConsumerGroup != "" ||
+		opts.AckMode != "" || opts.Backpressure != "" || opts.Namespace != ""
+	if !needsOptions {
+		return req
+	}
+
+	req.Subscription.Options = &wsSubscriptionOptions{
+		Replay:             opts.Replay,
+		StartAfterSequence: opts.StartAfterSequence,
+		IncludeMetadata:    opts.IncludeMetadata || opts.StartAfterSequence != nil,
+		Filter:             opts.Filter,
+		ConsumerGroup:      opts.ConsumerGroup,
+		AckMode:            string(opts.AckMode),
+		Backpressure:       string(opts.Backpressure),
+		Namespace:          opts.Namespace,
+	}
+	return req
 }
 
 // Subscribe subscribes to events matching a pattern.
@@ -493,74 +584,30 @@ func (c *SubscriptionClient) Subscribe(ctx context.Context, pattern string, opts
 		return nil, fmt.Errorf("not connected to server")
 	}
 
-	// Check for duplicate subscription
-	c.mu.RLock()
-	if _, exists := c.subByPattern[pattern]; exists {
-		c.mu.RUnlock()
-		return nil, fmt.Errorf("already subscribed to pattern: %s", pattern)
+	requestOptions := cloneSubscribeOptions(opts)
+	attempt := &pendingSubscribeAttempt{
+		result:     make(chan subscribeResult, 1),
+		done:       make(chan struct{}),
+		canceledCh: make(chan struct{}),
+		options:    requestOptions,
 	}
-	c.mu.RUnlock()
-
-	// Create result channel
-	resultCh := make(chan subscribeResult, 1)
-
-	c.pendingMu.Lock()
-	c.pending[pattern] = resultCh
-	c.pendingMu.Unlock()
-
-	defer func() {
-		c.pendingMu.Lock()
-		delete(c.pending, pattern)
-		c.pendingMu.Unlock()
-	}()
-
-	// Build subscribe request
-	req := wsSubscribeRequest{
-		Type: "subscribe",
-		Subscription: wsSubscription{
-			Pattern: pattern,
-		},
+	if err := c.reserveSubscribeAttempt(ctx, pattern, attempt); err != nil {
+		return nil, err
 	}
 
-	if opts != nil {
-		needsOptions := opts.Replay > 0 || opts.IncludeMetadata || opts.Filter != "" ||
-			opts.ConsumerGroup != "" || opts.AckMode != "" || opts.Backpressure != "" ||
-			opts.Namespace != ""
-		if needsOptions {
-			req.Subscription.Options = &wsSubscriptionOptions{}
-			if opts.Replay > 0 {
-				req.Subscription.Options.Replay = opts.Replay
-			}
-			if opts.IncludeMetadata {
-				req.Subscription.Options.IncludeMetadata = opts.IncludeMetadata
-			}
-			if opts.Filter != "" {
-				req.Subscription.Options.Filter = opts.Filter
-			}
-			if opts.ConsumerGroup != "" {
-				req.Subscription.Options.ConsumerGroup = opts.ConsumerGroup
-			}
-			if opts.AckMode != "" {
-				req.Subscription.Options.AckMode = string(opts.AckMode)
-			}
-			if opts.Backpressure != "" {
-				req.Subscription.Options.Backpressure = string(opts.Backpressure)
-			}
-			if opts.Namespace != "" {
-				req.Subscription.Options.Namespace = opts.Namespace
-			}
-		}
-	}
+	req := newWSSubscribeRequest(pattern, requestOptions)
 
 	// Send request
 	if err := c.sendJSON(req); err != nil {
+		c.cancelSubscribeAttempt(pattern, attempt)
 		return nil, fmt.Errorf("failed to send subscribe request: %w", err)
 	}
 
 	// Wait for result
 	select {
-	case result := <-resultCh:
+	case result := <-attempt.result:
 		if result.err != nil {
+			c.completeSubscribeAttempt(pattern, attempt)
 			return nil, result.err
 		}
 
@@ -571,6 +618,7 @@ func (c *SubscriptionClient) Subscribe(ctx context.Context, pattern string, opts
 			events:  make(chan *SubscriptionEvent, 100),
 			errors:  make(chan *SubscriptionError, 10),
 			client:  c,
+			options: requestOptions,
 			done:    make(chan struct{}),
 		}
 
@@ -578,15 +626,75 @@ func (c *SubscriptionClient) Subscribe(ctx context.Context, pattern string, opts
 		c.subscriptions[sub.ID] = sub
 		c.subByPattern[pattern] = sub.ID
 		c.mu.Unlock()
+		c.completeSubscribeAttempt(pattern, attempt)
 
 		return sub, nil
 
 	case <-ctx.Done():
+		c.cancelSubscribeAttempt(pattern, attempt)
 		return nil, ctx.Err()
 
 	case <-c.done:
+		c.cancelSubscribeAttempt(pattern, attempt)
 		return nil, fmt.Errorf("client closed")
 	}
+}
+
+func (c *SubscriptionClient) reserveSubscribeAttempt(
+	ctx context.Context,
+	pattern string,
+	attempt *pendingSubscribeAttempt,
+) error {
+	for {
+		c.mu.RLock()
+		_, active := c.subByPattern[pattern]
+		c.mu.RUnlock()
+		if active {
+			return fmt.Errorf("already subscribed to pattern: %s", pattern)
+		}
+
+		c.pendingMu.Lock()
+		previous := c.pending[pattern]
+		if previous == nil {
+			c.pending[pattern] = attempt
+			c.pendingMu.Unlock()
+			return nil
+		}
+		previousDone := previous.done
+		c.pendingMu.Unlock()
+
+		select {
+		case <-previousDone:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-c.done:
+			return fmt.Errorf("client closed")
+		}
+	}
+}
+
+func (c *SubscriptionClient) completeSubscribeAttempt(
+	pattern string,
+	attempt *pendingSubscribeAttempt,
+) {
+	c.pendingMu.Lock()
+	if c.pending[pattern] == attempt {
+		delete(c.pending, pattern)
+		close(attempt.done)
+	}
+	c.pendingMu.Unlock()
+}
+
+func (c *SubscriptionClient) cancelSubscribeAttempt(
+	pattern string,
+	attempt *pendingSubscribeAttempt,
+) {
+	c.pendingMu.Lock()
+	if c.pending[pattern] == attempt && !attempt.canceled {
+		attempt.canceled = true
+		close(attempt.canceledCh)
+	}
+	c.pendingMu.Unlock()
 }
 
 // SubscribeAckable subscribes to events with manual acknowledgment support.
@@ -688,13 +796,24 @@ func (c *SubscriptionClient) SubscribeEntityStream(ctx context.Context, entityID
 	return sub, nil
 }
 
-// unsubscribe removes a subscription
-func (c *SubscriptionClient) unsubscribe(subscriptionID string) {
+func (c *SubscriptionClient) currentSubscriptionID(pattern, fallback string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if subscriptionID := c.subByPattern[pattern]; subscriptionID != "" {
+		return subscriptionID
+	}
+	return fallback
+}
+
+// unsubscribeByPattern resolves and removes the current server subscription ID
+// atomically with respect to reconnect rebinding.
+func (c *SubscriptionClient) unsubscribeByPattern(pattern string) {
 	c.mu.Lock()
+	subscriptionID := c.subByPattern[pattern]
 	sub, exists := c.subscriptions[subscriptionID]
 	if exists {
 		delete(c.subscriptions, subscriptionID)
-		delete(c.subByPattern, sub.Pattern)
+		delete(c.subByPattern, pattern)
 		close(sub.events)
 		close(sub.errors)
 	}
@@ -756,7 +875,23 @@ func (c *SubscriptionClient) readMessages() {
 			c.conn = nil
 			callback := c.onConnectionChange
 			autoReconnect := c.config.AutoReconnect
+			if !autoReconnect {
+				for _, sub := range c.subscriptions {
+					if sub.options != nil && sub.options.StartAfterSequence != nil {
+						autoReconnect = true
+						break
+					}
+				}
+			}
 			c.mu.Unlock()
+			if !autoReconnect && c.hasPendingCursorSubscription() {
+				autoReconnect = true
+			}
+			if autoReconnect {
+				c.discardPendingResubscribeAttempts()
+			} else {
+				c.failPendingSubscribeAttempts(fmt.Errorf("connection lost: %w", err))
+			}
 
 			if wasConnected {
 				c.logger.Warn("Connection lost", "error", err)
@@ -772,6 +907,99 @@ func (c *SubscriptionClient) readMessages() {
 		}
 
 		c.handleMessage(data)
+	}
+}
+
+func (c *SubscriptionClient) failPendingSubscribeAttempts(err error) {
+	c.pendingMu.Lock()
+	defer c.pendingMu.Unlock()
+
+	for pattern, attempt := range c.pending {
+		if attempt.resubscribe != nil {
+			delete(c.pending, pattern)
+			close(attempt.done)
+			continue
+		}
+		if attempt.canceled {
+			delete(c.pending, pattern)
+			close(attempt.done)
+			continue
+		}
+		select {
+		case attempt.result <- subscribeResult{err: err}:
+		default:
+		}
+	}
+}
+
+func (c *SubscriptionClient) clearPendingSubscribeAttempts() {
+	c.pendingMu.Lock()
+	defer c.pendingMu.Unlock()
+
+	for pattern, attempt := range c.pending {
+		delete(c.pending, pattern)
+		close(attempt.done)
+	}
+}
+
+func (c *SubscriptionClient) hasPendingCursorSubscription() bool {
+	c.pendingMu.Lock()
+	defer c.pendingMu.Unlock()
+
+	for _, attempt := range c.pending {
+		if attempt.resubscribe == nil && !attempt.canceled &&
+			attempt.options != nil &&
+			attempt.options.StartAfterSequence != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *SubscriptionClient) discardPendingResubscribeAttempts() {
+	c.pendingMu.Lock()
+	defer c.pendingMu.Unlock()
+
+	for pattern, attempt := range c.pending {
+		if attempt.resubscribe != nil || attempt.canceled {
+			delete(c.pending, pattern)
+			close(attempt.done)
+		}
+	}
+}
+
+func (c *SubscriptionClient) resendPendingInitialSubscriptions() {
+	type pendingRequest struct {
+		pattern string
+		attempt *pendingSubscribeAttempt
+	}
+
+	c.pendingMu.Lock()
+	requests := make([]pendingRequest, 0, len(c.pending))
+	for pattern, attempt := range c.pending {
+		if attempt.resubscribe != nil {
+			continue
+		}
+		if attempt.canceled {
+			delete(c.pending, pattern)
+			close(attempt.done)
+			continue
+		}
+		requests = append(requests, pendingRequest{pattern: pattern, attempt: attempt})
+	}
+	c.pendingMu.Unlock()
+
+	for _, pending := range requests {
+		if err := c.sendJSON(newWSSubscribeRequest(pending.pattern, pending.attempt.options)); err != nil {
+			select {
+			case pending.attempt.result <- subscribeResult{
+				err: fmt.Errorf("failed to resend subscribe request: %w", err),
+			}:
+			case <-pending.attempt.done:
+			case <-c.done:
+			default:
+			}
+		}
 	}
 }
 
@@ -803,21 +1031,134 @@ func (c *SubscriptionClient) handleSubscriptionResult(data []byte) {
 
 	for _, result := range msg.Results {
 		c.pendingMu.Lock()
-		resultCh, exists := c.pending[result.Pattern]
+		attempt := c.pending[result.Pattern]
 		c.pendingMu.Unlock()
 
-		if !exists {
+		if attempt == nil {
 			continue
 		}
 
-		if result.Status == "ok" {
-			resultCh <- subscribeResult{subscriptionID: result.SubscriptionID}
-		} else {
-			resultCh <- subscribeResult{
-				err: fmt.Errorf("[%s] %s", result.Code, result.Message),
+		if attempt.resubscribe == nil {
+			c.pendingMu.Lock()
+			canceled := attempt.canceled
+			c.pendingMu.Unlock()
+			if canceled {
+				if result.Status == "ok" {
+					_ = c.sendJSON(wsUnsubscribeRequest{
+						Type:           "unsubscribe",
+						SubscriptionID: result.SubscriptionID,
+					})
+				}
+				c.completeSubscribeAttempt(result.Pattern, attempt)
+				continue
 			}
+
+			var delivery subscribeResult
+			if result.Status == "ok" {
+				delivery = subscribeResult{subscriptionID: result.SubscriptionID}
+			} else {
+				delivery = subscribeResult{
+					err: fmt.Errorf("[%s] %s", result.Code, result.Message),
+				}
+			}
+			select {
+			case attempt.result <- delivery:
+			case <-attempt.done:
+			case <-c.done:
+			default:
+			}
+			// The reader must not process a following event or connection loss
+			// until Subscribe has installed the accepted ID (or abandoned the
+			// attempt). This also prevents a reconnect from resending an already
+			// accepted initial request during that handoff window.
+			select {
+			case <-attempt.done:
+			case <-attempt.canceledCh:
+				if result.Status == "ok" {
+					_ = c.sendJSON(wsUnsubscribeRequest{
+						Type:           "unsubscribe",
+						SubscriptionID: result.SubscriptionID,
+					})
+				}
+				c.completeSubscribeAttempt(result.Pattern, attempt)
+			case <-c.done:
+			}
+			continue
 		}
+
+		oldSub := attempt.resubscribe
+		if result.Status == "ok" {
+			// A reconnect gets a fresh server subscription ID. Rebind it before
+			// returning to the reader so the next event cannot arrive against an
+			// ID the client does not know yet.
+			rebound := false
+			c.mu.Lock()
+			if previousID := c.subByPattern[result.Pattern]; previousID != "" {
+				if c.subscriptions[previousID] == oldSub {
+					delete(c.subscriptions, previousID)
+					c.subscriptions[result.SubscriptionID] = oldSub
+					c.subByPattern[result.Pattern] = result.SubscriptionID
+					rebound = true
+				}
+			}
+			c.mu.Unlock()
+			if !rebound {
+				_ = c.sendJSON(wsUnsubscribeRequest{
+					Type:           "unsubscribe",
+					SubscriptionID: result.SubscriptionID,
+				})
+			}
+		} else {
+			c.terminateWebSocketSubscription(oldSub, &SubscriptionError{
+				Code:    "RESUBSCRIBE_FAILED",
+				Message: fmt.Sprintf("[%s] %s", result.Code, result.Message),
+			})
+		}
+		c.completeSubscribeAttempt(result.Pattern, attempt)
 	}
+}
+
+func (c *SubscriptionClient) reportWebSocketSubscriptionError(
+	sub *Subscription,
+	subErr *SubscriptionError,
+) {
+	c.mu.RLock()
+	currentID := c.subByPattern[sub.Pattern]
+	if currentID == "" || c.subscriptions[currentID] != sub {
+		c.mu.RUnlock()
+		return
+	}
+	defer c.mu.RUnlock()
+
+	select {
+	case sub.errors <- subErr:
+	case <-sub.done:
+	case <-c.done:
+	default:
+	}
+}
+
+func (c *SubscriptionClient) terminateWebSocketSubscription(
+	sub *Subscription,
+	subErr *SubscriptionError,
+) {
+	c.mu.Lock()
+	currentID := c.subByPattern[sub.Pattern]
+	if currentID == "" || c.subscriptions[currentID] != sub {
+		c.mu.Unlock()
+		return
+	}
+	delete(c.subscriptions, currentID)
+	delete(c.subByPattern, sub.Pattern)
+	subErr.SubscriptionID = currentID
+	select {
+	case sub.errors <- subErr:
+	default:
+	}
+	sub.once.Do(func() { close(sub.done) })
+	close(sub.events)
+	close(sub.errors)
+	c.mu.Unlock()
 }
 
 // handleEvent handles event messages
@@ -844,6 +1185,15 @@ func (c *SubscriptionClient) handleEvent(data []byte) {
 
 	select {
 	case sub.events <- event:
+		if event.Meta != nil && event.Meta.Sequence > 0 {
+			c.mu.Lock()
+			if sub.options != nil && sub.options.StartAfterSequence != nil {
+				cursor := event.Meta.Sequence
+				sub.options.StartAfterSequence = &cursor
+				sub.options.Replay = 0
+			}
+			c.mu.Unlock()
+		}
 	case <-sub.done:
 	default:
 		// Channel full, drop event
@@ -940,8 +1290,28 @@ func (c *SubscriptionClient) scheduleReconnect() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Errors are handled by the connection callback and readMessages loop
-	_ = c.Connect(ctx)
+	if err := c.Connect(ctx); err != nil {
+		c.logger.Warn("Reconnect failed", "error", err)
+		if c.shouldReconnectSubscriptions() {
+			go c.scheduleReconnect()
+		}
+	}
+}
+
+func (c *SubscriptionClient) shouldReconnectSubscriptions() bool {
+	if c.config.AutoReconnect {
+		return true
+	}
+
+	c.mu.RLock()
+	for _, sub := range c.subscriptions {
+		if sub.options != nil && sub.options.StartAfterSequence != nil {
+			c.mu.RUnlock()
+			return true
+		}
+	}
+	c.mu.RUnlock()
+	return c.hasPendingCursorSubscription()
 }
 
 // resubscribeAll resubscribes all active subscriptions
@@ -954,12 +1324,6 @@ func (c *SubscriptionClient) resubscribeAll() {
 	oldSubs := make(map[string]*Subscription)
 	maps.Copy(oldSubs, c.subscriptions)
 	c.mu.RUnlock()
-
-	// Clear old subscriptions but keep the Subscription objects
-	c.mu.Lock()
-	c.subscriptions = make(map[string]*Subscription)
-	c.subByPattern = make(map[string]string)
-	c.mu.Unlock()
 
 	for _, pattern := range patterns {
 		// Find old subscription
@@ -974,64 +1338,34 @@ func (c *SubscriptionClient) resubscribeAll() {
 			continue
 		}
 
-		// Create result channel
-		resultCh := make(chan subscribeResult, 1)
-
-		c.pendingMu.Lock()
-		c.pending[pattern] = resultCh
-		c.pendingMu.Unlock()
-
-		// Send subscribe request
-		req := wsSubscribeRequest{
-			Type: "subscribe",
-			Subscription: wsSubscription{
-				Pattern: pattern,
-			},
+		attempt := &pendingSubscribeAttempt{
+			done:        make(chan struct{}),
+			resubscribe: oldSub,
 		}
 
-		if err := c.sendJSON(req); err != nil {
-			oldSub.errors <- &SubscriptionError{
-				Code:    "RESUBSCRIBE_FAILED",
-				Message: err.Error(),
-			}
-			c.pendingMu.Lock()
-			delete(c.pending, pattern)
+		c.pendingMu.Lock()
+		if c.pending[pattern] != nil {
 			c.pendingMu.Unlock()
 			continue
 		}
+		c.pending[pattern] = attempt
+		c.pendingMu.Unlock()
 
-		// Wait for result in background
-		go func(pattern string, oldSub *Subscription) {
-			defer func() {
-				c.pendingMu.Lock()
-				delete(c.pending, pattern)
-				c.pendingMu.Unlock()
-			}()
+		// Preserve the subscription identity. Replay only positions the initial
+		// subscription, so a reconnect must not apply it again.
+		c.mu.RLock()
+		reconnectOptions := reconnectSubscribeOptions(oldSub.options)
+		c.mu.RUnlock()
+		req := newWSSubscribeRequest(pattern, reconnectOptions)
 
-			select {
-			case result := <-resultCh:
-				if result.err != nil {
-					select {
-					case oldSub.errors <- &SubscriptionError{
-						Code:    "RESUBSCRIBE_FAILED",
-						Message: result.err.Error(),
-					}:
-					default:
-					}
-					return
-				}
-
-				// Update subscription with new ID
-				c.mu.Lock()
-				oldSub.ID = result.subscriptionID
-				c.subscriptions[result.subscriptionID] = oldSub
-				c.subByPattern[pattern] = result.subscriptionID
-				c.mu.Unlock()
-
-			case <-c.done:
-				return
-			}
-		}(pattern, oldSub)
+		if err := c.sendJSON(req); err != nil {
+			c.reportWebSocketSubscriptionError(oldSub, &SubscriptionError{
+				Code:    "RESUBSCRIBE_FAILED",
+				Message: err.Error(),
+			})
+			c.completeSubscribeAttempt(pattern, attempt)
+			continue
+		}
 	}
 }
 
@@ -1054,13 +1388,14 @@ type wsSubscription struct {
 }
 
 type wsSubscriptionOptions struct {
-	Replay          int    `json:"replay,omitempty"`
-	IncludeMetadata bool   `json:"includeMetadata,omitempty"`
-	Filter          string `json:"filter,omitempty"`
-	ConsumerGroup   string `json:"consumerGroup,omitempty"`
-	AckMode         string `json:"ackMode,omitempty"`
-	Backpressure    string `json:"backpressure,omitempty"`
-	Namespace       string `json:"namespace,omitempty"`
+	Replay             int     `json:"replay,omitempty"`
+	StartAfterSequence *uint64 `json:"startAfterSequence,omitempty"`
+	IncludeMetadata    bool    `json:"includeMetadata,omitempty"`
+	Filter             string  `json:"filter,omitempty"`
+	ConsumerGroup      string  `json:"consumerGroup,omitempty"`
+	AckMode            string  `json:"ackMode,omitempty"`
+	Backpressure       string  `json:"backpressure,omitempty"`
+	Namespace          string  `json:"namespace,omitempty"`
 }
 
 type wsUnsubscribeRequest struct {

@@ -96,6 +96,35 @@ func TestSecretsClient_Get(t *testing.T) {
 	})
 }
 
+func TestSecretsClient_Patch(t *testing.T) {
+	newName := "renamed"
+	client, cleanup := setupMockSecretsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch || r.URL.Path != "/api/v1/secrets/old" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("X-Ironflow-Environment"); got != "current" {
+			t.Fatalf("X-Ironflow-Environment = %q, want current", got)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["name"] != newName {
+			t.Fatalf("name = %v", body["name"])
+		}
+		_ = json.NewEncoder(w).Encode(Secret{Name: newName})
+	}))
+	defer cleanup()
+
+	secret, err := client.Secrets().Patch(context.Background(), "old", PatchSecretInput{Name: &newName})
+	if err != nil || secret.Name != newName {
+		t.Fatalf("Patch = %#v, %v", secret, err)
+	}
+	if _, err := client.Secrets().Patch(context.Background(), "old", PatchSecretInput{}); err == nil {
+		t.Fatal("empty patch should fail")
+	}
+}
+
 // ============================================================================
 // SecretsClient.Set
 // ============================================================================

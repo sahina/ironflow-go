@@ -11,6 +11,12 @@ type SecretsClient struct {
 	client *Client
 }
 
+// PatchSecretInput renames a secret and/or updates its description without changing its value.
+type PatchSecretInput struct {
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+}
+
 // Secrets returns a SecretsClient for interacting with the secrets management service.
 func (c *Client) Secrets() *SecretsClient {
 	return &SecretsClient{client: c}
@@ -51,6 +57,18 @@ func (sc *SecretsClient) Update(ctx context.Context, name, value string) (*Secre
 	}
 	var result Secret
 	if err := sc.client.restRequest(ctx, "PUT", "/api/v1/secrets/"+url.PathEscape(name), body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// Patch renames a secret and/or updates its description without changing its value.
+func (sc *SecretsClient) Patch(ctx context.Context, name string, input PatchSecretInput) (*Secret, error) {
+	if input.Name == nil && input.Description == nil {
+		return nil, NewError("secret patch requires name or description", "VALIDATION_ERROR", false)
+	}
+	var result Secret
+	if err := sc.client.restRequest(ctx, "PATCH", "/api/v1/secrets/"+url.PathEscape(name), input, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

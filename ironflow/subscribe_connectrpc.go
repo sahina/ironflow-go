@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
 	"github.com/sahina/ironflow-go/api/ironflow/v1/ironflowv1connect"
@@ -22,7 +25,8 @@ type GrpcSubscriptionClientConfig struct {
 	// ServerURL is the server URL (e.g., "http://localhost:9123").
 	ServerURL string
 
-	// AutoReconnect enables automatic reconnection (default: true).
+	// AutoReconnect is retained for source compatibility. Cursor-enabled
+	// subscriptions reconnect automatically; unpositioned streams still end.
 	AutoReconnect bool
 
 	// ReconnectDelay is the initial reconnect delay (default: 1s).
@@ -293,7 +297,11 @@ func (c *GrpcSubscriptionClient) Subscribe(ctx context.Context, pattern string, 
 		if opts.Replay > 0 {
 			protoOpts.Replay = int32(opts.Replay)
 		}
-		protoOpts.IncludeMetadata = opts.IncludeMetadata
+		if opts.StartAfterSequence != nil {
+			cursor := *opts.StartAfterSequence
+			protoOpts.StartAfterSequence = &cursor
+		}
+		protoOpts.IncludeMetadata = opts.IncludeMetadata || opts.StartAfterSequence != nil
 		protoOpts.Filter = opts.Filter
 		protoOpts.ConsumerGroup = opts.ConsumerGroup
 		protoOpts.Namespace = opts.Namespace
@@ -346,81 +354,155 @@ func (c *GrpcSubscriptionClient) Subscribe(ctx context.Context, pattern string, 
 
 // streamSubscription handles the ConnectRPC server-streaming connection.
 func (c *GrpcSubscriptionClient) streamSubscription(ctx context.Context, sub *GrpcSubscription, req *ironflowv1.SubscribeRequest) {
-	defer func() {
-		sub.Unsubscribe()
-	}()
+	defer sub.Unsubscribe()
 
-	// Open server stream via ConnectRPC
-	stream, err := c.pubsubClient.Subscribe(ctx, connect.NewRequest(req))
-	if err != nil {
-		sub.errors <- &SubscriptionError{
-			SubscriptionID: sub.ID,
-			Code:           "CONNECTION_ERROR",
-			Message:        err.Error(),
-		}
-		return
+	cursorEnabled := req.GetOptions() != nil && req.GetOptions().StartAfterSequence != nil
+	var cursor uint64
+	if cursorEnabled {
+		cursor = req.GetOptions().GetStartAfterSequence()
 	}
-	defer func() { _ = stream.Close() }()
+	accepted := false
+	delay := c.config.ReconnectDelay
 
 	for {
-		select {
-		case <-sub.done:
-			return
-		case <-c.done:
-			return
-		default:
+		attemptReq := proto.CloneOf(req)
+		if accepted && attemptReq.GetOptions() != nil {
+			attemptReq.Options.Replay = 0
+		}
+		if cursorEnabled {
+			attemptReq.Options.StartAfterSequence = proto.Uint64(cursor)
 		}
 
-		if !stream.Receive() {
-			if err := stream.Err(); err != nil {
+		// sdkcoverage: POST /ironflow.v1.PubSubService/Subscribe
+		stream, err := c.pubsubClient.Subscribe(ctx, connect.NewRequest(attemptReq))
+		if err == nil {
+			for stream.Receive() {
+				msg := stream.Msg()
+				accepted = true
+
+				// Convert proto Struct data to json.RawMessage.
+				var dataJSON json.RawMessage
+				if msg.GetData() != nil {
+					dataJSON, err = protojson.Marshal(msg.GetData())
+					if err != nil {
+						continue // Skip malformed messages.
+					}
+				}
+
+				event := &SubscriptionEvent{
+					ID:    msg.GetEventId(),
+					Topic: msg.GetTopic(),
+					Data:  dataJSON,
+				}
+
+				if meta := msg.GetMetadata(); meta != nil {
+					event.Meta = &EventMeta{
+						Sequence:      msg.GetSequence(),
+						SequenceExact: strconv.FormatUint(msg.GetSequence(), 10),
+					}
+					if ts := meta.GetTimestamp(); ts != nil {
+						event.Meta.Timestamp = ts.AsTime().Format(time.RFC3339Nano)
+					}
+				}
+
+				delivered := false
 				select {
-				case sub.errors <- &SubscriptionError{
-					SubscriptionID: sub.ID,
-					Code:           "STREAM_ERROR",
-					Message:        err.Error(),
-				}:
+				case sub.events <- event:
+					delivered = true
 				case <-sub.done:
+					_ = stream.Close()
+					return
+				case <-c.done:
+					_ = stream.Close()
+					return
 				default:
+					// Channel full, drop event without advancing the cursor.
+				}
+
+				if delivered && cursorEnabled && msg.GetSequence() > 0 {
+					cursor = msg.GetSequence()
+					delay = c.config.ReconnectDelay
 				}
 			}
+			err = stream.Err()
+			_ = stream.Close()
+		}
+
+		if err == nil {
+			return
+		}
+		if !cursorEnabled || !isRetryableSubscriptionError(err) {
+			c.reportSubscriptionError(sub, err)
 			return
 		}
 
-		msg := stream.Msg()
-
-		// Convert proto Struct data to json.RawMessage
-		var dataJSON json.RawMessage
-		if msg.GetData() != nil {
-			b, err := protojson.Marshal(msg.GetData())
-			if err != nil {
-				continue // Skip malformed messages
-			}
-			dataJSON = b
-		}
-
-		event := &SubscriptionEvent{
-			ID:    msg.GetEventId(),
-			Topic: msg.GetTopic(),
-			Data:  dataJSON,
-		}
-
-		if meta := msg.GetMetadata(); meta != nil {
-			event.Meta = &EventMeta{
-				Sequence: msg.GetSequence(),
-			}
-			if ts := meta.GetTimestamp(); ts != nil {
-				event.Meta.Timestamp = ts.AsTime().Format(time.RFC3339Nano)
-			}
-		}
-
-		select {
-		case sub.events <- event:
-		case <-sub.done:
+		if !waitForSubscriptionReconnect(ctx, sub.done, c.done, delay) {
 			return
-		default:
-			// Channel full, drop event
 		}
+		delay = nextSubscriptionReconnectDelay(delay, c.config.MaxReconnectDelay, c.config.ReconnectBackoff)
 	}
+}
+
+func (c *GrpcSubscriptionClient) reportSubscriptionError(sub *GrpcSubscription, err error) {
+	// Close removes subscriptions and closes their channels while holding c.mu.
+	// Keep a read lock through the send so it cannot close this channel under us.
+	c.mu.RLock()
+	if c.subscriptions[sub.ID] != sub {
+		c.mu.RUnlock()
+		return
+	}
+	defer c.mu.RUnlock()
+
+	code := strings.ToUpper(connect.CodeOf(err).String())
+	select {
+	case sub.errors <- &SubscriptionError{
+		SubscriptionID: sub.ID,
+		Code:           code,
+		Message:        err.Error(),
+	}:
+	case <-sub.done:
+	case <-c.done:
+	default:
+	}
+}
+
+func isRetryableSubscriptionError(err error) bool {
+	switch connect.CodeOf(err) {
+	case connect.CodeUnknown,
+		connect.CodeDeadlineExceeded,
+		connect.CodeResourceExhausted,
+		connect.CodeAborted,
+		connect.CodeInternal,
+		connect.CodeUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+func waitForSubscriptionReconnect(ctx context.Context, subDone, clientDone <-chan struct{}, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+	case <-subDone:
+	case <-clientDone:
+	}
+	return false
+}
+
+func nextSubscriptionReconnectDelay(current, maximum time.Duration, backoff float64) time.Duration {
+	next := time.Duration(float64(current) * backoff)
+	if next <= current && current < maximum {
+		next = current + time.Millisecond
+	}
+	if next > maximum {
+		return maximum
+	}
+	return next
 }
 
 // removeSubscription removes a subscription from tracking.

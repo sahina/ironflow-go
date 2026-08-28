@@ -99,10 +99,31 @@ var ReviewAgent = agent.Agent(agent.AgentConfig{
 | `Spawn[I, O](ctx, name, opts)` | Sub-agent invoke | `ironflow.Invoke` / `InvokeAsync` |
 | `Memory(ctx)` | Durable agent memory | `client.AppendStreamEvent` + projections |
 | `ExposeMcp(cfg)` | Register agent tools with Ironflow's MCP server | `AgentToolsService.RegisterTool` + HMAC callback |
+| `DispatchHandler()` / `HandleAgentToolDispatch(w, r)` | Serve the server's signed tool-dispatch callbacks | `net/http` + HMAC verify |
+
+### Mounting the dispatch callback
+
+`ExposeMcp` only registers the tools — the server then POSTs signed dispatch
+requests back to `CallbackURL`, which must terminate at `agent.DispatchPath`
+(`/ironflow/agent-tools/dispatch`). Unlike `@ironflow/node`, where `serve()`
+mounts that route for you, the Go SDK leaves the routing to the caller:
+
+```go
+mux := http.NewServeMux()
+mux.Handle("/api/ironflow/", ironflow.Serve(cfg))
+mux.Handle("/api/ironflow"+agent.DispatchPath,
+    http.StripPrefix("/api/ironflow", agent.DispatchHandler()))
+```
+
+`DispatchHandler()` responds only to `POST` at exactly `DispatchPath`; use
+`HandleAgentToolDispatch` directly if you route the path yourself.
 
 ## Stable error codes
 
-Match the JS module so cross-SDK consumers branch on the same constants:
+Match the JS module so cross-SDK consumers branch on the same constants. One
+exception: Go raises `AGENT_MCP_MISSING_SCHEMA` where JS raises
+`AGENT_MCP_SCHEMA_CONVERSION_FAILED` — Go takes the schema as a raw map, so
+there is no Zod conversion step to fail.
 
 | Code | Type |
 | --- | --- |

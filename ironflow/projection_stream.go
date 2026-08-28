@@ -102,6 +102,7 @@ func (c *Client) WaitForProjectionStream(ctx context.Context, name string, opts 
 		creq.Header().Set("Authorization", "Bearer "+c.apiKey)
 	}
 
+	// sdkcoverage: POST /ironflow.v1.ProjectionService/WaitProjectionCatchupStream
 	stream, err := projClient.WaitProjectionCatchupStream(streamCtx, creq)
 	if err != nil {
 		cancelCtx()

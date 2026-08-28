@@ -92,6 +92,46 @@ func TestUserClient_Create(t *testing.T) {
 	})
 }
 
+func TestUserClient_ChangePassword(t *testing.T) {
+	client, cleanup := setupMockUserServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch || r.URL.Path != "/api/v1/users/user-1/password" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var body ChangePasswordInput
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.CurrentPassword != "old" || body.NewPassword != "new" {
+			t.Fatalf("body = %#v", body)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer cleanup()
+
+	if err := client.Users().ChangePassword(context.Background(), "user-1", ChangePasswordInput{CurrentPassword: "old", NewPassword: "new"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTenantClient_Provision(t *testing.T) {
+	client, cleanup := setupMockUserServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/tenants/provision" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"org":         map[string]any{"id": "org-acme", "name": "Acme"},
+			"environment": map[string]any{"id": "env-prod", "name": "production"},
+			"api_key":     map[string]any{"key": "ifkey_secret", "roles": []string{"admin"}},
+		})
+	}))
+	defer cleanup()
+
+	result, err := client.Tenants().Provision(context.Background(), ProvisionTenantInput{OrgName: "Acme"})
+	if err != nil || result.APIKey.Key != "ifkey_secret" {
+		t.Fatalf("Provision = %#v, %v", result, err)
+	}
+}
+
 // ============================================================================
 // UserClient.List
 // ============================================================================

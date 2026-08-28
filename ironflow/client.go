@@ -971,25 +971,108 @@ func (c *Client) ListConsumerGroups(ctx context.Context, opts ...ConsumerGroupOp
 		opt(options)
 	}
 
-	req := map[string]any{
-		"namespace": options.namespace,
-		"limit":     100,
-	}
+	groups := make([]*ConsumerGroup, 0)
+	cursor := ""
+	for {
+		req := map[string]any{
+			"namespace": options.namespace,
+			"limit":     100,
+		}
+		if cursor != "" {
+			req["cursor"] = cursor
+		}
 
-	var resp struct {
-		Groups []consumerGroupResponse `json:"groups"`
-	}
+		var resp struct {
+			Groups     []consumerGroupResponse `json:"groups"`
+			NextCursor string                  `json:"nextCursor"`
+		}
 
-	if err := c.request(ctx, "POST", "/ironflow.v1.PubSubService/ListConsumerGroups", req, &resp); err != nil {
-		return nil, err
-	}
-
-	groups := make([]*ConsumerGroup, len(resp.Groups))
-	for i := range resp.Groups {
-		groups[i] = mapConsumerGroupResponse(&resp.Groups[i])
+		if err := c.request(ctx, "POST", "/ironflow.v1.PubSubService/ListConsumerGroups", req, &resp); err != nil {
+			return nil, err
+		}
+		for i := range resp.Groups {
+			groups = append(groups, mapConsumerGroupResponse(&resp.Groups[i]))
+		}
+		if resp.NextCursor == "" {
+			break
+		}
+		cursor = resp.NextCursor
 	}
 
 	return groups, nil
+}
+
+// UpdateConsumerGroupInput contains mutable consumer-group fields. Pointer
+// fields distinguish "leave unchanged" from an explicit zero value.
+type UpdateConsumerGroupInput struct {
+	Pattern          *string
+	FilterExpr       *string
+	AckMode          *AckMode
+	Backpressure     *BackpressureMode
+	MaxInflight      *int
+	MaxRedeliveries  *int
+	RedeliverDelayMs *int
+	Metadata         *map[string]any
+	Status           *ConsumerGroupStatus
+}
+
+// UpdateConsumerGroup updates selected fields on a consumer group.
+func (c *Client) UpdateConsumerGroup(ctx context.Context, name string, input UpdateConsumerGroupInput, opts ...ConsumerGroupOption) (*ConsumerGroup, error) {
+	options := &consumerGroupOptions{namespace: "default"}
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	group := map[string]any{"name": name, "namespace": options.namespace}
+	paths := make([]string, 0, 9)
+	if input.Pattern != nil {
+		group["pattern"] = *input.Pattern
+		paths = append(paths, "pattern")
+	}
+	if input.FilterExpr != nil {
+		group["filter_expr"] = *input.FilterExpr
+		paths = append(paths, "filter_expr")
+	}
+	if input.AckMode != nil {
+		group["ack_mode"] = mapAckModeToProto(*input.AckMode)
+		paths = append(paths, "ack_mode")
+	}
+	if input.Backpressure != nil {
+		group["backpressure"] = mapBackpressureToProto(*input.Backpressure)
+		paths = append(paths, "backpressure")
+	}
+	if input.MaxInflight != nil {
+		group["max_inflight"] = *input.MaxInflight
+		paths = append(paths, "max_inflight")
+	}
+	if input.MaxRedeliveries != nil {
+		group["max_redeliveries"] = *input.MaxRedeliveries
+		paths = append(paths, "max_redeliveries")
+	}
+	if input.RedeliverDelayMs != nil {
+		group["redeliver_delay_ms"] = *input.RedeliverDelayMs
+		paths = append(paths, "redeliver_delay_ms")
+	}
+	if input.Metadata != nil {
+		group["metadata"] = *input.Metadata
+		paths = append(paths, "metadata")
+	}
+	if input.Status != nil {
+		group["status"] = mapConsumerGroupStatusToProto(*input.Status)
+		paths = append(paths, "status")
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("consumer group update requires at least one field")
+	}
+
+	var resp consumerGroupResponse
+	if err := c.request(ctx, "POST", "/ironflow.v1.PubSubService/UpdateConsumerGroup", map[string]any{
+		"group":       group,
+		"update_mask": map[string]any{"paths": paths},
+	}, &resp); err != nil {
+		return nil, err
+	}
+	return mapConsumerGroupResponse(&resp), nil
 }
 
 // DeleteConsumerGroup deletes a consumer group.
@@ -1258,6 +1341,17 @@ func mapBackpressureFromProto(mode string) BackpressureMode {
 		return BackpressureBlock
 	default:
 		return BackpressureBuffer
+	}
+}
+
+func mapConsumerGroupStatusToProto(status ConsumerGroupStatus) string {
+	switch status {
+	case ConsumerGroupStatusPaused:
+		return "CONSUMER_GROUP_STATUS_PAUSED"
+	case ConsumerGroupStatusDeleted:
+		return "CONSUMER_GROUP_STATUS_DELETED"
+	default:
+		return "CONSUMER_GROUP_STATUS_ACTIVE"
 	}
 }
 

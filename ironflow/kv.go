@@ -444,6 +444,11 @@ func (c *Client) restRequest(ctx context.Context, method, path string, body any,
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
+	if path == "/api/v1/secrets" || strings.HasPrefix(path, "/api/v1/secrets/") {
+		// Secret routes require an explicit environment header, while the
+		// authenticated API key remains the authority for the actual scope.
+		req.Header.Set("X-Ironflow-Environment", "current")
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

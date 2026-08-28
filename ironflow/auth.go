@@ -1,6 +1,9 @@
 package ironflow
 
-import "context"
+import (
+	"context"
+	"net/url"
+)
 
 // ============================================================================
 // API Key Management
@@ -154,6 +157,20 @@ func (c *Client) AssignPolicyToRole(ctx context.Context, roleID, policyID string
 // RemovePolicyFromRole removes a policy assignment from a role.
 func (c *Client) RemovePolicyFromRole(ctx context.Context, roleID, policyID string) error {
 	return c.request(ctx, "DELETE", "/api/v1/roles/"+roleID+"/policies/"+policyID, nil, nil)
+}
+
+// ListRolePolicies lists every policy assigned to a role.
+func (c *Client) ListRolePolicies(ctx context.Context, roleID string) ([]PolicyInfo, error) {
+	var response struct {
+		Policies []PolicyInfo `json:"policies"`
+	}
+	if err := c.request(ctx, "GET", "/api/v1/roles/"+url.PathEscape(roleID)+"/policies", nil, &response); err != nil {
+		return nil, err
+	}
+	if response.Policies == nil {
+		return []PolicyInfo{}, nil
+	}
+	return response.Policies, nil
 }
 
 // ============================================================================

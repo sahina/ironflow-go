@@ -80,6 +80,7 @@ func (r *ProjectionRunner) register() error {
 		body["partitionKey"] = r.projection.Config.PartitionKey
 	}
 
+	// sdkcoverage: POST /ironflow.v1.ProjectionService/RegisterProjection
 	return r.post("RegisterProjection", body, nil)
 }
 
