@@ -6,19 +6,23 @@ This file contains the binding legal terms under which Ironflow is offered.
 A plain-English summary lives at `docs/explanation/licensing.md`. If the two
 disagree, this file controls.
 
-> **Lawyer review status:** v1 DIY-substitute. Pending counsel review before
-> the first paid customer ships (issue #777). All of the following MUST be
-> resolved before this license is published on the public release mirror:
+> **Lawyer review status:** v1 DIY-substitute. The licensor entity is
+> resolved. Three sections below are original prose rather than FSL template
+> text and have not been counsel-reviewed. Review is tracked in issue #777 and
+> is due before the first paid customer ships:
 >
->   - `[LICENSOR_ENTITY]` placeholder filled with the legal entity name
->   - "Personal-Use and Evaluation Carve-Out" section reviewed by counsel —
->     this is supplemental to the FSL Permitted Purpose and was added to
->     match the worked examples in `docs/explanation/licensing.md` per the
->     plan body. JetBrains Toolbox + Postman free-tier EULAs were the
->     reference for the carve-out shape, but the wording is original prose
->     and has not been counsel-reviewed.
->   - "Governing Law and Venue" + "Commercial Licensing" sections reviewed
->     by counsel — these are original prose, not part of the FSL template.
+>   - "Personal-Use and Evaluation Carve-Out" — supplemental to the FSL
+>     Permitted Purpose, added to match the worked examples in
+>     `docs/explanation/licensing.md` per the plan body. JetBrains Toolbox and
+>     Postman free-tier EULAs were the reference for the carve-out shape, but
+>     the wording is ours.
+>   - "Governing Law and Venue"
+>   - "Commercial Licensing"
+>
+> This is a disclosure, not a publication gate. These terms ship on every
+> public release channel today — npm, the Go module proxy, PyPI, the releases
+> mirror and ironflow.run — and an earlier wording of this block claimed
+> otherwise while four releases went out past it.
 >
 > **Versioning:** revised terms apply on next install. Each release ships
 > the LICENSE that was effective at the time the artifact was built.
@@ -36,7 +40,7 @@ FSL-1.1-ALv2
 
 ## Notice
 
-Copyright 2026 [LICENSOR_ENTITY]
+Copyright 2026 AEC Office LLC
 
 ## Terms and Conditions
 
