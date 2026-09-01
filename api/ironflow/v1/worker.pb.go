@@ -712,13 +712,18 @@ func (x *StepStarted) GetLeaseToken() string {
 }
 
 type StepCompleted struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	StepId        string                 `protobuf:"bytes,2,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
-	Output        *structpb.Struct       `protobuf:"bytes,3,opt,name=output,proto3" json:"output,omitempty"`
-	DurationMs    int32                  `protobuf:"varint,4,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
-	ExecutionSeq  int64                  `protobuf:"varint,5,opt,name=execution_seq,json=executionSeq,proto3" json:"execution_seq,omitempty"`
-	LeaseToken    string                 `protobuf:"bytes,6,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	JobId  string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	StepId string                 `protobuf:"bytes,2,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
+	Output *structpb.Struct       `protobuf:"bytes,3,opt,name=output,proto3" json:"output,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which output cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// output, so an object costs no extra bytes and old clients are
+	// unaffected.
+	OutputValue   *structpb.Value `protobuf:"bytes,7,opt,name=output_value,json=outputValue,proto3" json:"output_value,omitempty"`
+	DurationMs    int32           `protobuf:"varint,4,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	ExecutionSeq  int64           `protobuf:"varint,5,opt,name=execution_seq,json=executionSeq,proto3" json:"execution_seq,omitempty"`
+	LeaseToken    string          `protobuf:"bytes,6,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -770,6 +775,13 @@ func (x *StepCompleted) GetStepId() string {
 func (x *StepCompleted) GetOutput() *structpb.Struct {
 	if x != nil {
 		return x.Output
+	}
+	return nil
+}
+
+func (x *StepCompleted) GetOutputValue() *structpb.Value {
+	if x != nil {
+		return x.OutputValue
 	}
 	return nil
 }
@@ -1106,12 +1118,17 @@ func (x *WaitEventYield) GetTimeout() *timestamppb.Timestamp {
 }
 
 type JobCompleted struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Output        *structpb.Struct       `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`
-	DurationMs    int32                  `protobuf:"varint,3,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
-	ExecutionSeq  int64                  `protobuf:"varint,4,opt,name=execution_seq,json=executionSeq,proto3" json:"execution_seq,omitempty"`
-	LeaseToken    string                 `protobuf:"bytes,5,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	JobId  string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Output *structpb.Struct       `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which output cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// output, so an object costs no extra bytes and old clients are
+	// unaffected.
+	OutputValue   *structpb.Value `protobuf:"bytes,6,opt,name=output_value,json=outputValue,proto3" json:"output_value,omitempty"`
+	DurationMs    int32           `protobuf:"varint,3,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	ExecutionSeq  int64           `protobuf:"varint,4,opt,name=execution_seq,json=executionSeq,proto3" json:"execution_seq,omitempty"`
+	LeaseToken    string          `protobuf:"bytes,5,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1156,6 +1173,13 @@ func (x *JobCompleted) GetJobId() string {
 func (x *JobCompleted) GetOutput() *structpb.Struct {
 	if x != nil {
 		return x.Output
+	}
+	return nil
+}
+
+func (x *JobCompleted) GetOutputValue() *structpb.Value {
+	if x != nil {
+		return x.OutputValue
 	}
 	return nil
 }
@@ -1278,7 +1302,12 @@ type ExecutedStep struct {
 	// Step status: "completed", "failed"
 	Status string           `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
 	Output *structpb.Struct `protobuf:"bytes,5,opt,name=output,proto3" json:"output,omitempty"`
-	Error  *Error           `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which output cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// output, so an object costs no extra bytes and old clients are
+	// unaffected.
+	OutputValue *structpb.Value `protobuf:"bytes,9,opt,name=output_value,json=outputValue,proto3" json:"output_value,omitempty"`
+	Error       *Error          `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
 	// For compensation steps: the step_id of the original step being compensated
 	CompensationFor string `protobuf:"bytes,7,opt,name=compensation_for,json=compensationFor,proto3" json:"compensation_for,omitempty"`
 	DurationMs      int32  `protobuf:"varint,8,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
@@ -1347,6 +1376,13 @@ func (x *ExecutedStep) GetStatus() string {
 func (x *ExecutedStep) GetOutput() *structpb.Struct {
 	if x != nil {
 		return x.Output
+	}
+	return nil
+}
+
+func (x *ExecutedStep) GetOutputValue() *structpb.Value {
+	if x != nil {
+		return x.OutputValue
 	}
 	return nil
 }
@@ -1895,10 +1931,15 @@ func (x *JobAssignment) GetLeaseExpiresAt() *timestamppb.Timestamp {
 }
 
 type CompletedStep struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	StepId        string                 `protobuf:"bytes,1,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Output        *structpb.Struct       `protobuf:"bytes,3,opt,name=output,proto3" json:"output,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	StepId string                 `protobuf:"bytes,1,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
+	Name   string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Output *structpb.Struct       `protobuf:"bytes,3,opt,name=output,proto3" json:"output,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which output cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// output, so an object costs no extra bytes and old clients are
+	// unaffected.
+	OutputValue   *structpb.Value `protobuf:"bytes,4,opt,name=output_value,json=outputValue,proto3" json:"output_value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1950,6 +1991,13 @@ func (x *CompletedStep) GetName() string {
 func (x *CompletedStep) GetOutput() *structpb.Struct {
 	if x != nil {
 		return x.Output
+	}
+	return nil
+}
+
+func (x *CompletedStep) GetOutputValue() *structpb.Value {
+	if x != nil {
+		return x.OutputValue
 	}
 	return nil
 }
@@ -2081,9 +2129,14 @@ type ResumeJob struct {
 	// "sleep" or "wait_event"
 	ResumeType string `protobuf:"bytes,3,opt,name=resume_type,json=resumeType,proto3" json:"resume_type,omitempty"`
 	// For wait_event: the received event
-	ResumeData    *structpb.Struct `protobuf:"bytes,4,opt,name=resume_data,json=resumeData,proto3" json:"resume_data,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ResumeData *structpb.Struct `protobuf:"bytes,4,opt,name=resume_data,json=resumeData,proto3" json:"resume_data,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which resume_data cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// resume_data, so an object costs no extra bytes and old clients are
+	// unaffected.
+	ResumeDataValue *structpb.Value `protobuf:"bytes,5,opt,name=resume_data_value,json=resumeDataValue,proto3" json:"resume_data_value,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ResumeJob) Reset() {
@@ -2140,6 +2193,13 @@ func (x *ResumeJob) GetResumeType() string {
 func (x *ResumeJob) GetResumeData() *structpb.Struct {
 	if x != nil {
 		return x.ResumeData
+	}
+	return nil
+}
+
+func (x *ResumeJob) GetResumeDataValue() *structpb.Value {
+	if x != nil {
+		return x.ResumeDataValue
 	}
 	return nil
 }
@@ -2308,11 +2368,12 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	"\tstep_type\x18\x04 \x01(\x0e2\x15.ironflow.v1.StepTypeR\bstepType\x12#\n" +
 	"\rexecution_seq\x18\x05 \x01(\x03R\fexecutionSeq\x12\x1f\n" +
 	"\vlease_token\x18\x06 \x01(\tR\n" +
-	"leaseToken\"\xd7\x01\n" +
+	"leaseToken\"\x92\x02\n" +
 	"\rStepCompleted\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x17\n" +
 	"\astep_id\x18\x02 \x01(\tR\x06stepId\x12/\n" +
-	"\x06output\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x06output\x12\x1f\n" +
+	"\x06output\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x06output\x129\n" +
+	"\foutput_value\x18\a \x01(\v2\x16.google.protobuf.ValueR\voutputValue\x12\x1f\n" +
 	"\vduration_ms\x18\x04 \x01(\x05R\n" +
 	"durationMs\x12#\n" +
 	"\rexecution_seq\x18\x05 \x01(\x03R\fexecutionSeq\x12\x1f\n" +
@@ -2348,10 +2409,11 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	"\x10match_expression\x18\x02 \x01(\tR\x0fmatchExpression\x12\x1f\n" +
 	"\vmatch_value\x18\x03 \x01(\tR\n" +
 	"matchValue\x124\n" +
-	"\atimeout\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\atimeout\"\xbd\x01\n" +
+	"\atimeout\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\atimeout\"\xf8\x01\n" +
 	"\fJobCompleted\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12/\n" +
-	"\x06output\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06output\x12\x1f\n" +
+	"\x06output\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06output\x129\n" +
+	"\foutput_value\x18\x06 \x01(\v2\x16.google.protobuf.ValueR\voutputValue\x12\x1f\n" +
 	"\vduration_ms\x18\x03 \x01(\x05R\n" +
 	"durationMs\x12#\n" +
 	"\rexecution_seq\x18\x04 \x01(\x03R\fexecutionSeq\x12\x1f\n" +
@@ -2365,13 +2427,14 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	"\x05steps\x18\x04 \x03(\v2\x19.ironflow.v1.ExecutedStepR\x05steps\x12#\n" +
 	"\rexecution_seq\x18\x05 \x01(\x03R\fexecutionSeq\x12\x1f\n" +
 	"\vlease_token\x18\x06 \x01(\tR\n" +
-	"leaseToken\"\x85\x02\n" +
+	"leaseToken\"\xc0\x02\n" +
 	"\fExecutedStep\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
 	"\x04type\x18\x03 \x01(\tR\x04type\x12\x16\n" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12/\n" +
-	"\x06output\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x06output\x12(\n" +
+	"\x06output\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x06output\x129\n" +
+	"\foutput_value\x18\t \x01(\v2\x16.google.protobuf.ValueR\voutputValue\x12(\n" +
 	"\x05error\x18\x06 \x01(\v2\x12.ironflow.v1.ErrorR\x05error\x12)\n" +
 	"\x10compensation_for\x18\a \x01(\tR\x0fcompensationFor\x12\x1f\n" +
 	"\vduration_ms\x18\b \x01(\x05R\n" +
@@ -2416,11 +2479,12 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	"\vlease_token\x18\n" +
 	" \x01(\tR\n" +
 	"leaseToken\x12D\n" +
-	"\x10lease_expires_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"m\n" +
+	"\x10lease_expires_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"\xa8\x01\n" +
 	"\rCompletedStep\x12\x17\n" +
 	"\astep_id\x18\x01 \x01(\tR\x06stepId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12/\n" +
-	"\x06output\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x06output\"\xa3\x02\n" +
+	"\x06output\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x06output\x129\n" +
+	"\foutput_value\x18\x04 \x01(\v2\x16.google.protobuf.ValueR\voutputValue\"\xa3\x02\n" +
 	"\n" +
 	"JobContext\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12A\n" +
@@ -2435,14 +2499,15 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	"\aStepAck\x12\x17\n" +
 	"\astep_id\x18\x01 \x01(\tR\x06stepId\x12\x1a\n" +
 	"\baccepted\x18\x02 \x01(\bR\baccepted\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"\x96\x01\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\xda\x01\n" +
 	"\tResumeJob\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x17\n" +
 	"\astep_id\x18\x02 \x01(\tR\x06stepId\x12\x1f\n" +
 	"\vresume_type\x18\x03 \x01(\tR\n" +
 	"resumeType\x128\n" +
 	"\vresume_data\x18\x04 \x01(\v2\x17.google.protobuf.StructR\n" +
-	"resumeData\":\n" +
+	"resumeData\x12B\n" +
+	"\x11resume_data_value\x18\x05 \x01(\v2\x16.google.protobuf.ValueR\x0fresumeDataValue\":\n" +
 	"\tCancelJob\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"L\n" +
@@ -2507,8 +2572,9 @@ var file_ironflow_v1_worker_proto_goTypes = []any{
 	(*timestamppb.Timestamp)(nil), // 31: google.protobuf.Timestamp
 	(StepType)(0),                 // 32: ironflow.v1.StepType
 	(*structpb.Struct)(nil),       // 33: google.protobuf.Struct
-	(*Error)(nil),                 // 34: ironflow.v1.Error
-	(*Event)(nil),                 // 35: ironflow.v1.Event
+	(*structpb.Value)(nil),        // 34: google.protobuf.Value
+	(*Error)(nil),                 // 35: ironflow.v1.Error
+	(*Event)(nil),                 // 36: ironflow.v1.Event
 }
 var file_ironflow_v1_worker_proto_depIdxs = []int32{
 	2,  // 0: ironflow.v1.WorkerMessage.register:type_name -> ironflow.v1.WorkerRegister
@@ -2527,40 +2593,45 @@ var file_ironflow_v1_worker_proto_depIdxs = []int32{
 	31, // 13: ironflow.v1.ActiveJob.started_at:type_name -> google.protobuf.Timestamp
 	32, // 14: ironflow.v1.StepStarted.step_type:type_name -> ironflow.v1.StepType
 	33, // 15: ironflow.v1.StepCompleted.output:type_name -> google.protobuf.Struct
-	34, // 16: ironflow.v1.StepFailed.error:type_name -> ironflow.v1.Error
-	11, // 17: ironflow.v1.StepYielded.sleep:type_name -> ironflow.v1.SleepYield
-	12, // 18: ironflow.v1.StepYielded.wait_event:type_name -> ironflow.v1.WaitEventYield
-	31, // 19: ironflow.v1.SleepYield.until:type_name -> google.protobuf.Timestamp
-	31, // 20: ironflow.v1.WaitEventYield.timeout:type_name -> google.protobuf.Timestamp
-	33, // 21: ironflow.v1.JobCompleted.output:type_name -> google.protobuf.Struct
-	34, // 22: ironflow.v1.JobFailed.error:type_name -> ironflow.v1.Error
-	15, // 23: ironflow.v1.JobFailed.steps:type_name -> ironflow.v1.ExecutedStep
-	33, // 24: ironflow.v1.ExecutedStep.output:type_name -> google.protobuf.Struct
-	34, // 25: ironflow.v1.ExecutedStep.error:type_name -> ironflow.v1.Error
-	20, // 26: ironflow.v1.EngineMessage.registered:type_name -> ironflow.v1.WorkerRegistered
-	21, // 27: ironflow.v1.EngineMessage.job:type_name -> ironflow.v1.JobAssignment
-	24, // 28: ironflow.v1.EngineMessage.step_ack:type_name -> ironflow.v1.StepAck
-	25, // 29: ironflow.v1.EngineMessage.resume:type_name -> ironflow.v1.ResumeJob
-	26, // 30: ironflow.v1.EngineMessage.cancel:type_name -> ironflow.v1.CancelJob
-	27, // 31: ironflow.v1.EngineMessage.shutdown:type_name -> ironflow.v1.Shutdown
-	18, // 32: ironflow.v1.EngineMessage.lease_refresh:type_name -> ironflow.v1.LeaseRefreshResult
-	19, // 33: ironflow.v1.LeaseRefreshResult.segments:type_name -> ironflow.v1.SegmentLeaseStatus
-	0,  // 34: ironflow.v1.SegmentLeaseStatus.state:type_name -> ironflow.v1.LeaseState
-	35, // 35: ironflow.v1.JobAssignment.event:type_name -> ironflow.v1.Event
-	22, // 36: ironflow.v1.JobAssignment.completed_steps:type_name -> ironflow.v1.CompletedStep
-	23, // 37: ironflow.v1.JobAssignment.context:type_name -> ironflow.v1.JobContext
-	31, // 38: ironflow.v1.JobAssignment.lease_expires_at:type_name -> google.protobuf.Timestamp
-	33, // 39: ironflow.v1.CompletedStep.output:type_name -> google.protobuf.Struct
-	29, // 40: ironflow.v1.JobContext.metadata:type_name -> ironflow.v1.JobContext.MetadataEntry
-	30, // 41: ironflow.v1.JobContext.secrets:type_name -> ironflow.v1.JobContext.SecretsEntry
-	33, // 42: ironflow.v1.ResumeJob.resume_data:type_name -> google.protobuf.Struct
-	1,  // 43: ironflow.v1.WorkerService.Connect:input_type -> ironflow.v1.WorkerMessage
-	17, // 44: ironflow.v1.WorkerService.Connect:output_type -> ironflow.v1.EngineMessage
-	44, // [44:45] is the sub-list for method output_type
-	43, // [43:44] is the sub-list for method input_type
-	43, // [43:43] is the sub-list for extension type_name
-	43, // [43:43] is the sub-list for extension extendee
-	0,  // [0:43] is the sub-list for field type_name
+	34, // 16: ironflow.v1.StepCompleted.output_value:type_name -> google.protobuf.Value
+	35, // 17: ironflow.v1.StepFailed.error:type_name -> ironflow.v1.Error
+	11, // 18: ironflow.v1.StepYielded.sleep:type_name -> ironflow.v1.SleepYield
+	12, // 19: ironflow.v1.StepYielded.wait_event:type_name -> ironflow.v1.WaitEventYield
+	31, // 20: ironflow.v1.SleepYield.until:type_name -> google.protobuf.Timestamp
+	31, // 21: ironflow.v1.WaitEventYield.timeout:type_name -> google.protobuf.Timestamp
+	33, // 22: ironflow.v1.JobCompleted.output:type_name -> google.protobuf.Struct
+	34, // 23: ironflow.v1.JobCompleted.output_value:type_name -> google.protobuf.Value
+	35, // 24: ironflow.v1.JobFailed.error:type_name -> ironflow.v1.Error
+	15, // 25: ironflow.v1.JobFailed.steps:type_name -> ironflow.v1.ExecutedStep
+	33, // 26: ironflow.v1.ExecutedStep.output:type_name -> google.protobuf.Struct
+	34, // 27: ironflow.v1.ExecutedStep.output_value:type_name -> google.protobuf.Value
+	35, // 28: ironflow.v1.ExecutedStep.error:type_name -> ironflow.v1.Error
+	20, // 29: ironflow.v1.EngineMessage.registered:type_name -> ironflow.v1.WorkerRegistered
+	21, // 30: ironflow.v1.EngineMessage.job:type_name -> ironflow.v1.JobAssignment
+	24, // 31: ironflow.v1.EngineMessage.step_ack:type_name -> ironflow.v1.StepAck
+	25, // 32: ironflow.v1.EngineMessage.resume:type_name -> ironflow.v1.ResumeJob
+	26, // 33: ironflow.v1.EngineMessage.cancel:type_name -> ironflow.v1.CancelJob
+	27, // 34: ironflow.v1.EngineMessage.shutdown:type_name -> ironflow.v1.Shutdown
+	18, // 35: ironflow.v1.EngineMessage.lease_refresh:type_name -> ironflow.v1.LeaseRefreshResult
+	19, // 36: ironflow.v1.LeaseRefreshResult.segments:type_name -> ironflow.v1.SegmentLeaseStatus
+	0,  // 37: ironflow.v1.SegmentLeaseStatus.state:type_name -> ironflow.v1.LeaseState
+	36, // 38: ironflow.v1.JobAssignment.event:type_name -> ironflow.v1.Event
+	22, // 39: ironflow.v1.JobAssignment.completed_steps:type_name -> ironflow.v1.CompletedStep
+	23, // 40: ironflow.v1.JobAssignment.context:type_name -> ironflow.v1.JobContext
+	31, // 41: ironflow.v1.JobAssignment.lease_expires_at:type_name -> google.protobuf.Timestamp
+	33, // 42: ironflow.v1.CompletedStep.output:type_name -> google.protobuf.Struct
+	34, // 43: ironflow.v1.CompletedStep.output_value:type_name -> google.protobuf.Value
+	29, // 44: ironflow.v1.JobContext.metadata:type_name -> ironflow.v1.JobContext.MetadataEntry
+	30, // 45: ironflow.v1.JobContext.secrets:type_name -> ironflow.v1.JobContext.SecretsEntry
+	33, // 46: ironflow.v1.ResumeJob.resume_data:type_name -> google.protobuf.Struct
+	34, // 47: ironflow.v1.ResumeJob.resume_data_value:type_name -> google.protobuf.Value
+	1,  // 48: ironflow.v1.WorkerService.Connect:input_type -> ironflow.v1.WorkerMessage
+	17, // 49: ironflow.v1.WorkerService.Connect:output_type -> ironflow.v1.EngineMessage
+	49, // [49:50] is the sub-list for method output_type
+	48, // [48:49] is the sub-list for method input_type
+	48, // [48:48] is the sub-list for extension type_name
+	48, // [48:48] is the sub-list for extension extendee
+	0,  // [0:48] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_worker_proto_init() }

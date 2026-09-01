@@ -328,12 +328,14 @@ type RunStatus string
 
 const (
 	// Deprecated: the engine no longer produces this status as of #1222 (run status "pending" retired). Retained for source compatibility.
-	RunStatusPending   RunStatus = "pending"
-	RunStatusRunning   RunStatus = "running"
-	RunStatusCompleted RunStatus = "completed"
-	RunStatusFailed    RunStatus = "failed"
-	RunStatusCancelled RunStatus = "cancelled"
-	RunStatusPaused    RunStatus = "paused"
+	RunStatusPending            RunStatus = "pending"
+	RunStatusRunning            RunStatus = "running"
+	RunStatusCompleted          RunStatus = "completed"
+	RunStatusFailed             RunStatus = "failed"
+	RunStatusCancelled          RunStatus = "cancelled"
+	RunStatusPaused             RunStatus = "paused"
+	RunStatusWaitingForCapacity RunStatus = "waiting_for_capacity"
+	RunStatusWaiting            RunStatus = "waiting"
 )
 
 // WorkflowRun represents a workflow execution instance.
@@ -824,6 +826,15 @@ type PausedStepInfo struct {
 	Output      json.RawMessage `json:"output"`
 	Injected    bool            `json:"injected"`
 	CompletedAt string          `json:"completedAt"`
+	// StepType is the step kind ("invoke", "sleep", "wait_for_event",
+	// "compensate", "invoke_function") so you can tell what you are patching.
+	StepType string `json:"stepType"`
+	// Status is the step's terminal status at snapshot time: "completed" or
+	// "failed". FAILED steps are exposed here so they can be repaired via
+	// InjectStepOutput — without this you cannot tell the two apart.
+	Status string `json:"status"`
+	// Error is the error payload for a FAILED step, nil for a completed one.
+	Error json.RawMessage `json:"error"`
 }
 
 // PausedState contains the state of a paused run.

@@ -3,6 +3,7 @@ package ironflow
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1153,6 +1154,687 @@ func TestEmit(t *testing.T) {
 }
 
 // ============================================================================
+// EmitSync tests
+// ============================================================================
+
+func TestRunStatusFromWire(t *testing.T) {
+	tests := []struct {
+		wire string
+		want RunStatus
+	}{
+		{wire: "RUN_STATUS_RUNNING", want: RunStatusRunning},
+		{wire: "RUN_STATUS_COMPLETED", want: RunStatusCompleted},
+		{wire: "RUN_STATUS_FAILED", want: RunStatusFailed},
+		{wire: "RUN_STATUS_CANCELLED", want: RunStatusCancelled},
+		{wire: "RUN_STATUS_PAUSED", want: RunStatusPaused},
+		{wire: "RUN_STATUS_WAITING_FOR_CAPACITY", want: RunStatusWaitingForCapacity},
+		{wire: "RUN_STATUS_WAITING", want: RunStatusWaiting},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.wire, func(t *testing.T) {
+			got, err := runStatusFromWire(tt.wire)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+
+	for _, status := range []string{
+		"RUN_STATUS_UNSPECIFIED",
+		"RUN_STATUS_PENDING",
+		"RUN_STATUS_FUTURE",
+		"failed",
+		"",
+	} {
+		t.Run("rejects_"+status, func(t *testing.T) {
+			_, err := runStatusFromWire(status)
+			if err == nil {
+				t.Fatalf("expected %q to be rejected", status)
+			}
+			ironflowErr, ok := err.(*IronflowError)
+			if !ok {
+				t.Fatalf("expected IronflowError, got %T", err)
+			}
+			if ironflowErr.Code != "INVALID_RESPONSE" {
+				t.Fatalf("expected INVALID_RESPONSE, got %q", ironflowErr.Code)
+			}
+		})
+	}
+}
+
+func TestEmitSync(t *testing.T) {
+	t.Run("decodes canonical Connect response", func(t *testing.T) {
+		var receivedBody map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("failed to read request body: %v", err)
+			}
+			if err := json.Unmarshal(body, &receivedBody); err != nil {
+				t.Fatalf("failed to decode request body: %v", err)
+			}
+
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"results": [{
+					"runId": "run-sync",
+					"functionId": "fn-sync",
+					"status": "RUN_STATUS_FAILED",
+					"output": {"partial": true},
+					"error": {"message": "step failed", "code": "STEP_FAILED"},
+					"durationMs": 42
+				}],
+				"eventId": "evt-sync"
+			}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		results, err := client.EmitSync(
+			context.Background(),
+			"order.placed",
+			map[string]any{"orderId": "123"},
+			30*time.Second,
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+
+		result := results[0]
+		if result.RunID != "run-sync" {
+			t.Errorf("expected run-sync, got %q", result.RunID)
+		}
+		if result.FunctionID != "fn-sync" {
+			t.Errorf("expected fn-sync, got %q", result.FunctionID)
+		}
+		if result.Status != RunStatusFailed {
+			t.Errorf("expected failed, got %q", result.Status)
+		}
+		if result.DurationMs != 42 {
+			t.Errorf("expected duration 42, got %d", result.DurationMs)
+		}
+		if result.Error == nil || result.Error.Message != "step failed" {
+			t.Fatalf("expected step failure details, got %#v", result.Error)
+		}
+		output, ok := result.Output.(map[string]any)
+		if !ok || output["partial"] != true {
+			t.Fatalf("expected partial output, got %#v", result.Output)
+		}
+		if receivedBody["event"] != "order.placed" {
+			t.Errorf("expected order.placed request, got %#v", receivedBody["event"])
+		}
+		if _, present := receivedBody["idempotency_key"]; present {
+			t.Errorf("expected no idempotency_key without the option, got %#v", receivedBody["idempotency_key"])
+		}
+	})
+
+	// F3: one event can match many functions. The SDK used to return
+	// results[0] and silently drop runs 2..N.
+	t.Run("returns every result in a fan-out", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"results": [
+					{"runId": "run-1", "functionId": "fn-1", "status": "RUN_STATUS_COMPLETED", "durationMs": 1},
+					{"runId": "run-2", "functionId": "fn-2", "status": "RUN_STATUS_COMPLETED", "durationMs": 2},
+					{"runId": "run-3", "functionId": "fn-3", "status": "RUN_STATUS_COMPLETED", "durationMs": 3}
+				],
+				"eventId": "evt-fanout"
+			}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		results, err := client.EmitSync(context.Background(), "order.placed", nil, time.Second)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(results) != 3 {
+			t.Fatalf("expected 3 results, got %d", len(results))
+		}
+		for i, want := range []string{"run-1", "run-2", "run-3"} {
+			if results[i].RunID != want {
+				t.Errorf("result %d: expected %q, got %q", i, want, results[i].RunID)
+			}
+			if results[i].FunctionID != fmt.Sprintf("fn-%d", i+1) {
+				t.Errorf("result %d: expected fn-%d, got %q", i, i+1, results[i].FunctionID)
+			}
+			if results[i].DurationMs != int64(i+1) {
+				t.Errorf("result %d: expected duration %d, got %d", i, i+1, results[i].DurationMs)
+			}
+		}
+	})
+
+	// Q12: run outcomes are per-result, never errors, and element 0 does not
+	// speak for the call.
+	t.Run("reports per-result outcomes", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"results": [
+					{"runId": "run-ok", "functionId": "fn-ok", "status": "RUN_STATUS_COMPLETED", "output": {"ok": true}},
+					{"runId": "run-bad", "functionId": "fn-bad", "status": "RUN_STATUS_FAILED",
+					 "error": {"message": "boom", "code": "STEP_FAILED"}},
+					{"runId": "run-gone", "functionId": "fn-gone", "status": "RUN_STATUS_CANCELLED"},
+					{"runId": "run-slow", "functionId": "fn-slow", "status": "RUN_STATUS_RUNNING", "waitTimedOut": true}
+				],
+				"eventId": "evt-mixed"
+			}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		results, err := client.EmitSync(context.Background(), "order.placed", nil, time.Second)
+		if err != nil {
+			t.Fatalf("a failed run must not be an error, got: %v", err)
+		}
+		if len(results) != 4 {
+			t.Fatalf("expected 4 results, got %d", len(results))
+		}
+
+		if results[0].Status != RunStatusCompleted || results[0].Error != nil {
+			t.Errorf("expected clean completion, got %#v", results[0])
+		}
+		if results[1].Status != RunStatusFailed {
+			t.Errorf("expected failed, got %q", results[1].Status)
+		}
+		if results[1].Error == nil || results[1].Error.Code != "STEP_FAILED" {
+			t.Errorf("expected STEP_FAILED detail, got %#v", results[1].Error)
+		}
+		if results[2].Status != RunStatusCancelled {
+			t.Errorf("expected cancelled, got %q", results[2].Status)
+		}
+		if results[3].Status != RunStatusRunning || !results[3].WaitTimedOut {
+			t.Errorf("expected an inspectable wait timeout, got %#v", results[3])
+		}
+	})
+
+	// F7: EmitSync accepted no options at all.
+	t.Run("sends the idempotency key", func(t *testing.T) {
+		var receivedBody map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			if err := json.Unmarshal(body, &receivedBody); err != nil {
+				t.Fatalf("failed to decode request body: %v", err)
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"results": [{"runId": "run-1", "functionId": "fn-1", "status": "RUN_STATUS_COMPLETED"}]}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		if _, err := client.EmitSync(context.Background(), "payment.processed", nil, time.Second,
+			WithSyncIdempotencyKey("payment-abc"),
+		); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if receivedBody["idempotency_key"] != "payment-abc" {
+			t.Fatalf("expected idempotency key on the wire, got %#v", receivedBody["idempotency_key"])
+		}
+	})
+
+	t.Run("rejects unspecified status", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"results": [{
+					"runId": "run-sync",
+					"functionId": "fn-sync",
+					"status": "RUN_STATUS_UNSPECIFIED",
+					"durationMs": 0
+				}],
+				"eventId": "evt-sync"
+			}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		_, err := client.EmitSync(context.Background(), "order.placed", nil, time.Second)
+		if err == nil {
+			t.Fatal("expected unspecified status to fail")
+		}
+		ironflowErr, ok := err.(*IronflowError)
+		if !ok || ironflowErr.Code != "INVALID_RESPONSE" {
+			t.Fatalf("expected INVALID_RESPONSE, got %#v", err)
+		}
+	})
+
+	// A bad status anywhere in the fan-out fails the call, not just at [0].
+	t.Run("rejects a bad status in a later result", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"results": [
+					{"runId": "run-1", "functionId": "fn-1", "status": "RUN_STATUS_COMPLETED"},
+					{"runId": "run-2", "functionId": "fn-2", "status": "nonsense"}
+				]
+			}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		_, err := client.EmitSync(context.Background(), "order.placed", nil, time.Second)
+		ironflowErr, ok := err.(*IronflowError)
+		if !ok || ironflowErr.Code != "INVALID_RESPONSE" {
+			t.Fatalf("expected INVALID_RESPONSE, got %#v", err)
+		}
+	})
+
+	t.Run("returns wait timeout for result inspection", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"results": [{
+					"runId": "run-waiting",
+					"functionId": "fn-slow",
+					"status": "RUN_STATUS_WAITING",
+					"durationMs": 0,
+					"waitTimedOut": true
+				}],
+				"eventId": "evt-sync"
+			}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		results, err := client.EmitSync(context.Background(), "work.started", nil, time.Second)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		if results[0].Status != RunStatusWaiting || !results[0].WaitTimedOut {
+			t.Fatalf("expected inspectable wait timeout, got %#v", results[0])
+		}
+	})
+
+	// An event matching nothing is a legitimate outcome, not an error.
+	t.Run("returns an empty slice when no function matched", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"results": [], "eventId": "evt-sync"}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		results, err := client.EmitSync(context.Background(), "nobody.listens", nil, time.Second)
+		if err != nil {
+			t.Fatalf("an unmatched event is not an error, got: %v", err)
+		}
+		if len(results) != 0 {
+			t.Fatalf("expected no results, got %#v", results)
+		}
+	})
+
+	// The client-level http.Client.Timeout is enforced independently of the
+	// request context and defaults to 30s — the same as DefaultEmitSyncTimeout.
+	// Left alone it undercuts the server's own wait budget.
+	t.Run("raises the transport deadline above the wait budget", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			time.Sleep(300 * time.Millisecond)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"results": [{"runId": "run-slow", "functionId": "fn-slow",
+				"status": "RUN_STATUS_WAITING", "waitTimedOut": true}]}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 100*time.Millisecond)
+
+		results, err := client.EmitSync(context.Background(), "work.started", nil, 2*time.Second)
+		if err != nil {
+			t.Fatalf("transport deadline undercut the wait budget: %v", err)
+		}
+		if !results[0].WaitTimedOut {
+			t.Fatalf("expected waitTimedOut, got %#v", results[0])
+		}
+	})
+
+	// TriggerSyncRequest carries metadata (field 5) and browser/Node both send
+	// it. The endpoint-level parity gate checks that TriggerSync is called, not
+	// that every field reaches the wire, so only this test catches a regression.
+	t.Run("sends metadata only when the option is passed", func(t *testing.T) {
+		const resp = `{"results": [{"runId": "r", "functionId": "f", "status": "RUN_STATUS_COMPLETED"}]}`
+
+		var withOpt map[string]any
+		server := newSyncBodyCaptureServer(t, resp, &withOpt)
+		defer server.Close()
+		if _, err := newSyncTestClient(server.URL, 0).EmitSync(
+			context.Background(), "order.placed", nil, 30*time.Second,
+			WithSyncMetadata(map[string]any{"traceId": "abc", "attempt": 2}),
+		); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		metadata, ok := withOpt["metadata"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected a metadata object on the wire, got %#v", withOpt["metadata"])
+		}
+		if metadata["traceId"] != "abc" || metadata["attempt"] != float64(2) {
+			t.Errorf("unexpected metadata on the wire: %#v", metadata)
+		}
+
+		var without map[string]any
+		bare := newSyncBodyCaptureServer(t, resp, &without)
+		defer bare.Close()
+		if _, err := newSyncTestClient(bare.URL, 0).EmitSync(
+			context.Background(), "order.placed", nil, 30*time.Second,
+		); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, present := without["metadata"]; present {
+			t.Errorf("metadata must be absent without the option, got %#v", without["metadata"])
+		}
+	})
+}
+
+// ============================================================================
+// InvokeSync tests
+// ============================================================================
+
+// newSyncTestClient builds a client for the synchronous-call tests.
+// httpTimeout of 0 means no transport deadline.
+func newSyncTestClient(serverURL string, httpTimeout time.Duration) *Client {
+	return &Client{
+		serverURL:  serverURL,
+		httpClient: &http.Client{Timeout: httpTimeout},
+		retryConfig: &ClientRetryConfig{
+			MaxAttempts: 1,
+		},
+		logger: NewNoopLogger(),
+	}
+}
+
+// newSyncBodyCaptureServer answers a synchronous call with respBody and
+// decodes the request body it received into received.
+func newSyncBodyCaptureServer(t *testing.T, respBody string, received *map[string]any) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("failed to read request body: %v", err)
+			return
+		}
+		if err := json.Unmarshal(raw, received); err != nil {
+			t.Errorf("failed to decode request body: %v", err)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(respBody))
+	}))
+}
+
+func TestInvokeSync(t *testing.T) {
+	t.Run("sends the function id and decodes one result", func(t *testing.T) {
+		var receivedPath string
+		var receivedBody map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			receivedPath = r.URL.Path
+			body, _ := io.ReadAll(r.Body)
+			if err := json.Unmarshal(body, &receivedBody); err != nil {
+				t.Fatalf("failed to decode request body: %v", err)
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"result": {
+				"runId": "run-invoke",
+				"functionId": "process-order",
+				"status": "RUN_STATUS_COMPLETED",
+				"output": {"total": 99},
+				"durationMs": 17
+			}}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		result, err := client.InvokeSync(context.Background(), "process-order",
+			map[string]any{"orderId": "123"}, 30*time.Second)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if receivedPath != "/ironflow.v1.IronflowService/InvokeFunctionSync" {
+			t.Errorf("unexpected path %q", receivedPath)
+		}
+		if receivedBody["function_id"] != "process-order" {
+			t.Errorf("expected function_id on the wire, got %#v", receivedBody["function_id"])
+		}
+		if receivedBody["timeout_ms"] != float64(30000) {
+			t.Errorf("expected timeout_ms 30000, got %#v", receivedBody["timeout_ms"])
+		}
+		if _, present := receivedBody["event"]; present {
+			t.Errorf("InvokeSync must not send an event name, got %#v", receivedBody["event"])
+		}
+		if result.RunID != "run-invoke" || result.FunctionID != "process-order" {
+			t.Errorf("unexpected result identity: %#v", result)
+		}
+		if result.Status != RunStatusCompleted {
+			t.Errorf("expected completed, got %q", result.Status)
+		}
+		if result.DurationMs != 17 {
+			t.Errorf("expected duration 17, got %d", result.DurationMs)
+		}
+		output, ok := result.Output.(map[string]any)
+		if !ok || output["total"] != float64(99) {
+			t.Fatalf("expected output, got %#v", result.Output)
+		}
+	})
+
+	t.Run("defaults the timeout", func(t *testing.T) {
+		var receivedBody map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &receivedBody)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"result": {"runId": "r", "functionId": "f", "status": "RUN_STATUS_COMPLETED"}}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		if _, err := client.InvokeSync(context.Background(), "process-order", nil, 0); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if receivedBody["timeout_ms"] != float64(DefaultEmitSyncTimeout.Milliseconds()) {
+			t.Fatalf("expected the default timeout on the wire, got %#v", receivedBody["timeout_ms"])
+		}
+	})
+
+	t.Run("surfaces an unknown function", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code": "not_found", "message": "function \"nope\" not found"}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		_, err := client.InvokeSync(context.Background(), "nope", nil, time.Second)
+		if err == nil {
+			t.Fatal("expected an error for an unknown function")
+		}
+		ironflowErr, ok := err.(*IronflowError)
+		if !ok {
+			t.Fatalf("expected IronflowError, got %T", err)
+		}
+		if ironflowErr.Code != "not_found" {
+			t.Errorf("expected not_found, got %q", ironflowErr.Code)
+		}
+		if ironflowErr.Retryable {
+			t.Error("a missing function is not retryable")
+		}
+	})
+
+	// Q12 holds for InvokeSync too: a failed run is a result to inspect.
+	t.Run("returns a failed run as a result", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"result": {
+				"runId": "run-bad",
+				"functionId": "process-order",
+				"status": "RUN_STATUS_FAILED",
+				"error": {"message": "boom", "code": "STEP_FAILED"}
+			}}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		result, err := client.InvokeSync(context.Background(), "process-order", nil, time.Second)
+		if err != nil {
+			t.Fatalf("a failed run must not be an error, got: %v", err)
+		}
+		if result.Status != RunStatusFailed {
+			t.Errorf("expected failed, got %q", result.Status)
+		}
+		if result.Error == nil || result.Error.Message != "boom" {
+			t.Fatalf("expected failure detail, got %#v", result.Error)
+		}
+	})
+
+	t.Run("sends the idempotency key", func(t *testing.T) {
+		var receivedBody map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &receivedBody)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"result": {"runId": "r", "functionId": "f", "status": "RUN_STATUS_COMPLETED"}}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		if _, err := client.InvokeSync(context.Background(), "process-order", nil, time.Second,
+			WithSyncIdempotencyKey("invoke-abc"),
+		); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if receivedBody["idempotency_key"] != "invoke-abc" {
+			t.Fatalf("expected idempotency key on the wire, got %#v", receivedBody["idempotency_key"])
+		}
+	})
+
+	// Unlike EmitSync's empty fan-out, InvokeFunctionSyncResponse carries a
+	// single result — an absent one is a broken server.
+	t.Run("errors on a response with no result", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+		}))
+		defer server.Close()
+
+		client := newSyncTestClient(server.URL, 0)
+
+		_, err := client.InvokeSync(context.Background(), "process-order", nil, time.Second)
+		ironflowErr, ok := err.(*IronflowError)
+		if !ok || ironflowErr.Code != "INVALID_RESPONSE" {
+			t.Fatalf("expected INVALID_RESPONSE, got %#v", err)
+		}
+	})
+
+	// The timeout trap (ADR 0067 / Q19). The server cancels the run when the
+	// request context dies, so a transport deadline shorter than timeout_ms
+	// would cancel on every timeout and make waitTimedOut unreachable. The
+	// budget must travel as timeout_ms with the transport left longer.
+	//
+	// The handler asserts its own request context is still alive when it
+	// answers: that liveness is exactly what stops W1's cancelAbandonedRun.
+	t.Run("expired timeout_ms returns waitTimedOut without abandoning the run", func(t *testing.T) {
+		var sentTimeoutMs any
+		var ctxAliveOnReply bool
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]any
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &body)
+			sentTimeoutMs = body["timeout_ms"]
+
+			// Outlive the wait budget the caller sent, the way a real server
+			// does when the run has not finished.
+			time.Sleep(300 * time.Millisecond)
+			ctxAliveOnReply = r.Context().Err() == nil
+
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"result": {
+				"runId": "run-slow",
+				"functionId": "slow-fn",
+				"status": "RUN_STATUS_RUNNING",
+				"waitTimedOut": true
+			}}`))
+		}))
+		defer server.Close()
+
+		// A transport deadline well under the 200ms wait budget — the exact
+		// shape of the trap, since NewClient sets one by default.
+		client := newSyncTestClient(server.URL, 50*time.Millisecond)
+
+		result, err := client.InvokeSync(context.Background(), "slow-fn", nil, 200*time.Millisecond)
+		if err != nil {
+			t.Fatalf("the transport deadline killed the call, which would cancel the run: %v", err)
+		}
+		if !result.WaitTimedOut {
+			t.Fatalf("expected waitTimedOut, got %#v", result)
+		}
+		if result.Status != RunStatusRunning {
+			t.Errorf("expected the last-known status, got %q", result.Status)
+		}
+		if sentTimeoutMs != float64(200) {
+			t.Errorf("the budget must travel as timeout_ms, got %#v", sentTimeoutMs)
+		}
+		if !ctxAliveOnReply {
+			t.Error("request context died before the server replied; the server would cancel the run")
+		}
+	})
+
+	// InvokeFunctionSyncRequest carries metadata (field 5), same as TriggerSync.
+	t.Run("sends metadata only when the option is passed", func(t *testing.T) {
+		const resp = `{"result": {"runId": "r", "functionId": "f", "status": "RUN_STATUS_COMPLETED"}}`
+
+		var withOpt map[string]any
+		server := newSyncBodyCaptureServer(t, resp, &withOpt)
+		defer server.Close()
+		if _, err := newSyncTestClient(server.URL, 0).InvokeSync(
+			context.Background(), "process-order", nil, 30*time.Second,
+			WithSyncMetadata(map[string]any{"traceId": "abc", "attempt": 2}),
+		); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		metadata, ok := withOpt["metadata"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected a metadata object on the wire, got %#v", withOpt["metadata"])
+		}
+		if metadata["traceId"] != "abc" || metadata["attempt"] != float64(2) {
+			t.Errorf("unexpected metadata on the wire: %#v", metadata)
+		}
+
+		var without map[string]any
+		bare := newSyncBodyCaptureServer(t, resp, &without)
+		defer bare.Close()
+		if _, err := newSyncTestClient(bare.URL, 0).InvokeSync(
+			context.Background(), "process-order", nil, 30*time.Second,
+		); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, present := without["metadata"]; present {
+			t.Errorf("metadata must be absent without the option, got %#v", without["metadata"])
+		}
+	})
+}
+
+// ============================================================================
 // GetRun tests
 // ============================================================================
 
@@ -1176,17 +1858,17 @@ func TestGetRun(t *testing.T) {
 
 			resp := `{
 				"id": "run-abc",
-				"function_id": "fn-001",
-				"event_id": "evt-xyz",
-				"status": "completed",
+				"functionId": "fn-001",
+				"eventId": "evt-xyz",
+				"status": "RUN_STATUS_COMPLETED",
 				"attempt": 1,
-				"max_attempts": 3,
+				"maxAttempts": 3,
 				"input": {"key": "value"},
 				"output": {"result": "success"},
-				"started_at": "2025-01-01T00:00:00Z",
-				"ended_at": "2025-01-01T00:01:00Z",
-				"created_at": "2025-01-01T00:00:00Z",
-				"updated_at": "2025-01-01T00:01:00Z"
+				"startedAt": "2025-01-01T00:00:00Z",
+				"endedAt": "2025-01-01T00:01:00Z",
+				"createdAt": "2025-01-01T00:00:00Z",
+				"updatedAt": "2025-01-01T00:01:00Z"
 			}`
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(resp))
@@ -1274,14 +1956,14 @@ func TestGetRun(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resp := `{
 				"id": "run-fail",
-				"function_id": "fn-002",
-				"event_id": "evt-fail",
-				"status": "failed",
+				"functionId": "fn-002",
+				"eventId": "evt-fail",
+				"status": "RUN_STATUS_FAILED",
 				"attempt": 3,
-				"max_attempts": 3,
+				"maxAttempts": 3,
 				"error": {"message": "step timeout exceeded", "code": "TIMEOUT"},
-				"created_at": "2025-01-01T00:00:00Z",
-				"updated_at": "2025-01-01T00:02:00Z"
+				"createdAt": "2025-01-01T00:00:00Z",
+				"updatedAt": "2025-01-01T00:02:00Z"
 			}`
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(resp))
@@ -1361,7 +2043,7 @@ func TestGetRun(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			receivedAuth = r.Header.Get("Authorization")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"id":"run-1","status":"pending","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z"}`))
+			w.Write([]byte(`{"id":"run-1","status":"RUN_STATUS_RUNNING","createdAt":"2025-01-01T00:00:00Z","updatedAt":"2025-01-01T00:00:00Z"}`))
 		}))
 		defer server.Close()
 
@@ -1414,21 +2096,21 @@ func TestListRuns(t *testing.T) {
 				"runs": [
 					{
 						"id": "run-001",
-						"function_id": "fn-abc",
-						"status": "completed",
+						"functionId": "fn-abc",
+						"status": "RUN_STATUS_COMPLETED",
 						"attempt": 1,
-						"max_attempts": 3,
-						"created_at": "2025-01-01T00:00:00Z",
-						"updated_at": "2025-01-01T00:01:00Z"
+						"maxAttempts": 3,
+						"createdAt": "2025-01-01T00:00:00Z",
+						"updatedAt": "2025-01-01T00:01:00Z"
 					},
 					{
 						"id": "run-002",
-						"function_id": "fn-abc",
-						"status": "running",
+						"functionId": "fn-abc",
+						"status": "RUN_STATUS_RUNNING",
 						"attempt": 1,
-						"max_attempts": 3,
-						"created_at": "2025-01-02T00:00:00Z",
-						"updated_at": "2025-01-02T00:01:00Z"
+						"maxAttempts": 3,
+						"createdAt": "2025-01-02T00:00:00Z",
+						"updatedAt": "2025-01-02T00:01:00Z"
 					}
 				],
 				"nextCursor": "cursor-xyz",
@@ -1471,8 +2153,10 @@ func TestListRuns(t *testing.T) {
 		if receivedBody["function_id"] != "fn-abc" {
 			t.Errorf("expected function_id 'fn-abc', got %v", receivedBody["function_id"])
 		}
-		if receivedBody["status"] != "completed" {
-			t.Errorf("expected status 'completed', got %v", receivedBody["status"])
+		// The filter lands on a protobuf enum field, so only the canonical
+		// RUN_STATUS_* name is accepted (#1919).
+		if receivedBody["status"] != "RUN_STATUS_COMPLETED" {
+			t.Errorf("expected status 'RUN_STATUS_COMPLETED' on the wire, got %v", receivedBody["status"])
 		}
 		if receivedBody["limit"] != float64(10) {
 			t.Errorf("expected limit 10, got %v", receivedBody["limit"])
@@ -1645,12 +2329,12 @@ func TestCancelRun(t *testing.T) {
 
 			resp := `{
 				"id": "run-cancel-1",
-				"function_id": "fn-001",
-				"status": "cancelled",
+				"functionId": "fn-001",
+				"status": "RUN_STATUS_CANCELLED",
 				"attempt": 1,
-				"max_attempts": 3,
-				"created_at": "2025-01-01T00:00:00Z",
-				"updated_at": "2025-01-01T00:05:00Z"
+				"maxAttempts": 3,
+				"createdAt": "2025-01-01T00:00:00Z",
+				"updatedAt": "2025-01-01T00:05:00Z"
 			}`
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(resp))
@@ -1771,7 +2455,7 @@ func TestCancelRun(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			receivedAuth = r.Header.Get("Authorization")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"id":"run-1","status":"cancelled","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z"}`))
+			w.Write([]byte(`{"id":"run-1","status":"RUN_STATUS_CANCELLED","createdAt":"2025-01-01T00:00:00Z","updatedAt":"2025-01-01T00:00:00Z"}`))
 		}))
 		defer server.Close()
 

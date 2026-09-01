@@ -13,12 +13,14 @@ func TestListAgentTools(t *testing.T) {
 		if r.Method != http.MethodPost || r.URL.Path != "/ironflow.v1.AgentToolsService/ListTools" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
+		// AgentToolsService is registered with no handler options, so it uses
+		// Connect's default codec: lowerCamel field names (#1919).
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"tools": []map[string]any{{
-				"qualified_name": "docs.search", "description": "Search docs",
-				"input_schema_json": "{}", "required_scopes": []string{"docs:read"},
+				"qualifiedName": "docs.search", "description": "Search docs",
+				"inputSchemaJson": "{}", "requiredScopes": []string{"docs:read"},
 			}},
-			"next_cursor": "next",
+			"nextCursor": "next",
 		})
 	}))
 	defer server.Close()
@@ -26,6 +28,13 @@ func TestListAgentTools(t *testing.T) {
 	result, err := newAuthTestClient(server).ListAgentTools(context.Background(), "cursor")
 	if err != nil || len(result.Tools) != 1 || result.Tools[0].QualifiedName != "docs.search" || result.NextCursor != "next" {
 		t.Fatalf("ListAgentTools = %#v, %v", result, err)
+	}
+	// Every field has to decode, not just the one the assertion above names.
+	if result.Tools[0].InputSchemaJSON != "{}" {
+		t.Errorf("InputSchemaJSON = %q", result.Tools[0].InputSchemaJSON)
+	}
+	if len(result.Tools[0].RequiredScopes) != 1 || result.Tools[0].RequiredScopes[0] != "docs:read" {
+		t.Errorf("RequiredScopes = %#v", result.Tools[0].RequiredScopes)
 	}
 }
 

@@ -3,6 +3,7 @@ package ironflow
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -266,7 +267,10 @@ func (c *Client) Emit(ctx context.Context, eventName string, data any, opts ...E
 	if options.idempotencyKey != "" {
 		req["idempotency_key"] = options.idempotencyKey
 	}
-	if options.version > 0 {
+	// 0 is "unset" and is omitted; a negative is forwarded so the server can
+	// answer with the reason. Dropping it here (the old `> 0`) meant
+	// WithEmitVersion(-1) emitted at version 1 and told the caller nothing.
+	if options.version != 0 {
 		req["version"] = options.version
 	}
 	if options.metadata != nil {
@@ -288,7 +292,8 @@ func (c *Client) Emit(ctx context.Context, eventName string, data any, opts ...E
 	}, nil
 }
 
-// EmitSyncResult is returned from EmitSync.
+// EmitSyncResult is one run's outcome from a synchronous call. EmitSync
+// returns one per matched function; InvokeSync returns exactly one.
 type EmitSyncResult struct {
 	RunID      string
 	FunctionID string
@@ -296,16 +301,291 @@ type EmitSyncResult struct {
 	Output     any
 	Error      *ErrorInfo
 	DurationMs int64
+	// WaitTimedOut reports that the call stopped waiting before the durable run
+	// reached a terminal state. Status remains the run's last-known state.
+	WaitTimedOut bool
 }
 
-// EmitSync emits an event and waits for completion.
+// runResultWire is the RunResult wire shape shared by TriggerSync and
+// InvokeFunctionSync. Field names are protobuf JSON names — Connect emits
+// runId/functionId/durationMs, not snake_case (#1920).
+type runResultWire struct {
+	RunID      string `json:"runId"`
+	FunctionID string `json:"functionId"`
+	Status     string `json:"status"`
+	Output     any    `json:"output"`
+	Error      *struct {
+		Message string `json:"message"`
+		Code    string `json:"code"`
+	} `json:"error"`
+	DurationMs   int64 `json:"durationMs"`
+	WaitTimedOut bool  `json:"waitTimedOut"`
+}
+
+func (r *runResultWire) toEmitSyncResult() (*EmitSyncResult, error) {
+	status, err := runStatusFromWire(r.Status)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &EmitSyncResult{
+		RunID:        r.RunID,
+		FunctionID:   r.FunctionID,
+		Status:       status,
+		Output:       r.Output,
+		DurationMs:   r.DurationMs,
+		WaitTimedOut: r.WaitTimedOut,
+	}
+	if r.Error != nil {
+		result.Error = &ErrorInfo{
+			Message: r.Error.Message,
+			Code:    r.Error.Code,
+		}
+	}
+	return result, nil
+}
+
+func runStatusFromWire(status string) (RunStatus, error) {
+	switch status {
+	case "RUN_STATUS_RUNNING":
+		return RunStatusRunning, nil
+	case "RUN_STATUS_COMPLETED":
+		return RunStatusCompleted, nil
+	case "RUN_STATUS_FAILED":
+		return RunStatusFailed, nil
+	case "RUN_STATUS_CANCELLED":
+		return RunStatusCancelled, nil
+	case "RUN_STATUS_PAUSED":
+		return RunStatusPaused, nil
+	case "RUN_STATUS_WAITING_FOR_CAPACITY":
+		return RunStatusWaitingForCapacity, nil
+	case "RUN_STATUS_WAITING":
+		return RunStatusWaiting, nil
+	default:
+		return "", NewError(
+			fmt.Sprintf("invalid run status on the wire: %q", status),
+			"INVALID_RESPONSE",
+			false,
+		)
+	}
+}
+
+// encodeProtoBytes / decodeProtoBytes bridge a proto `bytes` field, which
+// protojson carries as a base64 string — NOT as raw JSON. Several scoped-
+// injection fields hold a JSON payload inside a bytes field
+// (PausedStepInfo.output, InjectStepOutputRequest.new_output,
+// InjectStepOutputResponse.previous_output), so the payload has to be
+// base64-encoded on the way out and decoded on the way back (#1919).
 //
-// This is useful for testing or when you need to wait for the result.
+// Sending raw JSON text is rejected by protojson before the handler ever runs
+// ("invalid value for bytes field"), and reading the response without decoding
+// hands the caller base64 wrapped in a json.RawMessage.
+func encodeProtoBytes(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+func decodeProtoBytes(encoded string) (json.RawMessage, error) {
+	if encoded == "" {
+		return nil, nil
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(decoded), nil
+}
+
+// runStatusToWire is the inverse of runStatusFromWire. Status filters land on a
+// protobuf enum field, so the canonical RUN_STATUS_* name is the only spelling
+// that survives the trip. An unmappable value is NOT rejected by the server:
+// Connect unmarshals with DiscardUnknown, which drops unrecognized enum values,
+// so the field is silently zeroed to RUN_STATUS_UNSPECIFIED and the handler
+// reads that as "no filter" — the caller gets unfiltered runs and no error
+// (#1919). This switch is the only place that mistake is ever caught.
+//
+// Written as an explicit switch rather than a string transform on purpose:
+// RunStatusPending has no wire equivalent (the proto reserves the name), and a
+// transform would mint a plausible-looking value the server discards.
+func runStatusToWire(status RunStatus) (string, error) {
+	switch status {
+	case RunStatusRunning:
+		return "RUN_STATUS_RUNNING", nil
+	case RunStatusCompleted:
+		return "RUN_STATUS_COMPLETED", nil
+	case RunStatusFailed:
+		return "RUN_STATUS_FAILED", nil
+	case RunStatusCancelled:
+		return "RUN_STATUS_CANCELLED", nil
+	case RunStatusPaused:
+		return "RUN_STATUS_PAUSED", nil
+	case RunStatusWaitingForCapacity:
+		return "RUN_STATUS_WAITING_FOR_CAPACITY", nil
+	case RunStatusWaiting:
+		return "RUN_STATUS_WAITING", nil
+	default:
+		return "", NewError(
+			fmt.Sprintf("invalid run status filter: %q", string(status)),
+			"INVALID_ARGUMENT",
+			false,
+		)
+	}
+}
+
+// SyncOption configures a synchronous call. Applies to both EmitSync and
+// InvokeSync.
+type SyncOption func(*syncOptions)
+
+type syncOptions struct {
+	idempotencyKey string
+	metadata       map[string]any
+	version        int
+}
+
+// WithSyncIdempotencyKey sets the idempotency key for EmitSync or InvokeSync.
+// A repeat call with the same key returns the original run instead of
+// creating a second one.
+func WithSyncIdempotencyKey(key string) SyncOption {
+	return func(o *syncOptions) {
+		o.idempotencyKey = key
+	}
+}
+
+// WithSyncMetadata sets the metadata stored on the event generated by
+// EmitSync or InvokeSync. The synchronous counterpart of WithEmitMetadata.
+func WithSyncMetadata(metadata map[string]any) SyncOption {
+	return func(o *syncOptions) {
+		o.metadata = metadata
+	}
+}
+
+// WithSyncVersion sets the event schema version on the event EmitSync
+// generates. The synchronous counterpart of WithEmitVersion.
+//
+// No-op on InvokeSync, which shares this option type: invoking a function
+// directly generates no event, so there is no schema to select. Given for one
+// field, a second option type is the worse trade.
+func WithSyncVersion(version int) SyncOption {
+	return func(o *syncOptions) {
+		o.version = version
+	}
+}
+
+// syncTransportGrace is how much longer than the server-side wait budget a
+// synchronous call keeps its transport open.
+const syncTransportGrace = 5 * time.Second
+
+// syncHTTPClient returns an HTTP client whose transport deadline is at least
+// budget. http.Client.Timeout is enforced independently of the request
+// context, so the client-level default would otherwise undercut a sync call's
+// own timeout_ms. For InvokeSync that is not just a lost result: the server
+// reads a dead request context as an abandoned caller and cancels the run
+// (ADR 0067 / Q19).
+func (c *Client) syncHTTPClient(budget time.Duration) *http.Client {
+	if c.httpClient.Timeout == 0 || c.httpClient.Timeout >= budget {
+		return c.httpClient
+	}
+	hc := *c.httpClient
+	hc.Timeout = budget
+	return &hc
+}
+
+// EmitSync emits an event and waits for every run it triggers.
+//
+// One event can match several functions, so this returns one result per run —
+// never just the first. Run outcomes are not errors: a failed or cancelled run
+// comes back in the slice with its Status and Error populated, and an event
+// that matches nothing returns an empty slice. Only transport and protocol
+// failures return err.
+//
 // For production use, prefer Emit() for better throughput.
 //
 // Example:
 //
-//	result, err := client.EmitSync(ctx, "order.placed", map[string]any{
+//	results, err := client.EmitSync(ctx, "order.placed", map[string]any{
+//	    "orderId": "123",
+//	}, 30*time.Second)
+//	if err != nil {
+//	    return err
+//	}
+//	for _, r := range results {
+//	    fmt.Printf("%s: %s\n", r.FunctionID, r.Status)
+//	}
+//
+//	// With an idempotency key
+//	results, err := client.EmitSync(ctx, "payment.processed", data, 0,
+//	    ironflow.WithSyncIdempotencyKey("payment-abc"),
+//	)
+func (c *Client) EmitSync(ctx context.Context, eventName string, data any, timeout time.Duration, opts ...SyncOption) ([]EmitSyncResult, error) {
+	if timeout == 0 {
+		timeout = DefaultEmitSyncTimeout
+	}
+
+	options := &syncOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	req := map[string]any{
+		"event":      eventName,
+		"data":       data,
+		"timeout_ms": timeout.Milliseconds(),
+	}
+	if options.idempotencyKey != "" {
+		req["idempotency_key"] = options.idempotencyKey
+	}
+	if options.metadata != nil {
+		req["metadata"] = options.metadata
+	}
+	// Matches Emit's guard: 0 is "unset" on the wire, so omit rather than send
+	// it. A negative is left to the server, which answers InvalidArgument with
+	// the reason rather than having the client silently drop it.
+	if options.version != 0 {
+		req["version"] = options.version
+	}
+
+	var resp struct {
+		Results []runResultWire `json:"results"`
+	}
+
+	if err := c.doSyncRequest(ctx, "/ironflow.v1.IronflowService/TriggerSync", req, timeout, &resp); err != nil {
+		return nil, err
+	}
+
+	// An event matching no function yields an empty slice, not an error: the
+	// server answers with results: [] deliberately, and a caller that wants
+	// loudness checks len(). Browser and Node agree.
+	out := make([]EmitSyncResult, len(resp.Results))
+	for i := range resp.Results {
+		result, err := resp.Results[i].toEmitSyncResult()
+		if err != nil {
+			return nil, err
+		}
+		out[i] = *result
+	}
+
+	return out, nil
+}
+
+// InvokeSync invokes one function by ID and waits for its single run.
+//
+// The function-keyed sibling of EmitSync. EmitSync is event-keyed and fans out
+// to every matching function; this takes a function ID and returns exactly one
+// result, so a caller that knows which function it wants can name the run it
+// cares about (ADR 0067).
+//
+// As with EmitSync, a failed or cancelled run is a result, not an err.
+//
+// Cancelling ctx cancels the run server-side — unlike Emit/EmitSync, an
+// InvokeSync run has exactly one consumer, so a caller that goes away leaves
+// it with none. An expired timeout is not abandonment: the result comes back
+// with WaitTimedOut set and the run keeps going.
+//
+// Example:
+//
+//	result, err := client.InvokeSync(ctx, "process-order", map[string]any{
 //	    "orderId": "123",
 //	}, 30*time.Second)
 //	if err != nil {
@@ -314,60 +594,54 @@ type EmitSyncResult struct {
 //	if result.Status == ironflow.RunStatusCompleted {
 //	    fmt.Printf("Order processed: %v\n", result.Output)
 //	}
-func (c *Client) EmitSync(ctx context.Context, eventName string, data any, timeout time.Duration) (*EmitSyncResult, error) {
+func (c *Client) InvokeSync(ctx context.Context, functionID string, data any, timeout time.Duration, opts ...SyncOption) (*EmitSyncResult, error) {
 	if timeout == 0 {
 		timeout = DefaultEmitSyncTimeout
 	}
 
+	options := &syncOptions{}
+	for _, opt := range opts {
+		opt(options)
+	}
+
 	req := map[string]any{
-		"event":      eventName,
-		"data":       data,
-		"timeout_ms": timeout.Milliseconds(),
+		"function_id": functionID,
+		"data":        data,
+		"timeout_ms":  timeout.Milliseconds(),
+	}
+	if options.idempotencyKey != "" {
+		req["idempotency_key"] = options.idempotencyKey
+	}
+	if options.metadata != nil {
+		req["metadata"] = options.metadata
 	}
 
 	var resp struct {
-		Results []struct {
-			RunID      string `json:"run_id"`
-			FunctionID string `json:"function_id"`
-			Status     string `json:"status"`
-			Output     any    `json:"output"`
-			Error      *struct {
-				Message string `json:"message"`
-				Code    string `json:"code"`
-			} `json:"error"`
-			DurationMs int64 `json:"duration_ms"`
-		} `json:"results"`
+		Result *runResultWire `json:"result"`
 	}
 
-	// Use a longer context timeout for sync triggers
-	syncCtx, cancel := context.WithTimeout(ctx, timeout+5*time.Second)
-	defer cancel()
-
-	if err := c.request(syncCtx, "POST", "/ironflow.v1.IronflowService/TriggerSync", req, &resp); err != nil {
+	if err := c.doSyncRequest(ctx, "/ironflow.v1.IronflowService/InvokeFunctionSync", req, timeout, &resp); err != nil {
 		return nil, err
 	}
 
-	if len(resp.Results) == 0 {
-		return nil, NewError("no results returned", "NO_RESULTS", false)
+	// InvokeFunctionSyncResponse carries exactly one result. An absent one is
+	// a broken server, not an empty fan-out.
+	if resp.Result == nil {
+		return nil, NewError("sync response carried no result", "INVALID_RESPONSE", false)
 	}
 
-	result := resp.Results[0]
-	syncResult := &EmitSyncResult{
-		RunID:      result.RunID,
-		FunctionID: result.FunctionID,
-		Status:     RunStatus(result.Status),
-		Output:     result.Output,
-		DurationMs: result.DurationMs,
-	}
+	return resp.Result.toEmitSyncResult()
+}
 
-	if result.Error != nil {
-		syncResult.Error = &ErrorInfo{
-			Message: result.Error.Message,
-			Code:    result.Error.Code,
-		}
-	}
+// doSyncRequest issues a synchronous-call request, keeping the transport
+// deadline longer than the server's own wait budget. See syncHTTPClient.
+func (c *Client) doSyncRequest(ctx context.Context, path string, req any, timeout time.Duration, resp any) error {
+	budget := timeout + syncTransportGrace
 
-	return syncResult, nil
+	syncCtx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+
+	return c.requestWith(syncCtx, c.syncHTTPClient(budget), "POST", path, req, resp)
 }
 
 // GetRun gets a run by ID.
@@ -378,7 +652,7 @@ func (c *Client) GetRun(ctx context.Context, runID string) (*WorkflowRun, error)
 		return nil, err
 	}
 
-	return mapRunResponse(&resp), nil
+	return mapRunResponse(&resp)
 }
 
 // ListRunsOptions configures a list runs request.
@@ -404,7 +678,11 @@ func (c *Client) ListRuns(ctx context.Context, opts *ListRunsOptions) (*ListRuns
 			req["function_id"] = opts.FunctionID
 		}
 		if opts.Status != "" {
-			req["status"] = opts.Status
+			wire, err := runStatusToWire(opts.Status)
+			if err != nil {
+				return nil, err
+			}
+			req["status"] = wire
 		}
 		if opts.Limit > 0 {
 			req["limit"] = opts.Limit
@@ -426,7 +704,19 @@ func (c *Client) ListRuns(ctx context.Context, opts *ListRunsOptions) (*ListRuns
 
 	runs := make([]*WorkflowRun, len(resp.Runs))
 	for i := range resp.Runs {
-		runs[i] = mapRunResponse(&resp.Runs[i])
+		run, err := mapRunResponse(&resp.Runs[i])
+		if err != nil {
+			// The realistic trigger is a decode-shape mismatch, in which case
+			// ID is empty too — fall back to the index so the operator still
+			// knows which row to look at.
+			where := fmt.Sprintf("run %q", resp.Runs[i].ID)
+			if resp.Runs[i].ID == "" {
+				where = fmt.Sprintf("run at index %d", i)
+			}
+			return nil, WrapError(err, where+" in ListRuns response",
+				"INVALID_RESPONSE", false)
+		}
+		runs[i] = run
 	}
 
 	return &ListRunsResult{
@@ -447,7 +737,7 @@ func (c *Client) CancelRun(ctx context.Context, runID string, reason string) (*W
 		return nil, err
 	}
 
-	return mapRunResponse(&resp), nil
+	return mapRunResponse(&resp)
 }
 
 // PauseRun pauses a running workflow run for scoped injection.
@@ -486,10 +776,14 @@ func (c *Client) GetPausedState(ctx context.Context, runID string) (*PausedState
 			Name        string `json:"name"`
 			Output      string `json:"output"`
 			Injected    bool   `json:"injected"`
-			CompletedAt string `json:"completed_at"`
+			CompletedAt string `json:"completedAt"`
+			StepType    string `json:"stepType"`
+			Status      string `json:"status"`
+			// Error is a proto bytes field, so it arrives base64-encoded.
+			Error string `json:"error"`
 		} `json:"steps"`
-		NextStepHint string `json:"next_step_hint"`
-		PauseReason  string `json:"pause_reason"`
+		NextStepHint string `json:"nextStepHint"`
+		PauseReason  string `json:"pauseReason"`
 	}
 
 	if err := c.request(ctx, "POST", "/ironflow.v1.IronflowService/GetPausedState", map[string]string{
@@ -500,12 +794,29 @@ func (c *Client) GetPausedState(ctx context.Context, runID string) (*PausedState
 
 	steps := make([]PausedStepInfo, len(resp.Steps))
 	for i, s := range resp.Steps {
+		output, err := decodeProtoBytes(s.Output)
+		if err != nil {
+			return nil, WrapError(err,
+				fmt.Sprintf("step %q in GetPausedState response", s.ID),
+				"INVALID_RESPONSE", false)
+		}
+
+		stepErr, err := decodeProtoBytes(s.Error)
+		if err != nil {
+			return nil, WrapError(err,
+				fmt.Sprintf("step %q error in GetPausedState response", s.ID),
+				"INVALID_RESPONSE", false)
+		}
+
 		steps[i] = PausedStepInfo{
 			ID:          s.ID,
 			Name:        s.Name,
-			Output:      json.RawMessage(s.Output),
+			Output:      output,
 			Injected:    s.Injected,
 			CompletedAt: s.CompletedAt,
+			StepType:    s.StepType,
+			Status:      s.Status,
+			Error:       stepErr,
 		}
 	}
 
@@ -525,24 +836,26 @@ func (c *Client) GetPausedState(ctx context.Context, runID string) (*PausedState
 //	    json.RawMessage(`{"corrected": true}`), "Manual correction")
 func (c *Client) InjectStepOutput(ctx context.Context, runID, stepID string, newOutput json.RawMessage, reason string) (json.RawMessage, error) {
 	var resp struct {
-		StepID         string `json:"step_id"`
-		PreviousOutput string `json:"previous_output"`
+		StepID         string `json:"stepId"`
+		PreviousOutput string `json:"previousOutput"`
 	}
 
 	if err := c.request(ctx, "POST", "/ironflow.v1.IronflowService/InjectStepOutput", map[string]any{
 		"run_id":     runID,
 		"step_id":    stepID,
-		"new_output": string(newOutput),
+		"new_output": encodeProtoBytes(newOutput),
 		"reason":     reason,
 	}, &resp); err != nil {
 		return nil, err
 	}
 
-	if resp.PreviousOutput == "" {
-		return nil, nil
+	previous, err := decodeProtoBytes(resp.PreviousOutput)
+	if err != nil {
+		return nil, WrapError(err, "previous output in InjectStepOutput response",
+			"INVALID_RESPONSE", false)
 	}
 
-	return json.RawMessage(resp.PreviousOutput), nil
+	return previous, nil
 }
 
 // GetRunStateAt returns the reconstructed state of a run at a specific timestamp.
@@ -604,7 +917,7 @@ func (c *Client) ResumeRun(ctx context.Context, runID string, fromStep string) (
 		return nil, err
 	}
 
-	return mapRunResponse(&resp), nil
+	return mapRunResponse(&resp)
 }
 
 // RegisterFunction registers a function with the server.
@@ -1748,6 +2061,12 @@ func (c *Client) RestRequest(ctx context.Context, method, path string, body any,
 //
 //nolint:unparam // method kept for future flexibility
 func (c *Client) request(ctx context.Context, method, path string, body any, result any) error {
+	return c.requestWith(ctx, c.httpClient, method, path, body, result)
+}
+
+// requestWith is request with an explicit HTTP client, so calls that need a
+// transport deadline other than the client default can supply one.
+func (c *Client) requestWith(ctx context.Context, httpClient *http.Client, method, path string, body any, result any) error {
 	url := c.serverURL + path
 
 	// Marshal body once for reuse across retries
@@ -1762,13 +2081,13 @@ func (c *Client) request(ctx context.Context, method, path string, body any, res
 
 	// If retry is disabled, execute once
 	if c.retryConfig == nil {
-		return c.executeRequest(ctx, method, url, bodyBytes, result)
+		return c.executeRequest(ctx, httpClient, method, url, bodyBytes, result)
 	}
 
 	// Execute with retry logic
 	var lastErr error
 	for attempt := 1; attempt <= c.retryConfig.MaxAttempts; attempt++ {
-		err := c.executeRequest(ctx, method, url, bodyBytes, result)
+		err := c.executeRequest(ctx, httpClient, method, url, bodyBytes, result)
 		if err == nil {
 			return nil
 		}
@@ -1858,7 +2177,7 @@ func isNetworkError(err error) bool {
 }
 
 // executeRequest performs a single HTTP request.
-func (c *Client) executeRequest(ctx context.Context, method, url string, bodyBytes []byte, result any) error {
+func (c *Client) executeRequest(ctx context.Context, httpClient *http.Client, method, url string, bodyBytes []byte, result any) error {
 	var bodyReader io.Reader
 	if bodyBytes != nil {
 		bodyReader = bytes.NewReader(bodyBytes)
@@ -1882,7 +2201,7 @@ func (c *Client) executeRequest(ctx context.Context, method, url string, bodyByt
 		req.Header.Set(HeaderRunID, rid)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return WrapError(err, "request failed", "REQUEST_FAILED", true)
 	}
@@ -1917,6 +2236,11 @@ func (c *Client) executeRequest(ctx context.Context, method, url string, bodyByt
 		case http.StatusForbidden:
 			ironflowErr.Cause = ErrForbidden
 			ironflowErr.Message += " — " + AuthHelp
+		case http.StatusConflict:
+			// Without this, a 409 is indistinguishable from any other 4xx and
+			// callers have to string-match the message to tell "already in
+			// flight, wait" apart from a real failure (#1963).
+			ironflowErr.Cause = ErrConflict
 		}
 
 		// Parse Retry-After header if present
@@ -1951,32 +2275,39 @@ func parseRetryAfter(value string) time.Duration {
 	return 0
 }
 
-// runResponse is the wire format for run responses.
+// runResponse is the wire format for run responses. Field names are protobuf
+// JSON names — IronflowService runs on Connect's default codec, which emits
+// lowerCamel and omits zero-valued fields (#1919).
 type runResponse struct {
 	ID          string `json:"id"`
-	FunctionID  string `json:"function_id"`
-	EventID     string `json:"event_id"`
+	FunctionID  string `json:"functionId"`
+	EventID     string `json:"eventId"`
 	Status      string `json:"status"`
 	Attempt     int    `json:"attempt"`
-	MaxAttempts int    `json:"max_attempts"`
+	MaxAttempts int    `json:"maxAttempts"`
 	Input       any    `json:"input"`
 	Output      any    `json:"output"`
 	Error       *struct {
 		Message string `json:"message"`
 		Code    string `json:"code"`
 	} `json:"error"`
-	StartedAt string `json:"started_at"`
-	EndedAt   string `json:"ended_at"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	StartedAt string `json:"startedAt"`
+	EndedAt   string `json:"endedAt"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
-func mapRunResponse(r *runResponse) *WorkflowRun {
+func mapRunResponse(r *runResponse) (*WorkflowRun, error) {
+	status, err := runStatusFromWire(r.Status)
+	if err != nil {
+		return nil, err
+	}
+
 	run := &WorkflowRun{
 		ID:          r.ID,
 		FunctionID:  r.FunctionID,
 		EventID:     r.EventID,
-		Status:      RunStatus(r.Status),
+		Status:      status,
 		Attempt:     r.Attempt,
 		MaxAttempts: r.MaxAttempts,
 		Input:       r.Input,
@@ -2011,7 +2342,7 @@ func mapRunResponse(r *runResponse) *WorkflowRun {
 		}
 	}
 
-	return run
+	return run, nil
 }
 
 // ============================================================================

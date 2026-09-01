@@ -1718,24 +1718,29 @@ func TestProtoToJobAssignment_NoMetadata(t *testing.T) {
 	}
 }
 
-func TestAnyToStruct(t *testing.T) {
+func TestAnyToPayload(t *testing.T) {
 	t.Run("nil", func(t *testing.T) {
-		s, err := anyToStruct(nil)
+		st, v, err := anyToPayload(nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if s != nil {
-			t.Error("expected nil struct for nil input")
+		if st != nil || v != nil {
+			t.Error("expected both carriers nil for nil input")
 		}
 	})
 
+	// An object keeps using the original Struct field, so a reader that knows
+	// only that field is unaffected and the wire carries no extra bytes.
 	t.Run("map", func(t *testing.T) {
-		s, err := anyToStruct(map[string]any{"key": "value"})
+		st, v, err := anyToPayload(map[string]any{"key": "value"})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if s.Fields["key"].GetStringValue() != "value" {
-			t.Errorf("expected key=value, got %v", s.Fields["key"])
+		if v != nil {
+			t.Error("an object must not populate the Value field")
+		}
+		if got := st.Fields["key"].GetStringValue(); got != "value" {
+			t.Errorf("expected key=value, got %v", got)
 		}
 	})
 
@@ -1744,12 +1749,44 @@ func TestAnyToStruct(t *testing.T) {
 			Name string `json:"name"`
 			Age  int    `json:"age"`
 		}
-		s, err := anyToStruct(TestObj{Name: "Alice", Age: 30})
+		st, v, err := anyToPayload(TestObj{Name: "Alice", Age: 30})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if s.Fields["name"].GetStringValue() != "Alice" {
-			t.Errorf("expected name=Alice, got %v", s.Fields["name"])
+		if v != nil {
+			t.Error("a struct marshals to an object, so it belongs in the Struct field")
+		}
+		if got := st.Fields["name"].GetStringValue(); got != "Alice" {
+			t.Errorf("expected name=Alice, got %v", got)
+		}
+	})
+
+	// #1963: a handler returning a bare array or scalar used to have its output
+	// silently dropped, because the conversion forced everything through
+	// map[string]any and the caller ignored the error.
+	t.Run("slice", func(t *testing.T) {
+		st, v, err := anyToPayload([]int{1, 2, 3})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if st != nil {
+			t.Error("a non-object must not populate the Struct field")
+		}
+		if n := len(v.GetListValue().GetValues()); n != 3 {
+			t.Errorf("expected 3 list values, got %d", n)
+		}
+	})
+
+	t.Run("scalar", func(t *testing.T) {
+		st, v, err := anyToPayload("ok")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if st != nil {
+			t.Error("a non-object must not populate the Struct field")
+		}
+		if got := v.GetStringValue(); got != "ok" {
+			t.Errorf("expected \"ok\", got %q", got)
 		}
 	})
 }

@@ -65,6 +65,9 @@ const (
 	// IronflowServiceTriggerSyncProcedure is the fully-qualified name of the IronflowService's
 	// TriggerSync RPC.
 	IronflowServiceTriggerSyncProcedure = "/ironflow.v1.IronflowService/TriggerSync"
+	// IronflowServiceInvokeFunctionSyncProcedure is the fully-qualified name of the IronflowService's
+	// InvokeFunctionSync RPC.
+	IronflowServiceInvokeFunctionSyncProcedure = "/ironflow.v1.IronflowService/InvokeFunctionSync"
 	// IronflowServiceTriggerBatchProcedure is the fully-qualified name of the IronflowService's
 	// TriggerBatch RPC.
 	IronflowServiceTriggerBatchProcedure = "/ironflow.v1.IronflowService/TriggerBatch"
@@ -124,6 +127,12 @@ type IronflowServiceClient interface {
 	Emit(context.Context, *connect.Request[v1.TriggerRequest]) (*connect.Response[v1.TriggerResponse], error)
 	// Trigger and wait for completion (sync)
 	TriggerSync(context.Context, *connect.Request[v1.TriggerSyncRequest]) (*connect.Response[v1.TriggerSyncResponse], error)
+	// Invoke one function by ID and wait for its single run to finish.
+	// Unlike TriggerSync, which is event-keyed and fans out to every matching
+	// function, this targets exactly one function and returns exactly one
+	// result. Cancelling the request cancels the run (ADR 0067) — the call has
+	// a single consumer, so a caller that goes away leaves the run with none.
+	InvokeFunctionSync(context.Context, *connect.Request[v1.InvokeFunctionSyncRequest]) (*connect.Response[v1.InvokeFunctionSyncResponse], error)
 	// Batch trigger multiple events
 	TriggerBatch(context.Context, *connect.Request[v1.TriggerBatchRequest]) (*connect.Response[v1.TriggerBatchResponse], error)
 	// Get a run by ID
@@ -231,6 +240,12 @@ func NewIronflowServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(ironflowServiceMethods.ByName("TriggerSync")),
 			connect.WithClientOptions(opts...),
 		),
+		invokeFunctionSync: connect.NewClient[v1.InvokeFunctionSyncRequest, v1.InvokeFunctionSyncResponse](
+			httpClient,
+			baseURL+IronflowServiceInvokeFunctionSyncProcedure,
+			connect.WithSchema(ironflowServiceMethods.ByName("InvokeFunctionSync")),
+			connect.WithClientOptions(opts...),
+		),
 		triggerBatch: connect.NewClient[v1.TriggerBatchRequest, v1.TriggerBatchResponse](
 			httpClient,
 			baseURL+IronflowServiceTriggerBatchProcedure,
@@ -323,6 +338,7 @@ type ironflowServiceClient struct {
 	trigger              *connect.Client[v1.TriggerRequest, v1.TriggerResponse]
 	emit                 *connect.Client[v1.TriggerRequest, v1.TriggerResponse]
 	triggerSync          *connect.Client[v1.TriggerSyncRequest, v1.TriggerSyncResponse]
+	invokeFunctionSync   *connect.Client[v1.InvokeFunctionSyncRequest, v1.InvokeFunctionSyncResponse]
 	triggerBatch         *connect.Client[v1.TriggerBatchRequest, v1.TriggerBatchResponse]
 	getRun               *connect.Client[v1.GetRunRequest, v1.Run]
 	listRuns             *connect.Client[v1.ListRunsRequest, v1.ListRunsResponse]
@@ -390,6 +406,11 @@ func (c *ironflowServiceClient) Emit(ctx context.Context, req *connect.Request[v
 // TriggerSync calls ironflow.v1.IronflowService.TriggerSync.
 func (c *ironflowServiceClient) TriggerSync(ctx context.Context, req *connect.Request[v1.TriggerSyncRequest]) (*connect.Response[v1.TriggerSyncResponse], error) {
 	return c.triggerSync.CallUnary(ctx, req)
+}
+
+// InvokeFunctionSync calls ironflow.v1.IronflowService.InvokeFunctionSync.
+func (c *ironflowServiceClient) InvokeFunctionSync(ctx context.Context, req *connect.Request[v1.InvokeFunctionSyncRequest]) (*connect.Response[v1.InvokeFunctionSyncResponse], error) {
+	return c.invokeFunctionSync.CallUnary(ctx, req)
 }
 
 // TriggerBatch calls ironflow.v1.IronflowService.TriggerBatch.
@@ -476,6 +497,12 @@ type IronflowServiceHandler interface {
 	Emit(context.Context, *connect.Request[v1.TriggerRequest]) (*connect.Response[v1.TriggerResponse], error)
 	// Trigger and wait for completion (sync)
 	TriggerSync(context.Context, *connect.Request[v1.TriggerSyncRequest]) (*connect.Response[v1.TriggerSyncResponse], error)
+	// Invoke one function by ID and wait for its single run to finish.
+	// Unlike TriggerSync, which is event-keyed and fans out to every matching
+	// function, this targets exactly one function and returns exactly one
+	// result. Cancelling the request cancels the run (ADR 0067) — the call has
+	// a single consumer, so a caller that goes away leaves the run with none.
+	InvokeFunctionSync(context.Context, *connect.Request[v1.InvokeFunctionSyncRequest]) (*connect.Response[v1.InvokeFunctionSyncResponse], error)
 	// Batch trigger multiple events
 	TriggerBatch(context.Context, *connect.Request[v1.TriggerBatchRequest]) (*connect.Response[v1.TriggerBatchResponse], error)
 	// Get a run by ID
@@ -579,6 +606,12 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 		connect.WithSchema(ironflowServiceMethods.ByName("TriggerSync")),
 		connect.WithHandlerOptions(opts...),
 	)
+	ironflowServiceInvokeFunctionSyncHandler := connect.NewUnaryHandler(
+		IronflowServiceInvokeFunctionSyncProcedure,
+		svc.InvokeFunctionSync,
+		connect.WithSchema(ironflowServiceMethods.ByName("InvokeFunctionSync")),
+		connect.WithHandlerOptions(opts...),
+	)
 	ironflowServiceTriggerBatchHandler := connect.NewUnaryHandler(
 		IronflowServiceTriggerBatchProcedure,
 		svc.TriggerBatch,
@@ -679,6 +712,8 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 			ironflowServiceEmitHandler.ServeHTTP(w, r)
 		case IronflowServiceTriggerSyncProcedure:
 			ironflowServiceTriggerSyncHandler.ServeHTTP(w, r)
+		case IronflowServiceInvokeFunctionSyncProcedure:
+			ironflowServiceInvokeFunctionSyncHandler.ServeHTTP(w, r)
 		case IronflowServiceTriggerBatchProcedure:
 			ironflowServiceTriggerBatchHandler.ServeHTTP(w, r)
 		case IronflowServiceGetRunProcedure:
@@ -754,6 +789,10 @@ func (UnimplementedIronflowServiceHandler) Emit(context.Context, *connect.Reques
 
 func (UnimplementedIronflowServiceHandler) TriggerSync(context.Context, *connect.Request[v1.TriggerSyncRequest]) (*connect.Response[v1.TriggerSyncResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.TriggerSync is not implemented"))
+}
+
+func (UnimplementedIronflowServiceHandler) InvokeFunctionSync(context.Context, *connect.Request[v1.InvokeFunctionSyncRequest]) (*connect.Response[v1.InvokeFunctionSyncResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.InvokeFunctionSync is not implemented"))
 }
 
 func (UnimplementedIronflowServiceHandler) TriggerBatch(context.Context, *connect.Request[v1.TriggerBatchRequest]) (*connect.Response[v1.TriggerBatchResponse], error) {

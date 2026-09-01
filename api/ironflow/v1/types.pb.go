@@ -849,6 +849,11 @@ type Event struct {
 	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	// Event payload
 	Data *structpb.Struct `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which data cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// data, so an object costs no extra bytes and old clients are
+	// unaffected.
+	DataValue *structpb.Value `protobuf:"bytes,12,opt,name=data_value,json=dataValue,proto3" json:"data_value,omitempty"`
 	// Optional deduplication key
 	IdempotencyKey string `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	// Origin (webhook, sdk, api)
@@ -914,6 +919,13 @@ func (x *Event) GetName() string {
 func (x *Event) GetData() *structpb.Struct {
 	if x != nil {
 		return x.Data
+	}
+	return nil
+}
+
+func (x *Event) GetDataValue() *structpb.Value {
+	if x != nil {
+		return x.DataValue
 	}
 	return nil
 }
@@ -990,8 +1002,18 @@ type Run struct {
 	ActorId string `protobuf:"bytes,6,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
 	// Input data
 	Input *structpb.Struct `protobuf:"bytes,7,opt,name=input,proto3" json:"input,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which input cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// input, so an object costs no extra bytes and old clients are
+	// unaffected.
+	InputValue *structpb.Value `protobuf:"bytes,22,opt,name=input_value,json=inputValue,proto3" json:"input_value,omitempty"`
 	// Output data
 	Output *structpb.Struct `protobuf:"bytes,8,opt,name=output,proto3" json:"output,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which output cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// output, so an object costs no extra bytes and old clients are
+	// unaffected.
+	OutputValue *structpb.Value `protobuf:"bytes,23,opt,name=output_value,json=outputValue,proto3" json:"output_value,omitempty"`
 	// Error details if failed
 	Error *Error `protobuf:"bytes,9,opt,name=error,proto3" json:"error,omitempty"`
 	// Current status
@@ -1097,9 +1119,23 @@ func (x *Run) GetInput() *structpb.Struct {
 	return nil
 }
 
+func (x *Run) GetInputValue() *structpb.Value {
+	if x != nil {
+		return x.InputValue
+	}
+	return nil
+}
+
 func (x *Run) GetOutput() *structpb.Struct {
 	if x != nil {
 		return x.Output
+	}
+	return nil
+}
+
+func (x *Run) GetOutputValue() *structpb.Value {
+	if x != nil {
+		return x.OutputValue
 	}
 	return nil
 }
@@ -1197,10 +1233,20 @@ type Step struct {
 	Status StepStatus `protobuf:"varint,6,opt,name=status,proto3,enum=ironflow.v1.StepStatus" json:"status,omitempty"`
 	// Input data
 	Input *structpb.Struct `protobuf:"bytes,7,opt,name=input,proto3" json:"input,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which input cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// input, so an object costs no extra bytes and old clients are
+	// unaffected.
+	InputValue *structpb.Value `protobuf:"bytes,19,opt,name=input_value,json=inputValue,proto3" json:"input_value,omitempty"`
 	// Hash of input for memoization
 	InputHash string `protobuf:"bytes,8,opt,name=input_hash,json=inputHash,proto3" json:"input_hash,omitempty"`
 	// Output data
 	Output *structpb.Struct `protobuf:"bytes,9,opt,name=output,proto3" json:"output,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which output cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// output, so an object costs no extra bytes and old clients are
+	// unaffected.
+	OutputValue *structpb.Value `protobuf:"bytes,20,opt,name=output_value,json=outputValue,proto3" json:"output_value,omitempty"`
 	// Error details if failed
 	Error *Error `protobuf:"bytes,10,opt,name=error,proto3" json:"error,omitempty"`
 	// Current attempt number
@@ -1213,6 +1259,11 @@ type Step struct {
 	EndedAt *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=ended_at,json=endedAt,proto3" json:"ended_at,omitempty"`
 	// For patched steps - original output
 	OriginalOutput *structpb.Struct `protobuf:"bytes,15,opt,name=original_output,json=originalOutput,proto3" json:"original_output,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which original_output cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// original_output, so an object costs no extra bytes and old clients are
+	// unaffected.
+	OriginalOutputValue *structpb.Value `protobuf:"bytes,21,opt,name=original_output_value,json=originalOutputValue,proto3" json:"original_output_value,omitempty"`
 	// When the step was patched
 	PatchedAt *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=patched_at,json=patchedAt,proto3" json:"patched_at,omitempty"`
 	// Who patched the step
@@ -1302,6 +1353,13 @@ func (x *Step) GetInput() *structpb.Struct {
 	return nil
 }
 
+func (x *Step) GetInputValue() *structpb.Value {
+	if x != nil {
+		return x.InputValue
+	}
+	return nil
+}
+
 func (x *Step) GetInputHash() string {
 	if x != nil {
 		return x.InputHash
@@ -1312,6 +1370,13 @@ func (x *Step) GetInputHash() string {
 func (x *Step) GetOutput() *structpb.Struct {
 	if x != nil {
 		return x.Output
+	}
+	return nil
+}
+
+func (x *Step) GetOutputValue() *structpb.Value {
+	if x != nil {
+		return x.OutputValue
 	}
 	return nil
 }
@@ -1354,6 +1419,13 @@ func (x *Step) GetEndedAt() *timestamppb.Timestamp {
 func (x *Step) GetOriginalOutput() *structpb.Struct {
 	if x != nil {
 		return x.OriginalOutput
+	}
+	return nil
+}
+
+func (x *Step) GetOriginalOutputValue() *structpb.Value {
+	if x != nil {
+		return x.OriginalOutputValue
 	}
 	return nil
 }
@@ -1573,11 +1645,13 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\x13recording_retention\x18\x10 \x01(\tR\x12recordingRetention\x123\n" +
 	"\bmetadata\x18\x12 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x127\n" +
 	"\bdebounce\x18\x13 \x01(\v2\x1b.ironflow.v1.DebounceConfigR\bdebounce\x126\n" +
-	"\tcancel_on\x18\x15 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOnJ\x04\b\x11\x10\x12J\x04\b\x14\x10\x15R\x0epause_behaviorR\x14compensate_on_cancel\"\x87\x03\n" +
+	"\tcancel_on\x18\x15 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOnJ\x04\b\x11\x10\x12J\x04\b\x14\x10\x15R\x0epause_behaviorR\x14compensate_on_cancel\"\xbe\x03\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12+\n" +
-	"\x04data\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x04data\x12'\n" +
+	"\x04data\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x04data\x125\n" +
+	"\n" +
+	"data_value\x18\f \x01(\v2\x16.google.protobuf.ValueR\tdataValue\x12'\n" +
 	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x12\x16\n" +
 	"\x06source\x18\x05 \x01(\tR\x06source\x128\n" +
 	"\ttimestamp\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x123\n" +
@@ -1587,7 +1661,7 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\ventity_type\x18\n" +
 	" \x01(\tR\n" +
 	"entityType\x12%\n" +
-	"\x0eentity_version\x18\v \x01(\x03R\rentityVersion\"\xc9\x06\n" +
+	"\x0eentity_version\x18\v \x01(\x03R\rentityVersion\"\xbd\a\n" +
 	"\x03Run\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vfunction_id\x18\x02 \x01(\tR\n" +
@@ -1596,8 +1670,11 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\x0eexecution_mode\x18\x04 \x01(\x0e2\x1a.ironflow.v1.ExecutionModeR\rexecutionMode\x12\x1b\n" +
 	"\tworker_id\x18\x05 \x01(\tR\bworkerId\x12\x19\n" +
 	"\bactor_id\x18\x06 \x01(\tR\aactorId\x12-\n" +
-	"\x05input\x18\a \x01(\v2\x17.google.protobuf.StructR\x05input\x12/\n" +
-	"\x06output\x18\b \x01(\v2\x17.google.protobuf.StructR\x06output\x12(\n" +
+	"\x05input\x18\a \x01(\v2\x17.google.protobuf.StructR\x05input\x127\n" +
+	"\vinput_value\x18\x16 \x01(\v2\x16.google.protobuf.ValueR\n" +
+	"inputValue\x12/\n" +
+	"\x06output\x18\b \x01(\v2\x17.google.protobuf.StructR\x06output\x129\n" +
+	"\foutput_value\x18\x17 \x01(\v2\x16.google.protobuf.ValueR\voutputValue\x12(\n" +
 	"\x05error\x18\t \x01(\v2\x12.ironflow.v1.ErrorR\x05error\x12.\n" +
 	"\x06status\x18\n" +
 	" \x01(\x0e2\x16.ironflow.v1.RunStatusR\x06status\x12\x18\n" +
@@ -1612,7 +1689,7 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"updated_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12'\n" +
 	"\x0fpause_requested\x18\x13 \x01(\bR\x0epauseRequested\x12!\n" +
 	"\fpause_reason\x18\x14 \x01(\tR\vpauseReason\x12)\n" +
-	"\x10function_version\x18\x15 \x01(\x05R\x0ffunctionVersionJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11R\x0fconcurrency_keyR\bpriority\"\xe4\x05\n" +
+	"\x10function_version\x18\x15 \x01(\x05R\x0ffunctionVersionJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11R\x0fconcurrency_keyR\bpriority\"\xa4\a\n" +
 	"\x04Step\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06run_id\x18\x02 \x01(\tR\x05runId\x12\x17\n" +
@@ -1620,10 +1697,13 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\tstep_type\x18\x04 \x01(\x0e2\x15.ironflow.v1.StepTypeR\bstepType\x12\x1a\n" +
 	"\bsequence\x18\x05 \x01(\x05R\bsequence\x12/\n" +
 	"\x06status\x18\x06 \x01(\x0e2\x17.ironflow.v1.StepStatusR\x06status\x12-\n" +
-	"\x05input\x18\a \x01(\v2\x17.google.protobuf.StructR\x05input\x12\x1d\n" +
+	"\x05input\x18\a \x01(\v2\x17.google.protobuf.StructR\x05input\x127\n" +
+	"\vinput_value\x18\x13 \x01(\v2\x16.google.protobuf.ValueR\n" +
+	"inputValue\x12\x1d\n" +
 	"\n" +
 	"input_hash\x18\b \x01(\tR\tinputHash\x12/\n" +
-	"\x06output\x18\t \x01(\v2\x17.google.protobuf.StructR\x06output\x12(\n" +
+	"\x06output\x18\t \x01(\v2\x17.google.protobuf.StructR\x06output\x129\n" +
+	"\foutput_value\x18\x14 \x01(\v2\x16.google.protobuf.ValueR\voutputValue\x12(\n" +
 	"\x05error\x18\n" +
 	" \x01(\v2\x12.ironflow.v1.ErrorR\x05error\x12\x18\n" +
 	"\aattempt\x18\v \x01(\x05R\aattempt\x12\x1f\n" +
@@ -1632,7 +1712,8 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\n" +
 	"started_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x125\n" +
 	"\bended_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\aendedAt\x12@\n" +
-	"\x0foriginal_output\x18\x0f \x01(\v2\x17.google.protobuf.StructR\x0eoriginalOutput\x129\n" +
+	"\x0foriginal_output\x18\x0f \x01(\v2\x17.google.protobuf.StructR\x0eoriginalOutput\x12J\n" +
+	"\x15original_output_value\x18\x15 \x01(\v2\x16.google.protobuf.ValueR\x13originalOutputValue\x129\n" +
 	"\n" +
 	"patched_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\tpatchedAt\x12\x1d\n" +
 	"\n" +
@@ -1724,6 +1805,7 @@ var file_ironflow_v1_types_proto_goTypes = []any{
 	nil,                           // 16: ironflow.v1.ErrorInfo.MetadataEntry
 	(*timestamppb.Timestamp)(nil), // 17: google.protobuf.Timestamp
 	(*structpb.Struct)(nil),       // 18: google.protobuf.Struct
+	(*structpb.Value)(nil),        // 19: google.protobuf.Value
 }
 var file_ironflow_v1_types_proto_depIdxs = []int32{
 	5,  // 0: ironflow.v1.Function.triggers:type_name -> ironflow.v1.Trigger
@@ -1737,33 +1819,39 @@ var file_ironflow_v1_types_proto_depIdxs = []int32{
 	9,  // 8: ironflow.v1.Function.debounce:type_name -> ironflow.v1.DebounceConfig
 	8,  // 9: ironflow.v1.Function.cancel_on:type_name -> ironflow.v1.CancelOnSpec
 	18, // 10: ironflow.v1.Event.data:type_name -> google.protobuf.Struct
-	17, // 11: ironflow.v1.Event.timestamp:type_name -> google.protobuf.Timestamp
-	18, // 12: ironflow.v1.Event.metadata:type_name -> google.protobuf.Struct
-	1,  // 13: ironflow.v1.Run.execution_mode:type_name -> ironflow.v1.ExecutionMode
-	18, // 14: ironflow.v1.Run.input:type_name -> google.protobuf.Struct
-	18, // 15: ironflow.v1.Run.output:type_name -> google.protobuf.Struct
-	14, // 16: ironflow.v1.Run.error:type_name -> ironflow.v1.Error
-	2,  // 17: ironflow.v1.Run.status:type_name -> ironflow.v1.RunStatus
-	17, // 18: ironflow.v1.Run.started_at:type_name -> google.protobuf.Timestamp
-	17, // 19: ironflow.v1.Run.ended_at:type_name -> google.protobuf.Timestamp
-	17, // 20: ironflow.v1.Run.created_at:type_name -> google.protobuf.Timestamp
-	17, // 21: ironflow.v1.Run.updated_at:type_name -> google.protobuf.Timestamp
-	4,  // 22: ironflow.v1.Step.step_type:type_name -> ironflow.v1.StepType
-	3,  // 23: ironflow.v1.Step.status:type_name -> ironflow.v1.StepStatus
-	18, // 24: ironflow.v1.Step.input:type_name -> google.protobuf.Struct
-	18, // 25: ironflow.v1.Step.output:type_name -> google.protobuf.Struct
-	14, // 26: ironflow.v1.Step.error:type_name -> ironflow.v1.Error
-	17, // 27: ironflow.v1.Step.started_at:type_name -> google.protobuf.Timestamp
-	17, // 28: ironflow.v1.Step.ended_at:type_name -> google.protobuf.Timestamp
-	18, // 29: ironflow.v1.Step.original_output:type_name -> google.protobuf.Struct
-	17, // 30: ironflow.v1.Step.patched_at:type_name -> google.protobuf.Timestamp
-	18, // 31: ironflow.v1.Error.details:type_name -> google.protobuf.Struct
-	16, // 32: ironflow.v1.ErrorInfo.metadata:type_name -> ironflow.v1.ErrorInfo.MetadataEntry
-	33, // [33:33] is the sub-list for method output_type
-	33, // [33:33] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	19, // 11: ironflow.v1.Event.data_value:type_name -> google.protobuf.Value
+	17, // 12: ironflow.v1.Event.timestamp:type_name -> google.protobuf.Timestamp
+	18, // 13: ironflow.v1.Event.metadata:type_name -> google.protobuf.Struct
+	1,  // 14: ironflow.v1.Run.execution_mode:type_name -> ironflow.v1.ExecutionMode
+	18, // 15: ironflow.v1.Run.input:type_name -> google.protobuf.Struct
+	19, // 16: ironflow.v1.Run.input_value:type_name -> google.protobuf.Value
+	18, // 17: ironflow.v1.Run.output:type_name -> google.protobuf.Struct
+	19, // 18: ironflow.v1.Run.output_value:type_name -> google.protobuf.Value
+	14, // 19: ironflow.v1.Run.error:type_name -> ironflow.v1.Error
+	2,  // 20: ironflow.v1.Run.status:type_name -> ironflow.v1.RunStatus
+	17, // 21: ironflow.v1.Run.started_at:type_name -> google.protobuf.Timestamp
+	17, // 22: ironflow.v1.Run.ended_at:type_name -> google.protobuf.Timestamp
+	17, // 23: ironflow.v1.Run.created_at:type_name -> google.protobuf.Timestamp
+	17, // 24: ironflow.v1.Run.updated_at:type_name -> google.protobuf.Timestamp
+	4,  // 25: ironflow.v1.Step.step_type:type_name -> ironflow.v1.StepType
+	3,  // 26: ironflow.v1.Step.status:type_name -> ironflow.v1.StepStatus
+	18, // 27: ironflow.v1.Step.input:type_name -> google.protobuf.Struct
+	19, // 28: ironflow.v1.Step.input_value:type_name -> google.protobuf.Value
+	18, // 29: ironflow.v1.Step.output:type_name -> google.protobuf.Struct
+	19, // 30: ironflow.v1.Step.output_value:type_name -> google.protobuf.Value
+	14, // 31: ironflow.v1.Step.error:type_name -> ironflow.v1.Error
+	17, // 32: ironflow.v1.Step.started_at:type_name -> google.protobuf.Timestamp
+	17, // 33: ironflow.v1.Step.ended_at:type_name -> google.protobuf.Timestamp
+	18, // 34: ironflow.v1.Step.original_output:type_name -> google.protobuf.Struct
+	19, // 35: ironflow.v1.Step.original_output_value:type_name -> google.protobuf.Value
+	17, // 36: ironflow.v1.Step.patched_at:type_name -> google.protobuf.Timestamp
+	18, // 37: ironflow.v1.Error.details:type_name -> google.protobuf.Struct
+	16, // 38: ironflow.v1.ErrorInfo.metadata:type_name -> ironflow.v1.ErrorInfo.MetadataEntry
+	39, // [39:39] is the sub-list for method output_type
+	39, // [39:39] is the sub-list for method input_type
+	39, // [39:39] is the sub-list for extension type_name
+	39, // [39:39] is the sub-list for extension extendee
+	0,  // [0:39] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_types_proto_init() }

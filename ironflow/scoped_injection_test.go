@@ -234,20 +234,20 @@ func TestClient_GetPausedState(t *testing.T) {
 					{
 						"id": "step-1",
 						"name": "fetch-data",
-						"output": "{\"value\":42}",
+						"output": "eyJ2YWx1ZSI6NDJ9",
 						"injected": false,
-						"completed_at": "2026-03-08T10:00:00Z"
+						"completedAt": "2026-03-08T10:00:00Z"
 					},
 					{
 						"id": "step-2",
 						"name": "validate",
-						"output": "{\"valid\":true}",
+						"output": "eyJ2YWxpZCI6dHJ1ZX0=",
 						"injected": true,
-						"completed_at": "2026-03-08T10:01:00Z"
+						"completedAt": "2026-03-08T10:01:00Z"
 					}
 				],
-				"next_step_hint": "process-result",
-				"pause_reason": "manual pause for inspection"
+				"nextStepHint": "process-result",
+				"pauseReason": "manual pause for inspection"
 			}`))
 		}))
 		defer server.Close()
@@ -338,8 +338,8 @@ func TestClient_GetPausedState(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{
 				"steps": [],
-				"next_step_hint": "first-step",
-				"pause_reason": "paused before any steps ran"
+				"nextStepHint": "first-step",
+				"pauseReason": "paused before any steps ran"
 			}`))
 		}))
 		defer server.Close()
@@ -381,8 +381,8 @@ func TestClient_GetPausedState(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{
-				"next_step_hint": "first-step",
-				"pause_reason": ""
+				"nextStepHint": "first-step",
+				"pauseReason": ""
 			}`))
 		}))
 		defer server.Close()
@@ -494,11 +494,11 @@ func TestClient_GetPausedState(t *testing.T) {
 						"name": "no-output-step",
 						"output": "",
 						"injected": false,
-						"completed_at": "2026-03-08T10:00:00Z"
+						"completedAt": "2026-03-08T10:00:00Z"
 					}
 				],
-				"next_step_hint": "",
-				"pause_reason": ""
+				"nextStepHint": "",
+				"pauseReason": ""
 			}`))
 		}))
 		defer server.Close()
@@ -554,8 +554,8 @@ func TestClient_InjectStepOutput(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{
-				"step_id": "step-xyz",
-				"previous_output": "{\"old_value\":100}"
+				"stepId": "step-xyz",
+				"previousOutput": "eyJvbGRfdmFsdWUiOjEwMH0="
 			}`))
 		}))
 		defer server.Close()
@@ -599,8 +599,8 @@ func TestClient_InjectStepOutput(t *testing.T) {
 			t.Errorf("expected step_id 'step-xyz', got %v", receivedBody["step_id"])
 		}
 
-		if receivedBody["new_output"] != `{"corrected":true}` {
-			t.Errorf("expected new_output '{\"corrected\":true}', got %v", receivedBody["new_output"])
+		if receivedBody["new_output"] != "eyJjb3JyZWN0ZWQiOnRydWV9" {
+			t.Errorf("expected base64-encoded new_output, got %v", receivedBody["new_output"])
 		}
 
 		if receivedBody["reason"] != "Manual correction" {
@@ -622,8 +622,8 @@ func TestClient_InjectStepOutput(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{
-				"step_id": "step-xyz",
-				"previous_output": ""
+				"stepId": "step-xyz",
+				"previousOutput": ""
 			}`))
 		}))
 		defer server.Close()
@@ -786,7 +786,7 @@ func TestClient_InjectStepOutput(t *testing.T) {
 			receivedAuth = r.Header.Get("Authorization")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"step_id":"step-1","previous_output":""}`))
+			w.Write([]byte(`{"stepId":"step-1","previousOutput":""}`))
 		}))
 		defer server.Close()
 
@@ -826,8 +826,8 @@ func TestClient_InjectStepOutput(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			resp := map[string]string{
-				"step_id":         "step-complex",
-				"previous_output": `{"nested":{"array":[1,2,3],"flag":true},"count":99}`,
+				"stepId":         "step-complex",
+				"previousOutput": "eyJuZXN0ZWQiOnsiYXJyYXkiOlsxLDIsM10sImZsYWciOnRydWV9LCJjb3VudCI6OTl9",
 			}
 			json.NewEncoder(w).Encode(resp)
 		}))

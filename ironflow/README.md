@@ -539,11 +539,19 @@ result, err := client.Emit(ctx, "order.placed", data,
     ironflow.WithEmitNamespace("production"),
 )
 
-// Sync emit (waits for completion -- useful for testing)
-syncResult, err := client.EmitSync(ctx, "order.placed", data, 30*time.Second)
-if syncResult.Status == ironflow.RunStatusCompleted {
-    fmt.Printf("Output: %v\n", syncResult.Output)
+// Sync emit -- waits for EVERY run the event triggers, one result each
+syncResults, err := client.EmitSync(ctx, "order.placed", data, 30*time.Second,
+    ironflow.WithSyncIdempotencyKey("order-123-placed"),
+    ironflow.WithSyncMetadata(map[string]any{"source": "api"}),
+)
+for _, r := range syncResults {
+    if r.Status == ironflow.RunStatusCompleted {
+        fmt.Printf("%s output: %v\n", r.FunctionID, r.Output)
+    }
 }
+
+// Sync invoke -- one function by ID, one result (ADR 0067)
+invokeResult, err := client.InvokeSync(ctx, "process-order", data, 30*time.Second)
 
 // Batch emit -- one round trip, one EmitResult per event
 results, err := client.TriggerBatch(ctx, []ironflow.TriggerBatchEvent{
@@ -1827,7 +1835,7 @@ ironflow.EnvLogLevel    // "IRONFLOW_LOG_LEVEL"
 // Timeouts
 ironflow.DefaultClientTimeout       // 30s
 ironflow.DefaultFunctionTimeout     // 10m
-ironflow.DefaultEmitSyncTimeout     // 30s
+ironflow.DefaultEmitSyncTimeout     // 30s -- EmitSync and InvokeSync
 ironflow.DefaultSignatureTolerance  // 5m
 
 // Function retry defaults

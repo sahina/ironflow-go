@@ -24,13 +24,18 @@ const (
 )
 
 type AuditEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	RunId         string                 `protobuf:"bytes,2,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
-	FunctionId    string                 `protobuf:"bytes,3,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
-	StepId        string                 `protobuf:"bytes,4,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
-	EventType     string                 `protobuf:"bytes,5,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
-	Payload       *structpb.Struct       `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	RunId      string                 `protobuf:"bytes,2,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	FunctionId string                 `protobuf:"bytes,3,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	StepId     string                 `protobuf:"bytes,4,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
+	EventType  string                 `protobuf:"bytes,5,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	Payload    *structpb.Struct       `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which payload cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// payload, so an object costs no extra bytes and old clients are
+	// unaffected.
+	PayloadValue  *structpb.Value        `protobuf:"bytes,9,opt,name=payload_value,json=payloadValue,proto3" json:"payload_value,omitempty"`
 	Metadata      map[string]string      `protobuf:"bytes,7,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -105,6 +110,13 @@ func (x *AuditEvent) GetEventType() string {
 func (x *AuditEvent) GetPayload() *structpb.Struct {
 	if x != nil {
 		return x.Payload
+	}
+	return nil
+}
+
+func (x *AuditEvent) GetPayloadValue() *structpb.Value {
+	if x != nil {
+		return x.PayloadValue
 	}
 	return nil
 }
@@ -423,7 +435,7 @@ var File_ironflow_v1_audit_proto protoreflect.FileDescriptor
 
 const file_ironflow_v1_audit_proto_rawDesc = "" +
 	"\n" +
-	"\x17ironflow/v1/audit.proto\x12\vironflow.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xfa\x02\n" +
+	"\x17ironflow/v1/audit.proto\x12\vironflow.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/protobuf/struct.proto\"\xb7\x03\n" +
 	"\n" +
 	"AuditEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
@@ -433,7 +445,8 @@ const file_ironflow_v1_audit_proto_rawDesc = "" +
 	"\astep_id\x18\x04 \x01(\tR\x06stepId\x12\x1d\n" +
 	"\n" +
 	"event_type\x18\x05 \x01(\tR\teventType\x121\n" +
-	"\apayload\x18\x06 \x01(\v2\x17.google.protobuf.StructR\apayload\x12A\n" +
+	"\apayload\x18\x06 \x01(\v2\x17.google.protobuf.StructR\apayload\x12;\n" +
+	"\rpayload_value\x18\t \x01(\v2\x16.google.protobuf.ValueR\fpayloadValue\x12A\n" +
 	"\bmetadata\x18\a \x03(\v2%.ironflow.v1.AuditEvent.MetadataEntryR\bmetadata\x129\n" +
 	"\n" +
 	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x1a;\n" +
@@ -494,23 +507,25 @@ var file_ironflow_v1_audit_proto_goTypes = []any{
 	(*GetAuthAuditTrailResponse)(nil), // 4: ironflow.v1.GetAuthAuditTrailResponse
 	nil,                               // 5: ironflow.v1.AuditEvent.MetadataEntry
 	(*structpb.Struct)(nil),           // 6: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),     // 7: google.protobuf.Timestamp
+	(*structpb.Value)(nil),            // 7: google.protobuf.Value
+	(*timestamppb.Timestamp)(nil),     // 8: google.protobuf.Timestamp
 }
 var file_ironflow_v1_audit_proto_depIdxs = []int32{
 	6, // 0: ironflow.v1.AuditEvent.payload:type_name -> google.protobuf.Struct
-	5, // 1: ironflow.v1.AuditEvent.metadata:type_name -> ironflow.v1.AuditEvent.MetadataEntry
-	7, // 2: ironflow.v1.AuditEvent.created_at:type_name -> google.protobuf.Timestamp
-	0, // 3: ironflow.v1.GetAuditTrailResponse.events:type_name -> ironflow.v1.AuditEvent
-	0, // 4: ironflow.v1.GetAuthAuditTrailResponse.events:type_name -> ironflow.v1.AuditEvent
-	1, // 5: ironflow.v1.AuditService.GetAuditTrail:input_type -> ironflow.v1.GetAuditTrailRequest
-	3, // 6: ironflow.v1.AuditService.GetAuthAuditTrail:input_type -> ironflow.v1.GetAuthAuditTrailRequest
-	2, // 7: ironflow.v1.AuditService.GetAuditTrail:output_type -> ironflow.v1.GetAuditTrailResponse
-	4, // 8: ironflow.v1.AuditService.GetAuthAuditTrail:output_type -> ironflow.v1.GetAuthAuditTrailResponse
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	7, // 1: ironflow.v1.AuditEvent.payload_value:type_name -> google.protobuf.Value
+	5, // 2: ironflow.v1.AuditEvent.metadata:type_name -> ironflow.v1.AuditEvent.MetadataEntry
+	8, // 3: ironflow.v1.AuditEvent.created_at:type_name -> google.protobuf.Timestamp
+	0, // 4: ironflow.v1.GetAuditTrailResponse.events:type_name -> ironflow.v1.AuditEvent
+	0, // 5: ironflow.v1.GetAuthAuditTrailResponse.events:type_name -> ironflow.v1.AuditEvent
+	1, // 6: ironflow.v1.AuditService.GetAuditTrail:input_type -> ironflow.v1.GetAuditTrailRequest
+	3, // 7: ironflow.v1.AuditService.GetAuthAuditTrail:input_type -> ironflow.v1.GetAuthAuditTrailRequest
+	2, // 8: ironflow.v1.AuditService.GetAuditTrail:output_type -> ironflow.v1.GetAuditTrailResponse
+	4, // 9: ironflow.v1.AuditService.GetAuthAuditTrail:output_type -> ironflow.v1.GetAuthAuditTrailResponse
+	8, // [8:10] is the sub-list for method output_type
+	6, // [6:8] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_audit_proto_init() }

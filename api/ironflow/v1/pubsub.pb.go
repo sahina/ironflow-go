@@ -236,6 +236,11 @@ type EmitRequest struct {
 	Event string `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
 	// Event payload data
 	Data *structpb.Struct `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which data cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// data, so an object costs no extra bytes and old clients are
+	// unaffected.
+	DataValue *structpb.Value `protobuf:"bytes,7,opt,name=data_value,json=dataValue,proto3" json:"data_value,omitempty"`
 	// Optional deduplication key
 	IdempotencyKey string `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	// Optional metadata (headers, etc.)
@@ -288,6 +293,13 @@ func (x *EmitRequest) GetEvent() string {
 func (x *EmitRequest) GetData() *structpb.Struct {
 	if x != nil {
 		return x.Data
+	}
+	return nil
+}
+
+func (x *EmitRequest) GetDataValue() *structpb.Value {
+	if x != nil {
+		return x.DataValue
 	}
 	return nil
 }
@@ -565,6 +577,11 @@ type SubscriptionEvent struct {
 	Topic string `protobuf:"bytes,3,opt,name=topic,proto3" json:"topic,omitempty"`
 	// Event data
 	Data *structpb.Struct `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which data cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// data, so an object costs no extra bytes and old clients are
+	// unaffected.
+	DataValue *structpb.Value `protobuf:"bytes,8,opt,name=data_value,json=dataValue,proto3" json:"data_value,omitempty"`
 	// Event metadata (if requested)
 	Metadata *EventMetadata `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	// Sequence number for ordering
@@ -629,6 +646,13 @@ func (x *SubscriptionEvent) GetTopic() string {
 func (x *SubscriptionEvent) GetData() *structpb.Struct {
 	if x != nil {
 		return x.Data
+	}
+	return nil
+}
+
+func (x *SubscriptionEvent) GetDataValue() *structpb.Value {
+	if x != nil {
+		return x.DataValue
 	}
 	return nil
 }
@@ -1527,6 +1551,11 @@ type PublishRequest struct {
 	Topic string `protobuf:"bytes,1,opt,name=topic,proto3" json:"topic,omitempty"`
 	// Message payload data
 	Data *structpb.Struct `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which data cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// data, so an object costs no extra bytes and old clients are
+	// unaffected.
+	DataValue *structpb.Value `protobuf:"bytes,4,opt,name=data_value,json=dataValue,proto3" json:"data_value,omitempty"`
 	// Optional idempotency key for deduplication
 	IdempotencyKey string `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -1573,6 +1602,13 @@ func (x *PublishRequest) GetTopic() string {
 func (x *PublishRequest) GetData() *structpb.Struct {
 	if x != nil {
 		return x.Data
+	}
+	return nil
+}
+
+func (x *PublishRequest) GetDataValue() *structpb.Value {
+	if x != nil {
+		return x.DataValue
 	}
 	return nil
 }
@@ -1938,10 +1974,12 @@ var File_ironflow_v1_pubsub_proto protoreflect.FileDescriptor
 
 const file_ironflow_v1_pubsub_proto_rawDesc = "" +
 	"\n" +
-	"\x18ironflow/v1/pubsub.proto\x12\vironflow.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe6\x01\n" +
+	"\x18ironflow/v1/pubsub.proto\x12\vironflow.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9d\x02\n" +
 	"\vEmitRequest\x12\x14\n" +
 	"\x05event\x18\x01 \x01(\tR\x05event\x12+\n" +
-	"\x04data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x04data\x12'\n" +
+	"\x04data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x04data\x125\n" +
+	"\n" +
+	"data_value\x18\a \x01(\v2\x16.google.protobuf.ValueR\tdataValue\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x123\n" +
 	"\bmetadata\x18\x04 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12\x1c\n" +
 	"\tnamespace\x18\x05 \x01(\tR\tnamespace\x12\x18\n" +
@@ -1961,12 +1999,14 @@ const file_ironflow_v1_pubsub_proto_rawDesc = "" +
 	"\back_mode\x18\x06 \x01(\x0e2\x14.ironflow.v1.AckModeR\aackMode\x12A\n" +
 	"\fbackpressure\x18\a \x01(\x0e2\x1d.ironflow.v1.BackpressureModeR\fbackpressure\x125\n" +
 	"\x14start_after_sequence\x18\b \x01(\x04H\x00R\x12startAfterSequence\x88\x01\x01B\x17\n" +
-	"\x15_start_after_sequence\"\x99\x02\n" +
+	"\x15_start_after_sequence\"\xd0\x02\n" +
 	"\x11SubscriptionEvent\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x19\n" +
 	"\bevent_id\x18\x02 \x01(\tR\aeventId\x12\x14\n" +
 	"\x05topic\x18\x03 \x01(\tR\x05topic\x12+\n" +
-	"\x04data\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x04data\x126\n" +
+	"\x04data\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x04data\x125\n" +
+	"\n" +
+	"data_value\x18\b \x01(\v2\x16.google.protobuf.ValueR\tdataValue\x126\n" +
 	"\bmetadata\x18\x05 \x01(\v2\x1a.ironflow.v1.EventMetadataR\bmetadata\x12\x1a\n" +
 	"\bsequence\x18\x06 \x01(\x04R\bsequence\x12)\n" +
 	"\x10delivery_attempt\x18\a \x01(\x05R\x0fdeliveryAttempt\"\xb0\x01\n" +
@@ -2045,10 +2085,12 @@ const file_ironflow_v1_pubsub_proto_rawDesc = "" +
 	"transports\x18\x01 \x03(\tR\n" +
 	"transports\x12\x1a\n" +
 	"\bfeatures\x18\x02 \x03(\tR\bfeatures\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\tR\aversion\"|\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\"\xb3\x01\n" +
 	"\x0ePublishRequest\x12\x14\n" +
 	"\x05topic\x18\x01 \x01(\tR\x05topic\x12+\n" +
-	"\x04data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x04data\x12'\n" +
+	"\x04data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x04data\x125\n" +
+	"\n" +
+	"data_value\x18\x04 \x01(\v2\x16.google.protobuf.ValueR\tdataValue\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"H\n" +
 	"\x0fPublishResponse\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1a\n" +
@@ -2148,67 +2190,71 @@ var file_ironflow_v1_pubsub_proto_goTypes = []any{
 	(*GetTopicStatsRequest)(nil),       // 25: ironflow.v1.GetTopicStatsRequest
 	(*GetTopicStatsResponse)(nil),      // 26: ironflow.v1.GetTopicStatsResponse
 	(*structpb.Struct)(nil),            // 27: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),      // 28: google.protobuf.Timestamp
-	(*fieldmaskpb.FieldMask)(nil),      // 29: google.protobuf.FieldMask
-	(*emptypb.Empty)(nil),              // 30: google.protobuf.Empty
+	(*structpb.Value)(nil),             // 28: google.protobuf.Value
+	(*timestamppb.Timestamp)(nil),      // 29: google.protobuf.Timestamp
+	(*fieldmaskpb.FieldMask)(nil),      // 30: google.protobuf.FieldMask
+	(*emptypb.Empty)(nil),              // 31: google.protobuf.Empty
 }
 var file_ironflow_v1_pubsub_proto_depIdxs = []int32{
 	27, // 0: ironflow.v1.EmitRequest.data:type_name -> google.protobuf.Struct
-	27, // 1: ironflow.v1.EmitRequest.metadata:type_name -> google.protobuf.Struct
-	7,  // 2: ironflow.v1.SubscribeRequest.options:type_name -> ironflow.v1.SubscribeOptions
-	0,  // 3: ironflow.v1.SubscribeOptions.ack_mode:type_name -> ironflow.v1.AckMode
-	1,  // 4: ironflow.v1.SubscribeOptions.backpressure:type_name -> ironflow.v1.BackpressureMode
-	27, // 5: ironflow.v1.SubscriptionEvent.data:type_name -> google.protobuf.Struct
-	9,  // 6: ironflow.v1.SubscriptionEvent.metadata:type_name -> ironflow.v1.EventMetadata
-	28, // 7: ironflow.v1.EventMetadata.timestamp:type_name -> google.protobuf.Timestamp
-	27, // 8: ironflow.v1.EventMetadata.custom:type_name -> google.protobuf.Struct
-	3,  // 9: ironflow.v1.SubscriptionAck.ack_type:type_name -> ironflow.v1.AckType
-	0,  // 10: ironflow.v1.ConsumerGroup.ack_mode:type_name -> ironflow.v1.AckMode
-	1,  // 11: ironflow.v1.ConsumerGroup.backpressure:type_name -> ironflow.v1.BackpressureMode
-	27, // 12: ironflow.v1.ConsumerGroup.metadata:type_name -> google.protobuf.Struct
-	2,  // 13: ironflow.v1.ConsumerGroup.status:type_name -> ironflow.v1.ConsumerGroupStatus
-	28, // 14: ironflow.v1.ConsumerGroup.created_at:type_name -> google.protobuf.Timestamp
-	28, // 15: ironflow.v1.ConsumerGroup.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 16: ironflow.v1.CreateConsumerGroupRequest.ack_mode:type_name -> ironflow.v1.AckMode
-	1,  // 17: ironflow.v1.CreateConsumerGroupRequest.backpressure:type_name -> ironflow.v1.BackpressureMode
-	27, // 18: ironflow.v1.CreateConsumerGroupRequest.metadata:type_name -> google.protobuf.Struct
-	2,  // 19: ironflow.v1.ListConsumerGroupsRequest.status:type_name -> ironflow.v1.ConsumerGroupStatus
-	11, // 20: ironflow.v1.ListConsumerGroupsResponse.groups:type_name -> ironflow.v1.ConsumerGroup
-	11, // 21: ironflow.v1.UpdateConsumerGroupRequest.group:type_name -> ironflow.v1.ConsumerGroup
-	29, // 22: ironflow.v1.UpdateConsumerGroupRequest.update_mask:type_name -> google.protobuf.FieldMask
-	27, // 23: ironflow.v1.PublishRequest.data:type_name -> google.protobuf.Struct
-	24, // 24: ironflow.v1.ListTopicsResponse.topics:type_name -> ironflow.v1.TopicInfo
-	28, // 25: ironflow.v1.TopicInfo.first_message_at:type_name -> google.protobuf.Timestamp
-	28, // 26: ironflow.v1.TopicInfo.last_message_at:type_name -> google.protobuf.Timestamp
-	4,  // 27: ironflow.v1.PubSubService.Emit:input_type -> ironflow.v1.EmitRequest
-	6,  // 28: ironflow.v1.PubSubService.Subscribe:input_type -> ironflow.v1.SubscribeRequest
-	10, // 29: ironflow.v1.PubSubService.SubscribeBidirectional:input_type -> ironflow.v1.SubscriptionAck
-	12, // 30: ironflow.v1.PubSubService.CreateConsumerGroup:input_type -> ironflow.v1.CreateConsumerGroupRequest
-	13, // 31: ironflow.v1.PubSubService.GetConsumerGroup:input_type -> ironflow.v1.GetConsumerGroupRequest
-	14, // 32: ironflow.v1.PubSubService.ListConsumerGroups:input_type -> ironflow.v1.ListConsumerGroupsRequest
-	16, // 33: ironflow.v1.PubSubService.UpdateConsumerGroup:input_type -> ironflow.v1.UpdateConsumerGroupRequest
-	17, // 34: ironflow.v1.PubSubService.DeleteConsumerGroup:input_type -> ironflow.v1.DeleteConsumerGroupRequest
-	18, // 35: ironflow.v1.PubSubService.JoinConsumerGroup:input_type -> ironflow.v1.JoinConsumerGroupRequest
-	20, // 36: ironflow.v1.PubSubService.Publish:input_type -> ironflow.v1.PublishRequest
-	22, // 37: ironflow.v1.PubSubService.ListTopics:input_type -> ironflow.v1.ListTopicsRequest
-	25, // 38: ironflow.v1.PubSubService.GetTopicStats:input_type -> ironflow.v1.GetTopicStatsRequest
-	5,  // 39: ironflow.v1.PubSubService.Emit:output_type -> ironflow.v1.EmitResponse
-	8,  // 40: ironflow.v1.PubSubService.Subscribe:output_type -> ironflow.v1.SubscriptionEvent
-	8,  // 41: ironflow.v1.PubSubService.SubscribeBidirectional:output_type -> ironflow.v1.SubscriptionEvent
-	11, // 42: ironflow.v1.PubSubService.CreateConsumerGroup:output_type -> ironflow.v1.ConsumerGroup
-	11, // 43: ironflow.v1.PubSubService.GetConsumerGroup:output_type -> ironflow.v1.ConsumerGroup
-	15, // 44: ironflow.v1.PubSubService.ListConsumerGroups:output_type -> ironflow.v1.ListConsumerGroupsResponse
-	11, // 45: ironflow.v1.PubSubService.UpdateConsumerGroup:output_type -> ironflow.v1.ConsumerGroup
-	30, // 46: ironflow.v1.PubSubService.DeleteConsumerGroup:output_type -> google.protobuf.Empty
-	8,  // 47: ironflow.v1.PubSubService.JoinConsumerGroup:output_type -> ironflow.v1.SubscriptionEvent
-	21, // 48: ironflow.v1.PubSubService.Publish:output_type -> ironflow.v1.PublishResponse
-	23, // 49: ironflow.v1.PubSubService.ListTopics:output_type -> ironflow.v1.ListTopicsResponse
-	26, // 50: ironflow.v1.PubSubService.GetTopicStats:output_type -> ironflow.v1.GetTopicStatsResponse
-	39, // [39:51] is the sub-list for method output_type
-	27, // [27:39] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	28, // 1: ironflow.v1.EmitRequest.data_value:type_name -> google.protobuf.Value
+	27, // 2: ironflow.v1.EmitRequest.metadata:type_name -> google.protobuf.Struct
+	7,  // 3: ironflow.v1.SubscribeRequest.options:type_name -> ironflow.v1.SubscribeOptions
+	0,  // 4: ironflow.v1.SubscribeOptions.ack_mode:type_name -> ironflow.v1.AckMode
+	1,  // 5: ironflow.v1.SubscribeOptions.backpressure:type_name -> ironflow.v1.BackpressureMode
+	27, // 6: ironflow.v1.SubscriptionEvent.data:type_name -> google.protobuf.Struct
+	28, // 7: ironflow.v1.SubscriptionEvent.data_value:type_name -> google.protobuf.Value
+	9,  // 8: ironflow.v1.SubscriptionEvent.metadata:type_name -> ironflow.v1.EventMetadata
+	29, // 9: ironflow.v1.EventMetadata.timestamp:type_name -> google.protobuf.Timestamp
+	27, // 10: ironflow.v1.EventMetadata.custom:type_name -> google.protobuf.Struct
+	3,  // 11: ironflow.v1.SubscriptionAck.ack_type:type_name -> ironflow.v1.AckType
+	0,  // 12: ironflow.v1.ConsumerGroup.ack_mode:type_name -> ironflow.v1.AckMode
+	1,  // 13: ironflow.v1.ConsumerGroup.backpressure:type_name -> ironflow.v1.BackpressureMode
+	27, // 14: ironflow.v1.ConsumerGroup.metadata:type_name -> google.protobuf.Struct
+	2,  // 15: ironflow.v1.ConsumerGroup.status:type_name -> ironflow.v1.ConsumerGroupStatus
+	29, // 16: ironflow.v1.ConsumerGroup.created_at:type_name -> google.protobuf.Timestamp
+	29, // 17: ironflow.v1.ConsumerGroup.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 18: ironflow.v1.CreateConsumerGroupRequest.ack_mode:type_name -> ironflow.v1.AckMode
+	1,  // 19: ironflow.v1.CreateConsumerGroupRequest.backpressure:type_name -> ironflow.v1.BackpressureMode
+	27, // 20: ironflow.v1.CreateConsumerGroupRequest.metadata:type_name -> google.protobuf.Struct
+	2,  // 21: ironflow.v1.ListConsumerGroupsRequest.status:type_name -> ironflow.v1.ConsumerGroupStatus
+	11, // 22: ironflow.v1.ListConsumerGroupsResponse.groups:type_name -> ironflow.v1.ConsumerGroup
+	11, // 23: ironflow.v1.UpdateConsumerGroupRequest.group:type_name -> ironflow.v1.ConsumerGroup
+	30, // 24: ironflow.v1.UpdateConsumerGroupRequest.update_mask:type_name -> google.protobuf.FieldMask
+	27, // 25: ironflow.v1.PublishRequest.data:type_name -> google.protobuf.Struct
+	28, // 26: ironflow.v1.PublishRequest.data_value:type_name -> google.protobuf.Value
+	24, // 27: ironflow.v1.ListTopicsResponse.topics:type_name -> ironflow.v1.TopicInfo
+	29, // 28: ironflow.v1.TopicInfo.first_message_at:type_name -> google.protobuf.Timestamp
+	29, // 29: ironflow.v1.TopicInfo.last_message_at:type_name -> google.protobuf.Timestamp
+	4,  // 30: ironflow.v1.PubSubService.Emit:input_type -> ironflow.v1.EmitRequest
+	6,  // 31: ironflow.v1.PubSubService.Subscribe:input_type -> ironflow.v1.SubscribeRequest
+	10, // 32: ironflow.v1.PubSubService.SubscribeBidirectional:input_type -> ironflow.v1.SubscriptionAck
+	12, // 33: ironflow.v1.PubSubService.CreateConsumerGroup:input_type -> ironflow.v1.CreateConsumerGroupRequest
+	13, // 34: ironflow.v1.PubSubService.GetConsumerGroup:input_type -> ironflow.v1.GetConsumerGroupRequest
+	14, // 35: ironflow.v1.PubSubService.ListConsumerGroups:input_type -> ironflow.v1.ListConsumerGroupsRequest
+	16, // 36: ironflow.v1.PubSubService.UpdateConsumerGroup:input_type -> ironflow.v1.UpdateConsumerGroupRequest
+	17, // 37: ironflow.v1.PubSubService.DeleteConsumerGroup:input_type -> ironflow.v1.DeleteConsumerGroupRequest
+	18, // 38: ironflow.v1.PubSubService.JoinConsumerGroup:input_type -> ironflow.v1.JoinConsumerGroupRequest
+	20, // 39: ironflow.v1.PubSubService.Publish:input_type -> ironflow.v1.PublishRequest
+	22, // 40: ironflow.v1.PubSubService.ListTopics:input_type -> ironflow.v1.ListTopicsRequest
+	25, // 41: ironflow.v1.PubSubService.GetTopicStats:input_type -> ironflow.v1.GetTopicStatsRequest
+	5,  // 42: ironflow.v1.PubSubService.Emit:output_type -> ironflow.v1.EmitResponse
+	8,  // 43: ironflow.v1.PubSubService.Subscribe:output_type -> ironflow.v1.SubscriptionEvent
+	8,  // 44: ironflow.v1.PubSubService.SubscribeBidirectional:output_type -> ironflow.v1.SubscriptionEvent
+	11, // 45: ironflow.v1.PubSubService.CreateConsumerGroup:output_type -> ironflow.v1.ConsumerGroup
+	11, // 46: ironflow.v1.PubSubService.GetConsumerGroup:output_type -> ironflow.v1.ConsumerGroup
+	15, // 47: ironflow.v1.PubSubService.ListConsumerGroups:output_type -> ironflow.v1.ListConsumerGroupsResponse
+	11, // 48: ironflow.v1.PubSubService.UpdateConsumerGroup:output_type -> ironflow.v1.ConsumerGroup
+	31, // 49: ironflow.v1.PubSubService.DeleteConsumerGroup:output_type -> google.protobuf.Empty
+	8,  // 50: ironflow.v1.PubSubService.JoinConsumerGroup:output_type -> ironflow.v1.SubscriptionEvent
+	21, // 51: ironflow.v1.PubSubService.Publish:output_type -> ironflow.v1.PublishResponse
+	23, // 52: ironflow.v1.PubSubService.ListTopics:output_type -> ironflow.v1.ListTopicsResponse
+	26, // 53: ironflow.v1.PubSubService.GetTopicStats:output_type -> ironflow.v1.GetTopicStatsResponse
+	42, // [42:54] is the sub-list for method output_type
+	30, // [30:42] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_pubsub_proto_init() }

@@ -24,15 +24,20 @@ const (
 )
 
 type AppendEventRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	EntityId        string                 `protobuf:"bytes,1,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`
-	EntityType      string                 `protobuf:"bytes,2,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"`
-	EventName       string                 `protobuf:"bytes,3,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
-	Data            *structpb.Struct       `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
-	ExpectedVersion int64                  `protobuf:"varint,5,opt,name=expected_version,json=expectedVersion,proto3" json:"expected_version,omitempty"` // -1 = skip check, 0 = new stream
-	IdempotencyKey  string                 `protobuf:"bytes,6,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
-	Version         int32                  `protobuf:"varint,7,opt,name=version,proto3" json:"version,omitempty"`  // Event schema version
-	Metadata        *structpb.Struct       `protobuf:"bytes,8,opt,name=metadata,proto3" json:"metadata,omitempty"` // Cross-cutting metadata (causation, correlation, tenant, trace)
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	EntityId   string                 `protobuf:"bytes,1,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`
+	EntityType string                 `protobuf:"bytes,2,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"`
+	EventName  string                 `protobuf:"bytes,3,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
+	Data       *structpb.Struct       `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which data cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// data, so an object costs no extra bytes and old clients are
+	// unaffected.
+	DataValue       *structpb.Value  `protobuf:"bytes,9,opt,name=data_value,json=dataValue,proto3" json:"data_value,omitempty"`
+	ExpectedVersion int64            `protobuf:"varint,5,opt,name=expected_version,json=expectedVersion,proto3" json:"expected_version,omitempty"` // -1 = skip check, 0 = new stream
+	IdempotencyKey  string           `protobuf:"bytes,6,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	Version         int32            `protobuf:"varint,7,opt,name=version,proto3" json:"version,omitempty"`  // Event schema version
+	Metadata        *structpb.Struct `protobuf:"bytes,8,opt,name=metadata,proto3" json:"metadata,omitempty"` // Cross-cutting metadata (causation, correlation, tenant, trace)
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -91,6 +96,13 @@ func (x *AppendEventRequest) GetEventName() string {
 func (x *AppendEventRequest) GetData() *structpb.Struct {
 	if x != nil {
 		return x.Data
+	}
+	return nil
+}
+
+func (x *AppendEventRequest) GetDataValue() *structpb.Value {
+	if x != nil {
+		return x.DataValue
 	}
 	return nil
 }
@@ -310,10 +322,15 @@ func (x *ReadStreamResponse) GetTotalCount() int32 {
 }
 
 type StreamEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Data          *structpb.Struct       `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Data  *structpb.Struct       `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which data cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// data, so an object costs no extra bytes and old clients are
+	// unaffected.
+	DataValue     *structpb.Value        `protobuf:"bytes,9,opt,name=data_value,json=dataValue,proto3" json:"data_value,omitempty"`
 	EntityVersion int64                  `protobuf:"varint,4,opt,name=entity_version,json=entityVersion,proto3" json:"entity_version,omitempty"`
 	Version       int32                  `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`
 	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
@@ -370,6 +387,13 @@ func (x *StreamEvent) GetName() string {
 func (x *StreamEvent) GetData() *structpb.Struct {
 	if x != nil {
 		return x.Data
+	}
+	return nil
+}
+
+func (x *StreamEvent) GetDataValue() *structpb.Value {
+	if x != nil {
+		return x.DataValue
 	}
 	return nil
 }
@@ -870,17 +894,22 @@ func (x *EntityHistoryInfo) GetUpdatedAt() *timestamppb.Timestamp {
 }
 
 type EntityHistoryEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
-	EventName     string                 `protobuf:"bytes,2,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
-	EventData     *structpb.Struct       `protobuf:"bytes,3,opt,name=event_data,json=eventData,proto3" json:"event_data,omitempty"`
-	EntityVersion int64                  `protobuf:"varint,4,opt,name=entity_version,json=entityVersion,proto3" json:"entity_version,omitempty"`
-	SchemaVersion int32                  `protobuf:"varint,5,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
-	Source        string                 `protobuf:"bytes,6,opt,name=source,proto3" json:"source,omitempty"`
-	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	Runs          []*EntityHistoryRun    `protobuf:"bytes,8,rep,name=runs,proto3" json:"runs,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	EventId   string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	EventName string                 `protobuf:"bytes,2,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
+	EventData *structpb.Struct       `protobuf:"bytes,3,opt,name=event_data,json=eventData,proto3" json:"event_data,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which event_data cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// event_data, so an object costs no extra bytes and old clients are
+	// unaffected.
+	EventDataValue *structpb.Value        `protobuf:"bytes,9,opt,name=event_data_value,json=eventDataValue,proto3" json:"event_data_value,omitempty"`
+	EntityVersion  int64                  `protobuf:"varint,4,opt,name=entity_version,json=entityVersion,proto3" json:"entity_version,omitempty"`
+	SchemaVersion  int32                  `protobuf:"varint,5,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	Source         string                 `protobuf:"bytes,6,opt,name=source,proto3" json:"source,omitempty"`
+	Timestamp      *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Runs           []*EntityHistoryRun    `protobuf:"bytes,8,rep,name=runs,proto3" json:"runs,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *EntityHistoryEntry) Reset() {
@@ -930,6 +959,13 @@ func (x *EntityHistoryEntry) GetEventName() string {
 func (x *EntityHistoryEntry) GetEventData() *structpb.Struct {
 	if x != nil {
 		return x.EventData
+	}
+	return nil
+}
+
+func (x *EntityHistoryEntry) GetEventDataValue() *structpb.Value {
+	if x != nil {
+		return x.EventDataValue
 	}
 	return nil
 }
@@ -1151,6 +1187,11 @@ type CreateSnapshotRequest struct {
 	EntityType    string                 `protobuf:"bytes,2,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"`
 	EntityVersion int64                  `protobuf:"varint,3,opt,name=entity_version,json=entityVersion,proto3" json:"entity_version,omitempty"` // The stream version this snapshot represents
 	State         *structpb.Struct       `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`                                       // Materialized state at this version
+	// Set ONLY when the payload is not a JSON object, which state cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// state, so an object costs no extra bytes and old clients are
+	// unaffected.
+	StateValue    *structpb.Value `protobuf:"bytes,5,opt,name=state_value,json=stateValue,proto3" json:"state_value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1209,6 +1250,13 @@ func (x *CreateSnapshotRequest) GetEntityVersion() int64 {
 func (x *CreateSnapshotRequest) GetState() *structpb.Struct {
 	if x != nil {
 		return x.State
+	}
+	return nil
+}
+
+func (x *CreateSnapshotRequest) GetStateValue() *structpb.Value {
+	if x != nil {
+		return x.StateValue
 	}
 	return nil
 }
@@ -1316,6 +1364,11 @@ type GetSnapshotResponse struct {
 	EntityType    string                 `protobuf:"bytes,3,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"`
 	EntityVersion int64                  `protobuf:"varint,4,opt,name=entity_version,json=entityVersion,proto3" json:"entity_version,omitempty"`
 	State         *structpb.Struct       `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which state cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// state, so an object costs no extra bytes and old clients are
+	// unaffected.
+	StateValue    *structpb.Value        `protobuf:"bytes,7,opt,name=state_value,json=stateValue,proto3" json:"state_value,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1386,6 +1439,13 @@ func (x *GetSnapshotResponse) GetState() *structpb.Struct {
 	return nil
 }
 
+func (x *GetSnapshotResponse) GetStateValue() *structpb.Value {
+	if x != nil {
+		return x.StateValue
+	}
+	return nil
+}
+
 func (x *GetSnapshotResponse) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
@@ -1397,14 +1457,16 @@ var File_ironflow_v1_entity_stream_proto protoreflect.FileDescriptor
 
 const file_ironflow_v1_entity_stream_proto_rawDesc = "" +
 	"\n" +
-	"\x1fironflow/v1/entity_stream.proto\x12\vironflow.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc1\x02\n" +
+	"\x1fironflow/v1/entity_stream.proto\x12\vironflow.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf8\x02\n" +
 	"\x12AppendEventRequest\x12\x1b\n" +
 	"\tentity_id\x18\x01 \x01(\tR\bentityId\x12\x1f\n" +
 	"\ventity_type\x18\x02 \x01(\tR\n" +
 	"entityType\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x03 \x01(\tR\teventName\x12+\n" +
-	"\x04data\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x04data\x12)\n" +
+	"\x04data\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x04data\x125\n" +
+	"\n" +
+	"data_value\x18\t \x01(\v2\x16.google.protobuf.ValueR\tdataValue\x12)\n" +
 	"\x10expected_version\x18\x05 \x01(\x03R\x0fexpectedVersion\x12'\n" +
 	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12\x18\n" +
 	"\aversion\x18\a \x01(\x05R\aversion\x123\n" +
@@ -1421,11 +1483,13 @@ const file_ironflow_v1_entity_stream_proto_rawDesc = "" +
 	"\x12ReadStreamResponse\x120\n" +
 	"\x06events\x18\x01 \x03(\v2\x18.ironflow.v1.StreamEventR\x06events\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x05R\n" +
-	"totalCount\"\xa6\x02\n" +
+	"totalCount\"\xdd\x02\n" +
 	"\vStreamEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12+\n" +
-	"\x04data\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x04data\x12%\n" +
+	"\x04data\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x04data\x125\n" +
+	"\n" +
+	"data_value\x18\t \x01(\v2\x16.google.protobuf.ValueR\tdataValue\x12%\n" +
 	"\x0eentity_version\x18\x04 \x01(\x03R\rentityVersion\x12\x18\n" +
 	"\aversion\x18\x05 \x01(\x05R\aversion\x128\n" +
 	"\ttimestamp\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x16\n" +
@@ -1473,13 +1537,14 @@ const file_ironflow_v1_entity_stream_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xd9\x02\n" +
+	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x9b\x03\n" +
 	"\x12EntityHistoryEntry\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x02 \x01(\tR\teventName\x126\n" +
 	"\n" +
-	"event_data\x18\x03 \x01(\v2\x17.google.protobuf.StructR\teventData\x12%\n" +
+	"event_data\x18\x03 \x01(\v2\x17.google.protobuf.StructR\teventData\x12@\n" +
+	"\x10event_data_value\x18\t \x01(\v2\x16.google.protobuf.ValueR\x0eeventDataValue\x12%\n" +
 	"\x0eentity_version\x18\x04 \x01(\x03R\rentityVersion\x12%\n" +
 	"\x0eschema_version\x18\x05 \x01(\x05R\rschemaVersion\x12\x16\n" +
 	"\x06source\x18\x06 \x01(\tR\x06source\x128\n" +
@@ -1503,19 +1568,21 @@ const file_ironflow_v1_entity_stream_proto_rawDesc = "" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12\x1f\n" +
 	"\vduration_ms\x18\x05 \x01(\x05R\n" +
 	"durationMs\x12#\n" +
-	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\"\xab\x01\n" +
+	"\rerror_message\x18\x06 \x01(\tR\ferrorMessage\"\xe4\x01\n" +
 	"\x15CreateSnapshotRequest\x12\x1b\n" +
 	"\tentity_id\x18\x01 \x01(\tR\bentityId\x12\x1f\n" +
 	"\ventity_type\x18\x02 \x01(\tR\n" +
 	"entityType\x12%\n" +
 	"\x0eentity_version\x18\x03 \x01(\x03R\rentityVersion\x12-\n" +
-	"\x05state\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x05state\"9\n" +
+	"\x05state\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x05state\x127\n" +
+	"\vstate_value\x18\x05 \x01(\v2\x16.google.protobuf.ValueR\n" +
+	"stateValue\"9\n" +
 	"\x16CreateSnapshotResponse\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\"X\n" +
 	"\x12GetSnapshotRequest\x12\x1b\n" +
 	"\tentity_id\x18\x01 \x01(\tR\bentityId\x12%\n" +
-	"\x0ebefore_version\x18\x02 \x01(\x03R\rbeforeVersion\"\x85\x02\n" +
+	"\x0ebefore_version\x18\x02 \x01(\x03R\rbeforeVersion\"\xbe\x02\n" +
 	"\x13GetSnapshotResponse\x12\x1f\n" +
 	"\vsnapshot_id\x18\x01 \x01(\tR\n" +
 	"snapshotId\x12\x1b\n" +
@@ -1523,7 +1590,9 @@ const file_ironflow_v1_entity_stream_proto_rawDesc = "" +
 	"\ventity_type\x18\x03 \x01(\tR\n" +
 	"entityType\x12%\n" +
 	"\x0eentity_version\x18\x04 \x01(\x03R\rentityVersion\x12-\n" +
-	"\x05state\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x05state\x129\n" +
+	"\x05state\x18\x05 \x01(\v2\x17.google.protobuf.StructR\x05state\x127\n" +
+	"\vstate_value\x18\a \x01(\v2\x16.google.protobuf.ValueR\n" +
+	"stateValue\x129\n" +
 	"\n" +
 	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt2\x87\x05\n" +
 	"\x13EntityStreamService\x12P\n" +
@@ -1570,50 +1639,56 @@ var file_ironflow_v1_entity_stream_proto_goTypes = []any{
 	(*GetSnapshotRequest)(nil),       // 17: ironflow.v1.GetSnapshotRequest
 	(*GetSnapshotResponse)(nil),      // 18: ironflow.v1.GetSnapshotResponse
 	(*structpb.Struct)(nil),          // 19: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),    // 20: google.protobuf.Timestamp
+	(*structpb.Value)(nil),           // 20: google.protobuf.Value
+	(*timestamppb.Timestamp)(nil),    // 21: google.protobuf.Timestamp
 }
 var file_ironflow_v1_entity_stream_proto_depIdxs = []int32{
 	19, // 0: ironflow.v1.AppendEventRequest.data:type_name -> google.protobuf.Struct
-	19, // 1: ironflow.v1.AppendEventRequest.metadata:type_name -> google.protobuf.Struct
-	4,  // 2: ironflow.v1.ReadStreamResponse.events:type_name -> ironflow.v1.StreamEvent
-	19, // 3: ironflow.v1.StreamEvent.data:type_name -> google.protobuf.Struct
-	20, // 4: ironflow.v1.StreamEvent.timestamp:type_name -> google.protobuf.Timestamp
-	19, // 5: ironflow.v1.StreamEvent.metadata:type_name -> google.protobuf.Struct
-	20, // 6: ironflow.v1.GetStreamInfoResponse.created_at:type_name -> google.protobuf.Timestamp
-	20, // 7: ironflow.v1.GetStreamInfoResponse.updated_at:type_name -> google.protobuf.Timestamp
-	6,  // 8: ironflow.v1.ListStreamsResponse.streams:type_name -> ironflow.v1.GetStreamInfoResponse
-	12, // 9: ironflow.v1.GetEntityHistoryResponse.entries:type_name -> ironflow.v1.EntityHistoryEntry
-	11, // 10: ironflow.v1.GetEntityHistoryResponse.info:type_name -> ironflow.v1.EntityHistoryInfo
-	20, // 11: ironflow.v1.EntityHistoryInfo.created_at:type_name -> google.protobuf.Timestamp
-	20, // 12: ironflow.v1.EntityHistoryInfo.updated_at:type_name -> google.protobuf.Timestamp
-	19, // 13: ironflow.v1.EntityHistoryEntry.event_data:type_name -> google.protobuf.Struct
-	20, // 14: ironflow.v1.EntityHistoryEntry.timestamp:type_name -> google.protobuf.Timestamp
-	13, // 15: ironflow.v1.EntityHistoryEntry.runs:type_name -> ironflow.v1.EntityHistoryRun
-	20, // 16: ironflow.v1.EntityHistoryRun.started_at:type_name -> google.protobuf.Timestamp
-	20, // 17: ironflow.v1.EntityHistoryRun.ended_at:type_name -> google.protobuf.Timestamp
-	14, // 18: ironflow.v1.EntityHistoryRun.steps:type_name -> ironflow.v1.EntityHistoryStep
-	19, // 19: ironflow.v1.CreateSnapshotRequest.state:type_name -> google.protobuf.Struct
-	19, // 20: ironflow.v1.GetSnapshotResponse.state:type_name -> google.protobuf.Struct
-	20, // 21: ironflow.v1.GetSnapshotResponse.created_at:type_name -> google.protobuf.Timestamp
-	0,  // 22: ironflow.v1.EntityStreamService.AppendEvent:input_type -> ironflow.v1.AppendEventRequest
-	2,  // 23: ironflow.v1.EntityStreamService.ReadStream:input_type -> ironflow.v1.ReadStreamRequest
-	5,  // 24: ironflow.v1.EntityStreamService.GetStreamInfo:input_type -> ironflow.v1.GetStreamInfoRequest
-	7,  // 25: ironflow.v1.EntityStreamService.ListStreams:input_type -> ironflow.v1.ListStreamsRequest
-	9,  // 26: ironflow.v1.EntityStreamService.GetEntityHistory:input_type -> ironflow.v1.GetEntityHistoryRequest
-	15, // 27: ironflow.v1.EntityStreamService.CreateSnapshot:input_type -> ironflow.v1.CreateSnapshotRequest
-	17, // 28: ironflow.v1.EntityStreamService.GetSnapshot:input_type -> ironflow.v1.GetSnapshotRequest
-	1,  // 29: ironflow.v1.EntityStreamService.AppendEvent:output_type -> ironflow.v1.AppendEventResponse
-	3,  // 30: ironflow.v1.EntityStreamService.ReadStream:output_type -> ironflow.v1.ReadStreamResponse
-	6,  // 31: ironflow.v1.EntityStreamService.GetStreamInfo:output_type -> ironflow.v1.GetStreamInfoResponse
-	8,  // 32: ironflow.v1.EntityStreamService.ListStreams:output_type -> ironflow.v1.ListStreamsResponse
-	10, // 33: ironflow.v1.EntityStreamService.GetEntityHistory:output_type -> ironflow.v1.GetEntityHistoryResponse
-	16, // 34: ironflow.v1.EntityStreamService.CreateSnapshot:output_type -> ironflow.v1.CreateSnapshotResponse
-	18, // 35: ironflow.v1.EntityStreamService.GetSnapshot:output_type -> ironflow.v1.GetSnapshotResponse
-	29, // [29:36] is the sub-list for method output_type
-	22, // [22:29] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	20, // 1: ironflow.v1.AppendEventRequest.data_value:type_name -> google.protobuf.Value
+	19, // 2: ironflow.v1.AppendEventRequest.metadata:type_name -> google.protobuf.Struct
+	4,  // 3: ironflow.v1.ReadStreamResponse.events:type_name -> ironflow.v1.StreamEvent
+	19, // 4: ironflow.v1.StreamEvent.data:type_name -> google.protobuf.Struct
+	20, // 5: ironflow.v1.StreamEvent.data_value:type_name -> google.protobuf.Value
+	21, // 6: ironflow.v1.StreamEvent.timestamp:type_name -> google.protobuf.Timestamp
+	19, // 7: ironflow.v1.StreamEvent.metadata:type_name -> google.protobuf.Struct
+	21, // 8: ironflow.v1.GetStreamInfoResponse.created_at:type_name -> google.protobuf.Timestamp
+	21, // 9: ironflow.v1.GetStreamInfoResponse.updated_at:type_name -> google.protobuf.Timestamp
+	6,  // 10: ironflow.v1.ListStreamsResponse.streams:type_name -> ironflow.v1.GetStreamInfoResponse
+	12, // 11: ironflow.v1.GetEntityHistoryResponse.entries:type_name -> ironflow.v1.EntityHistoryEntry
+	11, // 12: ironflow.v1.GetEntityHistoryResponse.info:type_name -> ironflow.v1.EntityHistoryInfo
+	21, // 13: ironflow.v1.EntityHistoryInfo.created_at:type_name -> google.protobuf.Timestamp
+	21, // 14: ironflow.v1.EntityHistoryInfo.updated_at:type_name -> google.protobuf.Timestamp
+	19, // 15: ironflow.v1.EntityHistoryEntry.event_data:type_name -> google.protobuf.Struct
+	20, // 16: ironflow.v1.EntityHistoryEntry.event_data_value:type_name -> google.protobuf.Value
+	21, // 17: ironflow.v1.EntityHistoryEntry.timestamp:type_name -> google.protobuf.Timestamp
+	13, // 18: ironflow.v1.EntityHistoryEntry.runs:type_name -> ironflow.v1.EntityHistoryRun
+	21, // 19: ironflow.v1.EntityHistoryRun.started_at:type_name -> google.protobuf.Timestamp
+	21, // 20: ironflow.v1.EntityHistoryRun.ended_at:type_name -> google.protobuf.Timestamp
+	14, // 21: ironflow.v1.EntityHistoryRun.steps:type_name -> ironflow.v1.EntityHistoryStep
+	19, // 22: ironflow.v1.CreateSnapshotRequest.state:type_name -> google.protobuf.Struct
+	20, // 23: ironflow.v1.CreateSnapshotRequest.state_value:type_name -> google.protobuf.Value
+	19, // 24: ironflow.v1.GetSnapshotResponse.state:type_name -> google.protobuf.Struct
+	20, // 25: ironflow.v1.GetSnapshotResponse.state_value:type_name -> google.protobuf.Value
+	21, // 26: ironflow.v1.GetSnapshotResponse.created_at:type_name -> google.protobuf.Timestamp
+	0,  // 27: ironflow.v1.EntityStreamService.AppendEvent:input_type -> ironflow.v1.AppendEventRequest
+	2,  // 28: ironflow.v1.EntityStreamService.ReadStream:input_type -> ironflow.v1.ReadStreamRequest
+	5,  // 29: ironflow.v1.EntityStreamService.GetStreamInfo:input_type -> ironflow.v1.GetStreamInfoRequest
+	7,  // 30: ironflow.v1.EntityStreamService.ListStreams:input_type -> ironflow.v1.ListStreamsRequest
+	9,  // 31: ironflow.v1.EntityStreamService.GetEntityHistory:input_type -> ironflow.v1.GetEntityHistoryRequest
+	15, // 32: ironflow.v1.EntityStreamService.CreateSnapshot:input_type -> ironflow.v1.CreateSnapshotRequest
+	17, // 33: ironflow.v1.EntityStreamService.GetSnapshot:input_type -> ironflow.v1.GetSnapshotRequest
+	1,  // 34: ironflow.v1.EntityStreamService.AppendEvent:output_type -> ironflow.v1.AppendEventResponse
+	3,  // 35: ironflow.v1.EntityStreamService.ReadStream:output_type -> ironflow.v1.ReadStreamResponse
+	6,  // 36: ironflow.v1.EntityStreamService.GetStreamInfo:output_type -> ironflow.v1.GetStreamInfoResponse
+	8,  // 37: ironflow.v1.EntityStreamService.ListStreams:output_type -> ironflow.v1.ListStreamsResponse
+	10, // 38: ironflow.v1.EntityStreamService.GetEntityHistory:output_type -> ironflow.v1.GetEntityHistoryResponse
+	16, // 39: ironflow.v1.EntityStreamService.CreateSnapshot:output_type -> ironflow.v1.CreateSnapshotResponse
+	18, // 40: ironflow.v1.EntityStreamService.GetSnapshot:output_type -> ironflow.v1.GetSnapshotResponse
+	34, // [34:41] is the sub-list for method output_type
+	27, // [27:34] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_entity_stream_proto_init() }

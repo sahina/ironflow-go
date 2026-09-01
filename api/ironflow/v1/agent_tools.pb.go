@@ -251,7 +251,12 @@ type InvokeToolRequest struct {
 	// Qualified tool name (`{agentName}.{toolName}`).
 	ToolName string `protobuf:"bytes,1,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
 	// Input arguments. Validated against the tool's input_schema_json.
-	Input         *structpb.Struct `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
+	Input *structpb.Struct `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which input cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// input, so an object costs no extra bytes and old clients are
+	// unaffected.
+	InputValue    *structpb.Value `protobuf:"bytes,3,opt,name=input_value,json=inputValue,proto3" json:"input_value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -300,11 +305,23 @@ func (x *InvokeToolRequest) GetInput() *structpb.Struct {
 	return nil
 }
 
+func (x *InvokeToolRequest) GetInputValue() *structpb.Value {
+	if x != nil {
+		return x.InputValue
+	}
+	return nil
+}
+
 type InvokeToolResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Successful tool output. Set when the SDK handler returned
 	// a value. Mutually exclusive with error.
 	Output *structpb.Struct `protobuf:"bytes,1,opt,name=output,proto3" json:"output,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which output cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// output, so an object costs no extra bytes and old clients are
+	// unaffected.
+	OutputValue *structpb.Value `protobuf:"bytes,3,opt,name=output_value,json=outputValue,proto3" json:"output_value,omitempty"`
 	// Error envelope. Set when dispatch failed or the SDK handler
 	// returned an error. Mutually exclusive with output.
 	Error         *ToolError `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
@@ -345,6 +362,13 @@ func (*InvokeToolResponse) Descriptor() ([]byte, []int) {
 func (x *InvokeToolResponse) GetOutput() *structpb.Struct {
 	if x != nil {
 		return x.Output
+	}
+	return nil
+}
+
+func (x *InvokeToolResponse) GetOutputValue() *structpb.Value {
+	if x != nil {
+		return x.OutputValue
 	}
 	return nil
 }
@@ -703,12 +727,15 @@ const file_ironflow_v1_agent_tools_proto_rawDesc = "" +
 	"\vhmac_secret\x18\x01 \x01(\tR\n" +
 	"hmacSecret\x122\n" +
 	"\x15registered_tool_names\x18\x02 \x03(\tR\x13registeredToolNames\x12?\n" +
-	"\rregistered_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\fregisteredAt\"_\n" +
+	"\rregistered_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\fregisteredAt\"\x98\x01\n" +
 	"\x11InvokeToolRequest\x12\x1b\n" +
 	"\ttool_name\x18\x01 \x01(\tR\btoolName\x12-\n" +
-	"\x05input\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x05input\"s\n" +
+	"\x05input\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x05input\x127\n" +
+	"\vinput_value\x18\x03 \x01(\v2\x16.google.protobuf.ValueR\n" +
+	"inputValue\"\xae\x01\n" +
 	"\x12InvokeToolResponse\x12/\n" +
-	"\x06output\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x06output\x12,\n" +
+	"\x06output\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x06output\x129\n" +
+	"\foutput_value\x18\x03 \x01(\v2\x16.google.protobuf.ValueR\voutputValue\x12,\n" +
 	"\x05error\x18\x02 \x01(\v2\x16.ironflow.v1.ToolErrorR\x05error\"9\n" +
 	"\tToolError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
@@ -763,27 +790,30 @@ var file_ironflow_v1_agent_tools_proto_goTypes = []any{
 	(*VisibleTool)(nil),            // 10: ironflow.v1.VisibleTool
 	(*timestamppb.Timestamp)(nil),  // 11: google.protobuf.Timestamp
 	(*structpb.Struct)(nil),        // 12: google.protobuf.Struct
+	(*structpb.Value)(nil),         // 13: google.protobuf.Value
 }
 var file_ironflow_v1_agent_tools_proto_depIdxs = []int32{
 	0,  // 0: ironflow.v1.RegisterToolRequest.tools:type_name -> ironflow.v1.ToolDef
 	11, // 1: ironflow.v1.RegisterToolResponse.registered_at:type_name -> google.protobuf.Timestamp
 	12, // 2: ironflow.v1.InvokeToolRequest.input:type_name -> google.protobuf.Struct
-	12, // 3: ironflow.v1.InvokeToolResponse.output:type_name -> google.protobuf.Struct
-	5,  // 4: ironflow.v1.InvokeToolResponse.error:type_name -> ironflow.v1.ToolError
-	10, // 5: ironflow.v1.ListToolsResponse.tools:type_name -> ironflow.v1.VisibleTool
-	1,  // 6: ironflow.v1.AgentToolsService.RegisterTool:input_type -> ironflow.v1.RegisterToolRequest
-	3,  // 7: ironflow.v1.AgentToolsService.InvokeTool:input_type -> ironflow.v1.InvokeToolRequest
-	6,  // 8: ironflow.v1.AgentToolsService.UnregisterTool:input_type -> ironflow.v1.UnregisterToolRequest
-	8,  // 9: ironflow.v1.AgentToolsService.ListTools:input_type -> ironflow.v1.ListToolsRequest
-	2,  // 10: ironflow.v1.AgentToolsService.RegisterTool:output_type -> ironflow.v1.RegisterToolResponse
-	4,  // 11: ironflow.v1.AgentToolsService.InvokeTool:output_type -> ironflow.v1.InvokeToolResponse
-	7,  // 12: ironflow.v1.AgentToolsService.UnregisterTool:output_type -> ironflow.v1.UnregisterToolResponse
-	9,  // 13: ironflow.v1.AgentToolsService.ListTools:output_type -> ironflow.v1.ListToolsResponse
-	10, // [10:14] is the sub-list for method output_type
-	6,  // [6:10] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	13, // 3: ironflow.v1.InvokeToolRequest.input_value:type_name -> google.protobuf.Value
+	12, // 4: ironflow.v1.InvokeToolResponse.output:type_name -> google.protobuf.Struct
+	13, // 5: ironflow.v1.InvokeToolResponse.output_value:type_name -> google.protobuf.Value
+	5,  // 6: ironflow.v1.InvokeToolResponse.error:type_name -> ironflow.v1.ToolError
+	10, // 7: ironflow.v1.ListToolsResponse.tools:type_name -> ironflow.v1.VisibleTool
+	1,  // 8: ironflow.v1.AgentToolsService.RegisterTool:input_type -> ironflow.v1.RegisterToolRequest
+	3,  // 9: ironflow.v1.AgentToolsService.InvokeTool:input_type -> ironflow.v1.InvokeToolRequest
+	6,  // 10: ironflow.v1.AgentToolsService.UnregisterTool:input_type -> ironflow.v1.UnregisterToolRequest
+	8,  // 11: ironflow.v1.AgentToolsService.ListTools:input_type -> ironflow.v1.ListToolsRequest
+	2,  // 12: ironflow.v1.AgentToolsService.RegisterTool:output_type -> ironflow.v1.RegisterToolResponse
+	4,  // 13: ironflow.v1.AgentToolsService.InvokeTool:output_type -> ironflow.v1.InvokeToolResponse
+	7,  // 14: ironflow.v1.AgentToolsService.UnregisterTool:output_type -> ironflow.v1.UnregisterToolResponse
+	9,  // 15: ironflow.v1.AgentToolsService.ListTools:output_type -> ironflow.v1.ListToolsResponse
+	12, // [12:16] is the sub-list for method output_type
+	8,  // [8:12] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_agent_tools_proto_init() }

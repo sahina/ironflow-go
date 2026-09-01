@@ -48,6 +48,9 @@ const (
 	// EventSchemaServiceTestUpcastProcedure is the fully-qualified name of the EventSchemaService's
 	// TestUpcast RPC.
 	EventSchemaServiceTestUpcastProcedure = "/ironflow.v1.EventSchemaService/TestUpcast"
+	// EventSchemaServiceCheckEnforcementProcedure is the fully-qualified name of the
+	// EventSchemaService's CheckEnforcement RPC.
+	EventSchemaServiceCheckEnforcementProcedure = "/ironflow.v1.EventSchemaService/CheckEnforcement"
 )
 
 // EventSchemaServiceClient is a client for the ironflow.v1.EventSchemaService service.
@@ -57,6 +60,14 @@ type EventSchemaServiceClient interface {
 	ListSchemas(context.Context, *connect.Request[v1.ListSchemasRequest]) (*connect.Response[v1.ListSchemasResponse], error)
 	DeleteSchema(context.Context, *connect.Request[v1.DeleteSchemaRequest]) (*connect.Response[v1.DeleteSchemaResponse], error)
 	TestUpcast(context.Context, *connect.Request[v1.TestUpcastRequest]) (*connect.Response[v1.TestUpcastResponse], error)
+	// CheckEnforcement reports whether event-schema enforcement is actually
+	// doing anything (#1958). Enforcement has several ways to accept every
+	// payload without validating it, and from outside they are indistinguishable
+	// from "every payload was clean": the mode is off, the name is not governed,
+	// the stored schema will not compile, the schema is permissive, or emitters
+	// are sending a version the schema is not registered at. This is the one
+	// surface that separates them.
+	CheckEnforcement(context.Context, *connect.Request[v1.CheckEnforcementRequest]) (*connect.Response[v1.CheckEnforcementResponse], error)
 }
 
 // NewEventSchemaServiceClient constructs a client for the ironflow.v1.EventSchemaService service.
@@ -103,16 +114,24 @@ func NewEventSchemaServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		checkEnforcement: connect.NewClient[v1.CheckEnforcementRequest, v1.CheckEnforcementResponse](
+			httpClient,
+			baseURL+EventSchemaServiceCheckEnforcementProcedure,
+			connect.WithSchema(eventSchemaServiceMethods.ByName("CheckEnforcement")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // eventSchemaServiceClient implements EventSchemaServiceClient.
 type eventSchemaServiceClient struct {
-	registerSchema *connect.Client[v1.RegisterSchemaRequest, v1.RegisterSchemaResponse]
-	getSchema      *connect.Client[v1.GetSchemaRequest, v1.GetSchemaResponse]
-	listSchemas    *connect.Client[v1.ListSchemasRequest, v1.ListSchemasResponse]
-	deleteSchema   *connect.Client[v1.DeleteSchemaRequest, v1.DeleteSchemaResponse]
-	testUpcast     *connect.Client[v1.TestUpcastRequest, v1.TestUpcastResponse]
+	registerSchema   *connect.Client[v1.RegisterSchemaRequest, v1.RegisterSchemaResponse]
+	getSchema        *connect.Client[v1.GetSchemaRequest, v1.GetSchemaResponse]
+	listSchemas      *connect.Client[v1.ListSchemasRequest, v1.ListSchemasResponse]
+	deleteSchema     *connect.Client[v1.DeleteSchemaRequest, v1.DeleteSchemaResponse]
+	testUpcast       *connect.Client[v1.TestUpcastRequest, v1.TestUpcastResponse]
+	checkEnforcement *connect.Client[v1.CheckEnforcementRequest, v1.CheckEnforcementResponse]
 }
 
 // RegisterSchema calls ironflow.v1.EventSchemaService.RegisterSchema.
@@ -140,6 +159,11 @@ func (c *eventSchemaServiceClient) TestUpcast(ctx context.Context, req *connect.
 	return c.testUpcast.CallUnary(ctx, req)
 }
 
+// CheckEnforcement calls ironflow.v1.EventSchemaService.CheckEnforcement.
+func (c *eventSchemaServiceClient) CheckEnforcement(ctx context.Context, req *connect.Request[v1.CheckEnforcementRequest]) (*connect.Response[v1.CheckEnforcementResponse], error) {
+	return c.checkEnforcement.CallUnary(ctx, req)
+}
+
 // EventSchemaServiceHandler is an implementation of the ironflow.v1.EventSchemaService service.
 type EventSchemaServiceHandler interface {
 	RegisterSchema(context.Context, *connect.Request[v1.RegisterSchemaRequest]) (*connect.Response[v1.RegisterSchemaResponse], error)
@@ -147,6 +171,14 @@ type EventSchemaServiceHandler interface {
 	ListSchemas(context.Context, *connect.Request[v1.ListSchemasRequest]) (*connect.Response[v1.ListSchemasResponse], error)
 	DeleteSchema(context.Context, *connect.Request[v1.DeleteSchemaRequest]) (*connect.Response[v1.DeleteSchemaResponse], error)
 	TestUpcast(context.Context, *connect.Request[v1.TestUpcastRequest]) (*connect.Response[v1.TestUpcastResponse], error)
+	// CheckEnforcement reports whether event-schema enforcement is actually
+	// doing anything (#1958). Enforcement has several ways to accept every
+	// payload without validating it, and from outside they are indistinguishable
+	// from "every payload was clean": the mode is off, the name is not governed,
+	// the stored schema will not compile, the schema is permissive, or emitters
+	// are sending a version the schema is not registered at. This is the one
+	// surface that separates them.
+	CheckEnforcement(context.Context, *connect.Request[v1.CheckEnforcementRequest]) (*connect.Response[v1.CheckEnforcementResponse], error)
 }
 
 // NewEventSchemaServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -189,6 +221,13 @@ func NewEventSchemaServiceHandler(svc EventSchemaServiceHandler, opts ...connect
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	eventSchemaServiceCheckEnforcementHandler := connect.NewUnaryHandler(
+		EventSchemaServiceCheckEnforcementProcedure,
+		svc.CheckEnforcement,
+		connect.WithSchema(eventSchemaServiceMethods.ByName("CheckEnforcement")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/ironflow.v1.EventSchemaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case EventSchemaServiceRegisterSchemaProcedure:
@@ -201,6 +240,8 @@ func NewEventSchemaServiceHandler(svc EventSchemaServiceHandler, opts ...connect
 			eventSchemaServiceDeleteSchemaHandler.ServeHTTP(w, r)
 		case EventSchemaServiceTestUpcastProcedure:
 			eventSchemaServiceTestUpcastHandler.ServeHTTP(w, r)
+		case EventSchemaServiceCheckEnforcementProcedure:
+			eventSchemaServiceCheckEnforcementHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -228,4 +269,8 @@ func (UnimplementedEventSchemaServiceHandler) DeleteSchema(context.Context, *con
 
 func (UnimplementedEventSchemaServiceHandler) TestUpcast(context.Context, *connect.Request[v1.TestUpcastRequest]) (*connect.Response[v1.TestUpcastResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.EventSchemaService.TestUpcast is not implemented"))
+}
+
+func (UnimplementedEventSchemaServiceHandler) CheckEnforcement(context.Context, *connect.Request[v1.CheckEnforcementRequest]) (*connect.Response[v1.CheckEnforcementResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.EventSchemaService.CheckEnforcement is not implemented"))
 }

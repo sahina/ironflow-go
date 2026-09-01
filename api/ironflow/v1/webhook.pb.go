@@ -224,7 +224,12 @@ type WebhookSource struct {
 	// and every subsequent read returns it empty. Treat as write-once.
 	IngestToken string `protobuf:"bytes,14,opt,name=ingest_token,json=ingestToken,proto3" json:"ingest_token,omitempty"`
 	// Signature descriptor (ADR 0049). Unset means legacy verification.
-	VerifyConfig  *WebhookVerifyConfig `protobuf:"bytes,15,opt,name=verify_config,json=verifyConfig,proto3" json:"verify_config,omitempty"`
+	VerifyConfig *WebhookVerifyConfig `protobuf:"bytes,15,opt,name=verify_config,json=verifyConfig,proto3" json:"verify_config,omitempty"`
+	// Event schema version every event this source emits carries (#1955).
+	// Always >= 1 — the column defaults to 1 and is CHECK-constrained, so
+	// sources predating migration 060/055 read back as 1, which is the version
+	// they were hardcoded to.
+	SchemaVersion int32 `protobuf:"varint,16,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -364,6 +369,13 @@ func (x *WebhookSource) GetVerifyConfig() *WebhookVerifyConfig {
 	return nil
 }
 
+func (x *WebhookSource) GetSchemaVersion() int32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
+}
+
 type GetWebhookSourceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -419,7 +431,17 @@ type CreateWebhookSourceRequest struct {
 	Name string `protobuf:"bytes,7,opt,name=name,proto3" json:"name,omitempty"`
 	// Signature descriptor (ADR 0049). Omit for legacy verification via
 	// verify_header/verify_algorithm.
-	VerifyConfig  *WebhookVerifyConfig `protobuf:"bytes,8,opt,name=verify_config,json=verifyConfig,proto3" json:"verify_config,omitempty"`
+	VerifyConfig *WebhookVerifyConfig `protobuf:"bytes,8,opt,name=verify_config,json=verifyConfig,proto3" json:"verify_config,omitempty"`
+	// Event schema version every event this source emits carries (#1955).
+	// Omit (0) for 1. A third-party sender cannot express an Ironflow schema
+	// version, so it is the operator's choice at the source, not the payload's.
+	//
+	// One version for the whole source: buildWebhookEventName derives the event
+	// name per request, so a Stripe source emitting both
+	// stripe.payment_intent.succeeded and stripe.charge.refunded pins both to
+	// this version. A source mid-migration on only some of its names needs a
+	// name->version map; that is additive if it ever comes up.
+	SchemaVersion int32 `protobuf:"varint,9,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -501,6 +523,13 @@ func (x *CreateWebhookSourceRequest) GetVerifyConfig() *WebhookVerifyConfig {
 		return x.VerifyConfig
 	}
 	return nil
+}
+
+func (x *CreateWebhookSourceRequest) GetSchemaVersion() int32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
 }
 
 type ListWebhookSourcesRequest struct {
@@ -646,8 +675,15 @@ type UpdateWebhookSourceRequest struct {
 	// reverted by an unrelated rename. Omit it to skip the check (unchanged
 	// behavior for existing clients).
 	ExpectedUpdatedAt *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expected_updated_at,json=expectedUpdatedAt,proto3" json:"expected_updated_at,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Event schema version (#1955). PRESERVE-ON-OMIT like verify_config: 0
+	// leaves the stored value alone.
+	//
+	// Mutable, unlike event_prefix. Recreating a source to change its version
+	// would mint a new ID and therefore a new ingest URL, turning a schema
+	// migration into a coordinated config change in someone else's dashboard.
+	SchemaVersion int32 `protobuf:"varint,8,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateWebhookSourceRequest) Reset() {
@@ -727,6 +763,13 @@ func (x *UpdateWebhookSourceRequest) GetExpectedUpdatedAt() *timestamppb.Timesta
 		return x.ExpectedUpdatedAt
 	}
 	return nil
+}
+
+func (x *UpdateWebhookSourceRequest) GetSchemaVersion() int32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
 }
 
 type RotateWebhookSecretRequest struct {
@@ -1477,7 +1520,7 @@ const file_ironflow_v1_webhook_proto_rawDesc = "" +
 	"\x11tolerance_seconds\x18\n" +
 	" \x01(\x05R\x10toleranceSeconds\x12&\n" +
 	"\x0fevent_name_path\x18\v \x01(\tR\reventNamePath\x12\"\n" +
-	"\rdedup_id_path\x18\f \x01(\tR\vdedupIdPath\"\xcb\x05\n" +
+	"\rdedup_id_path\x18\f \x01(\tR\vdedupIdPath\"\xf2\x05\n" +
 	"\rWebhookSource\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
 	"\fevent_prefix\x18\x02 \x01(\tR\veventPrefix\x12#\n" +
@@ -1497,9 +1540,10 @@ const file_ironflow_v1_webhook_proto_rawDesc = "" +
 	"\x1dverify_secret_prev_expires_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\x19verifySecretPrevExpiresAt\x12.\n" +
 	"\x13ingest_token_prefix\x18\r \x01(\tR\x11ingestTokenPrefix\x12!\n" +
 	"\fingest_token\x18\x0e \x01(\tR\vingestToken\x12E\n" +
-	"\rverify_config\x18\x0f \x01(\v2 .ironflow.v1.WebhookVerifyConfigR\fverifyConfig\")\n" +
+	"\rverify_config\x18\x0f \x01(\v2 .ironflow.v1.WebhookVerifyConfigR\fverifyConfig\x12%\n" +
+	"\x0eschema_version\x18\x10 \x01(\x05R\rschemaVersion\")\n" +
 	"\x17GetWebhookSourceRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xce\x02\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xf5\x02\n" +
 	"\x1aCreateWebhookSourceRequest\x12!\n" +
 	"\fevent_prefix\x18\x02 \x01(\tR\veventPrefix\x12#\n" +
 	"\rverify_header\x18\x03 \x01(\tR\fverifyHeader\x12)\n" +
@@ -1507,14 +1551,15 @@ const file_ironflow_v1_webhook_proto_rawDesc = "" +
 	"\rverify_secret\x18\x05 \x01(\tR\fverifySecret\x123\n" +
 	"\bmetadata\x18\x06 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12\x12\n" +
 	"\x04name\x18\a \x01(\tR\x04name\x12E\n" +
-	"\rverify_config\x18\b \x01(\v2 .ironflow.v1.WebhookVerifyConfigR\fverifyConfigJ\x04\b\x01\x10\x02R\x02id\"I\n" +
+	"\rverify_config\x18\b \x01(\v2 .ironflow.v1.WebhookVerifyConfigR\fverifyConfig\x12%\n" +
+	"\x0eschema_version\x18\t \x01(\x05R\rschemaVersionJ\x04\b\x01\x10\x02R\x02id\"I\n" +
 	"\x19ListWebhookSourcesRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
 	"\x06offset\x18\x02 \x01(\x05R\x06offset\"s\n" +
 	"\x1aListWebhookSourcesResponse\x124\n" +
 	"\asources\x18\x01 \x03(\v2\x1a.ironflow.v1.WebhookSourceR\asources\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x05R\n" +
-	"totalCount\"\xd8\x02\n" +
+	"totalCount\"\xff\x02\n" +
 	"\x1aUpdateWebhookSourceRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12#\n" +
@@ -1522,7 +1567,8 @@ const file_ironflow_v1_webhook_proto_rawDesc = "" +
 	"\x10verify_algorithm\x18\x04 \x01(\tR\x0fverifyAlgorithm\x123\n" +
 	"\bmetadata\x18\x05 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12E\n" +
 	"\rverify_config\x18\x06 \x01(\v2 .ironflow.v1.WebhookVerifyConfigR\fverifyConfig\x12J\n" +
-	"\x13expected_updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x11expectedUpdatedAt\"\xd9\x01\n" +
+	"\x13expected_updated_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x11expectedUpdatedAt\x12%\n" +
+	"\x0eschema_version\x18\b \x01(\x05R\rschemaVersion\"\xd9\x01\n" +
 	"\x1aRotateWebhookSecretRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12#\n" +
 	"\rverify_secret\x18\x02 \x01(\tR\fverifySecret\x12(\n" +

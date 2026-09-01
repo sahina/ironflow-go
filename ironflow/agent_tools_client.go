@@ -4,16 +4,16 @@ import "context"
 
 // VisibleAgentTool is an agent tool the current API key may invoke.
 type VisibleAgentTool struct {
-	QualifiedName   string   `json:"qualified_name"`
+	QualifiedName   string   `json:"qualifiedName"`
 	Description     string   `json:"description"`
-	InputSchemaJSON string   `json:"input_schema_json"`
-	RequiredScopes  []string `json:"required_scopes"`
+	InputSchemaJSON string   `json:"inputSchemaJson"`
+	RequiredScopes  []string `json:"requiredScopes"`
 }
 
 // ListAgentToolsResult contains visible tools and the reserved pagination cursor.
 type ListAgentToolsResult struct {
 	Tools      []VisibleAgentTool `json:"tools"`
-	NextCursor string             `json:"next_cursor"`
+	NextCursor string             `json:"nextCursor"`
 }
 
 // ListAgentTools lists agent tools visible to the current API key.

@@ -585,7 +585,7 @@ type streamJobReporter struct {
 }
 
 func (r *streamJobReporter) ReportCompleted(_ context.Context, jobID string, output any, _ []*StepResult) error {
-	outputStruct, err := anyToStruct(output)
+	outputStruct, outputValue, err := anyToPayload(output)
 	if err != nil {
 		r.logger.Warn("Failed to convert output to struct", "jobId", jobID, "error", err)
 	}
@@ -593,8 +593,9 @@ func (r *streamJobReporter) ReportCompleted(_ context.Context, jobID string, out
 	r.send(&ironflowv1.WorkerMessage{
 		Payload: &ironflowv1.WorkerMessage_JobCompleted{
 			JobCompleted: &ironflowv1.JobCompleted{
-				JobId:  jobID,
-				Output: outputStruct,
+				JobId:       jobID,
+				Output:      outputStruct,
+				OutputValue: outputValue,
 			},
 		},
 	})
@@ -613,8 +614,8 @@ func (r *streamJobReporter) ReportFailed(_ context.Context, jobID string, pushEr
 			DurationMs:      int32(s.Duration.Milliseconds()),
 		}
 		if s.Output != nil {
-			if out, convErr := anyToStruct(s.Output); convErr == nil {
-				ps.Output = out
+			if outStruct, outValue, convErr := anyToPayload(s.Output); convErr == nil {
+				ps.Output, ps.OutputValue = outStruct, outValue
 			}
 		}
 		if s.Error != nil {
@@ -794,14 +795,15 @@ func (r *streamStepReporter) ReportStepStarted(stepID, name, stepType string) {
 }
 
 func (r *streamStepReporter) ReportStepCompleted(stepID, name, stepType string, output any, durationMs int) {
-	outputStruct, _ := anyToStruct(output)
+	outputStruct, outputValue, _ := anyToPayload(output)
 	select {
 	case r.outCh <- &ironflowv1.WorkerMessage{
 		Payload: &ironflowv1.WorkerMessage_StepCompleted{
 			StepCompleted: &ironflowv1.StepCompleted{
-				StepId:     stepID,
-				Output:     outputStruct,
-				DurationMs: int32(durationMs),
+				StepId:      stepID,
+				Output:      outputStruct,
+				OutputValue: outputValue,
+				DurationMs:  int32(durationMs),
 			},
 		},
 	}:
@@ -855,7 +857,7 @@ func protoToJobAssignment(pa *ironflowv1.JobAssignment) (*jobAssignment, error) 
 	for _, cs := range pa.GetCompletedSteps() {
 		var output any
 		if cs.GetOutput() != nil {
-			output = cs.GetOutput().AsMap()
+			output = payloadAny(cs.GetOutput(), cs.GetOutputValue())
 		}
 		completedSteps = append(completedSteps, completedStep{
 			StepID: cs.GetStepId(),
@@ -908,29 +910,47 @@ func protoToJobAssignment(pa *ironflowv1.JobAssignment) (*jobAssignment, error) 
 }
 
 // anyToStruct converts an arbitrary Go value to a protobuf Struct.
-func anyToStruct(v any) (*structpb.Struct, error) {
+// anyToPayload splits a step or job output across the two fields that carry
+// it: an object goes in the Struct field exactly as before, anything else in
+// the companion Value field.
+//
+// It used to return only a Struct, which forced every output through
+// map[string]any -- so a handler returning [1,2,3] or "ok" had its output
+// dropped on the way out (#1963). Adding a second field rather than changing
+// the first keeps the wire compatible for readers that know only the original.
+func anyToPayload(v any) (*structpb.Struct, *structpb.Value, error) {
 	if v == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
-
-	// If it's already a map[string]any, use NewStruct directly
 	if m, ok := v.(map[string]any); ok {
-		return structpb.NewStruct(m)
+		s, err := structpb.NewStruct(m)
+		return s, nil, err
 	}
-
-	// Marshal to JSON and back to map
 	b, err := json.Marshal(v)
 	if err != nil {
-		return nil, fmt.Errorf("marshal to JSON: %w", err)
+		return nil, nil, fmt.Errorf("marshal to JSON: %w", err)
 	}
-
-	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
-		// If the value is not an object (e.g., a string or number), wrap it
-		m = map[string]any{"value": v}
+	var decoded any
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		return nil, nil, fmt.Errorf("unmarshal from JSON: %w", err)
 	}
+	if m, ok := decoded.(map[string]any); ok {
+		s, err := structpb.NewStruct(m)
+		return s, nil, err
+	}
+	val, err := structpb.NewValue(decoded)
+	return nil, val, err
+}
 
-	return structpb.NewStruct(m)
+// payloadAny reads whichever field carries a payload (#1963).
+func payloadAny(s *structpb.Struct, v *structpb.Value) any {
+	if v != nil {
+		return v.AsInterface()
+	}
+	if s != nil {
+		return s.AsMap()
+	}
+	return nil
 }
 
 // sdkStepTypeToProto maps SDK step type strings to proto StepType.

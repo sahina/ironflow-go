@@ -522,6 +522,11 @@ type TriggerRequest struct {
 	Event string `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
 	// Event payload
 	Data *structpb.Struct `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which data cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// data, so an object costs no extra bytes and old clients are
+	// unaffected.
+	DataValue *structpb.Value `protobuf:"bytes,6,opt,name=data_value,json=dataValue,proto3" json:"data_value,omitempty"`
 	// Optional deduplication key
 	IdempotencyKey string `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	// Optional metadata
@@ -572,6 +577,13 @@ func (x *TriggerRequest) GetEvent() string {
 func (x *TriggerRequest) GetData() *structpb.Struct {
 	if x != nil {
 		return x.Data
+	}
+	return nil
+}
+
+func (x *TriggerRequest) GetDataValue() *structpb.Value {
+	if x != nil {
+		return x.DataValue
 	}
 	return nil
 }
@@ -652,14 +664,30 @@ func (x *TriggerResponse) GetEventId() string {
 }
 
 type TriggerSyncRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Event          string                 `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
-	Data           *structpb.Struct       `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
-	IdempotencyKey string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Event string                 `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
+	Data  *structpb.Struct       `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which data cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// data, so an object costs no extra bytes and old clients are
+	// unaffected.
+	DataValue      *structpb.Value `protobuf:"bytes,6,opt,name=data_value,json=dataValue,proto3" json:"data_value,omitempty"`
+	IdempotencyKey string          `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	// Max wait time in ms (default: 30000)
 	TimeoutMs int32 `protobuf:"varint,4,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
 	// Optional metadata
-	Metadata      *structpb.Struct `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Metadata *structpb.Struct `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	// Event schema version (default 1). Matches TriggerRequest.version -- this
+	// path pinned to 1 until #1955 because the field was absent, which on a
+	// governed event name whose v1 schema had been dropped turned every sync
+	// emit into a 400.
+	//
+	// 7, not 6: #1979 took 6 for data_value on this message while #1955 was in
+	// flight. Both landed on tag 6 through a clean text merge (different lines,
+	// no textual conflict), which protoc rejects and a wire reader would not --
+	// a client setting data_value emits length-delimited bytes that an int32
+	// varint read would silently misparse.
+	Version       int32 `protobuf:"varint,7,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -708,6 +736,13 @@ func (x *TriggerSyncRequest) GetData() *structpb.Struct {
 	return nil
 }
 
+func (x *TriggerSyncRequest) GetDataValue() *structpb.Value {
+	if x != nil {
+		return x.DataValue
+	}
+	return nil
+}
+
 func (x *TriggerSyncRequest) GetIdempotencyKey() string {
 	if x != nil {
 		return x.IdempotencyKey
@@ -727,6 +762,13 @@ func (x *TriggerSyncRequest) GetMetadata() *structpb.Struct {
 		return x.Metadata
 	}
 	return nil
+}
+
+func (x *TriggerSyncRequest) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
 }
 
 type TriggerSyncResponse struct {
@@ -782,13 +824,22 @@ func (x *TriggerSyncResponse) GetEventId() string {
 }
 
 type RunResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RunId         string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
-	FunctionId    string                 `protobuf:"bytes,2,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
-	Status        RunStatus              `protobuf:"varint,3,opt,name=status,proto3,enum=ironflow.v1.RunStatus" json:"status,omitempty"`
-	Output        *structpb.Struct       `protobuf:"bytes,4,opt,name=output,proto3" json:"output,omitempty"`
-	Error         *Error                 `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
-	DurationMs    int32                  `protobuf:"varint,6,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	RunId      string                 `protobuf:"bytes,1,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	FunctionId string                 `protobuf:"bytes,2,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	Status     RunStatus              `protobuf:"varint,3,opt,name=status,proto3,enum=ironflow.v1.RunStatus" json:"status,omitempty"`
+	Output     *structpb.Struct       `protobuf:"bytes,4,opt,name=output,proto3" json:"output,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which output cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// output, so an object costs no extra bytes and old clients are
+	// unaffected.
+	OutputValue *structpb.Value `protobuf:"bytes,8,opt,name=output_value,json=outputValue,proto3" json:"output_value,omitempty"`
+	Error       *Error          `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
+	DurationMs  int32           `protobuf:"varint,6,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	// True when a synchronous call (TriggerSync, InvokeFunctionSync) stopped
+	// waiting before this run reached a terminal state.
+	// The run continues and status contains its last-known state.
+	WaitTimedOut  bool `protobuf:"varint,7,opt,name=wait_timed_out,json=waitTimedOut,proto3" json:"wait_timed_out,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -851,6 +902,13 @@ func (x *RunResult) GetOutput() *structpb.Struct {
 	return nil
 }
 
+func (x *RunResult) GetOutputValue() *structpb.Value {
+	if x != nil {
+		return x.OutputValue
+	}
+	return nil
+}
+
 func (x *RunResult) GetError() *Error {
 	if x != nil {
 		return x.Error
@@ -865,6 +923,160 @@ func (x *RunResult) GetDurationMs() int32 {
 	return 0
 }
 
+func (x *RunResult) GetWaitTimedOut() bool {
+	if x != nil {
+		return x.WaitTimedOut
+	}
+	return false
+}
+
+type InvokeFunctionSyncRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// ID of the function to invoke. Not an event name — no trigger matching runs.
+	FunctionId string `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	// Function input payload
+	Data *structpb.Struct `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which data cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// data, so an object costs no extra bytes and old clients are
+	// unaffected.
+	DataValue *structpb.Value `protobuf:"bytes,6,opt,name=data_value,json=dataValue,proto3" json:"data_value,omitempty"`
+	// Max wait time in ms (default: 30000).
+	//
+	// SDK authors: this is the ONLY timeout that belongs on this call. Do not
+	// implement it as an HTTP/fetch abort. Cancelling the request cancels the
+	// RUN (see the rpc comment), so a transport deadline shorter than timeout_ms
+	// kills the run on every timeout and makes wait_timed_out unreachable. Send
+	// the budget here and leave the transport deadline longer — the browser
+	// emitSync precedent is timeout + 5000 — or absent.
+	TimeoutMs int32 `protobuf:"varint,3,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
+	// Optional deduplication key. A repeat call with the same key returns the
+	// original run instead of creating a second one.
+	IdempotencyKey string `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	// Optional metadata stored on the generated event
+	Metadata      *structpb.Struct `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InvokeFunctionSyncRequest) Reset() {
+	*x = InvokeFunctionSyncRequest{}
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvokeFunctionSyncRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvokeFunctionSyncRequest) ProtoMessage() {}
+
+func (x *InvokeFunctionSyncRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvokeFunctionSyncRequest.ProtoReflect.Descriptor instead.
+func (*InvokeFunctionSyncRequest) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *InvokeFunctionSyncRequest) GetFunctionId() string {
+	if x != nil {
+		return x.FunctionId
+	}
+	return ""
+}
+
+func (x *InvokeFunctionSyncRequest) GetData() *structpb.Struct {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *InvokeFunctionSyncRequest) GetDataValue() *structpb.Value {
+	if x != nil {
+		return x.DataValue
+	}
+	return nil
+}
+
+func (x *InvokeFunctionSyncRequest) GetTimeoutMs() int32 {
+	if x != nil {
+		return x.TimeoutMs
+	}
+	return 0
+}
+
+func (x *InvokeFunctionSyncRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *InvokeFunctionSyncRequest) GetMetadata() *structpb.Struct {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+type InvokeFunctionSyncResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Exactly one run. Singular by design: the single-result guarantee is the
+	// reason this RPC exists alongside TriggerSync's repeated results.
+	Result        *RunResult `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InvokeFunctionSyncResponse) Reset() {
+	*x = InvokeFunctionSyncResponse{}
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvokeFunctionSyncResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvokeFunctionSyncResponse) ProtoMessage() {}
+
+func (x *InvokeFunctionSyncResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvokeFunctionSyncResponse.ProtoReflect.Descriptor instead.
+func (*InvokeFunctionSyncResponse) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *InvokeFunctionSyncResponse) GetResult() *RunResult {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
 type TriggerBatchRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Events        []*TriggerRequest      `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
@@ -874,7 +1086,7 @@ type TriggerBatchRequest struct {
 
 func (x *TriggerBatchRequest) Reset() {
 	*x = TriggerBatchRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[12]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -886,7 +1098,7 @@ func (x *TriggerBatchRequest) String() string {
 func (*TriggerBatchRequest) ProtoMessage() {}
 
 func (x *TriggerBatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[12]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -899,7 +1111,7 @@ func (x *TriggerBatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerBatchRequest.ProtoReflect.Descriptor instead.
 func (*TriggerBatchRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{12}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *TriggerBatchRequest) GetEvents() []*TriggerRequest {
@@ -918,7 +1130,7 @@ type TriggerBatchResponse struct {
 
 func (x *TriggerBatchResponse) Reset() {
 	*x = TriggerBatchResponse{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[13]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -930,7 +1142,7 @@ func (x *TriggerBatchResponse) String() string {
 func (*TriggerBatchResponse) ProtoMessage() {}
 
 func (x *TriggerBatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[13]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -943,7 +1155,7 @@ func (x *TriggerBatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerBatchResponse.ProtoReflect.Descriptor instead.
 func (*TriggerBatchResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{13}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *TriggerBatchResponse) GetResults() []*TriggerResponse {
@@ -962,7 +1174,7 @@ type GetRunRequest struct {
 
 func (x *GetRunRequest) Reset() {
 	*x = GetRunRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[14]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -974,7 +1186,7 @@ func (x *GetRunRequest) String() string {
 func (*GetRunRequest) ProtoMessage() {}
 
 func (x *GetRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[14]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -987,7 +1199,7 @@ func (x *GetRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRunRequest.ProtoReflect.Descriptor instead.
 func (*GetRunRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{14}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GetRunRequest) GetId() string {
@@ -1016,7 +1228,7 @@ type ListRunsRequest struct {
 
 func (x *ListRunsRequest) Reset() {
 	*x = ListRunsRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[15]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1028,7 +1240,7 @@ func (x *ListRunsRequest) String() string {
 func (*ListRunsRequest) ProtoMessage() {}
 
 func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[15]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1041,7 +1253,7 @@ func (x *ListRunsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRunsRequest.ProtoReflect.Descriptor instead.
 func (*ListRunsRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{15}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListRunsRequest) GetFunctionId() string {
@@ -1097,7 +1309,7 @@ type ListRunsResponse struct {
 
 func (x *ListRunsResponse) Reset() {
 	*x = ListRunsResponse{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[16]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1109,7 +1321,7 @@ func (x *ListRunsResponse) String() string {
 func (*ListRunsResponse) ProtoMessage() {}
 
 func (x *ListRunsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[16]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1122,7 +1334,7 @@ func (x *ListRunsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRunsResponse.ProtoReflect.Descriptor instead.
 func (*ListRunsResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{16}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListRunsResponse) GetRuns() []*Run {
@@ -1155,7 +1367,7 @@ type GetRunStepsRequest struct {
 
 func (x *GetRunStepsRequest) Reset() {
 	*x = GetRunStepsRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[17]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1167,7 +1379,7 @@ func (x *GetRunStepsRequest) String() string {
 func (*GetRunStepsRequest) ProtoMessage() {}
 
 func (x *GetRunStepsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[17]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1180,7 +1392,7 @@ func (x *GetRunStepsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRunStepsRequest.ProtoReflect.Descriptor instead.
 func (*GetRunStepsRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{17}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetRunStepsRequest) GetRunId() string {
@@ -1199,7 +1411,7 @@ type GetRunStepsResponse struct {
 
 func (x *GetRunStepsResponse) Reset() {
 	*x = GetRunStepsResponse{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[18]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1211,7 +1423,7 @@ func (x *GetRunStepsResponse) String() string {
 func (*GetRunStepsResponse) ProtoMessage() {}
 
 func (x *GetRunStepsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[18]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1224,7 +1436,7 @@ func (x *GetRunStepsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRunStepsResponse.ProtoReflect.Descriptor instead.
 func (*GetRunStepsResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{18}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GetRunStepsResponse) GetSteps() []*Step {
@@ -1244,7 +1456,7 @@ type CancelRunRequest struct {
 
 func (x *CancelRunRequest) Reset() {
 	*x = CancelRunRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[19]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1256,7 +1468,7 @@ func (x *CancelRunRequest) String() string {
 func (*CancelRunRequest) ProtoMessage() {}
 
 func (x *CancelRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[19]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1269,7 +1481,7 @@ func (x *CancelRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelRunRequest.ProtoReflect.Descriptor instead.
 func (*CancelRunRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{19}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *CancelRunRequest) GetId() string {
@@ -1291,6 +1503,11 @@ type PatchStepRequest struct {
 	StepId string                 `protobuf:"bytes,1,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
 	// New output value
 	Output *structpb.Struct `protobuf:"bytes,2,opt,name=output,proto3" json:"output,omitempty"`
+	// Set ONLY when the payload is not a JSON object, which output cannot
+	// represent (#1963). Readers take this when present and fall back to
+	// output, so an object costs no extra bytes and old clients are
+	// unaffected.
+	OutputValue *structpb.Value `protobuf:"bytes,4,opt,name=output_value,json=outputValue,proto3" json:"output_value,omitempty"`
 	// Audit reason
 	Reason        string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1299,7 +1516,7 @@ type PatchStepRequest struct {
 
 func (x *PatchStepRequest) Reset() {
 	*x = PatchStepRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[20]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1311,7 +1528,7 @@ func (x *PatchStepRequest) String() string {
 func (*PatchStepRequest) ProtoMessage() {}
 
 func (x *PatchStepRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[20]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1324,7 +1541,7 @@ func (x *PatchStepRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PatchStepRequest.ProtoReflect.Descriptor instead.
 func (*PatchStepRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{20}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *PatchStepRequest) GetStepId() string {
@@ -1337,6 +1554,13 @@ func (x *PatchStepRequest) GetStepId() string {
 func (x *PatchStepRequest) GetOutput() *structpb.Struct {
 	if x != nil {
 		return x.Output
+	}
+	return nil
+}
+
+func (x *PatchStepRequest) GetOutputValue() *structpb.Value {
+	if x != nil {
+		return x.OutputValue
 	}
 	return nil
 }
@@ -1359,7 +1583,7 @@ type ResumeRunRequest struct {
 
 func (x *ResumeRunRequest) Reset() {
 	*x = ResumeRunRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[21]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1371,7 +1595,7 @@ func (x *ResumeRunRequest) String() string {
 func (*ResumeRunRequest) ProtoMessage() {}
 
 func (x *ResumeRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[21]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1384,7 +1608,7 @@ func (x *ResumeRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeRunRequest.ProtoReflect.Descriptor instead.
 func (*ResumeRunRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{21}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ResumeRunRequest) GetRunId() string {
@@ -1410,7 +1634,7 @@ type PauseRunRequest struct {
 
 func (x *PauseRunRequest) Reset() {
 	*x = PauseRunRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[22]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1422,7 +1646,7 @@ func (x *PauseRunRequest) String() string {
 func (*PauseRunRequest) ProtoMessage() {}
 
 func (x *PauseRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[22]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1435,7 +1659,7 @@ func (x *PauseRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PauseRunRequest.ProtoReflect.Descriptor instead.
 func (*PauseRunRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{22}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *PauseRunRequest) GetRunId() string {
@@ -1455,7 +1679,7 @@ type PauseRunResponse struct {
 
 func (x *PauseRunResponse) Reset() {
 	*x = PauseRunResponse{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[23]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1467,7 +1691,7 @@ func (x *PauseRunResponse) String() string {
 func (*PauseRunResponse) ProtoMessage() {}
 
 func (x *PauseRunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[23]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1480,7 +1704,7 @@ func (x *PauseRunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PauseRunResponse.ProtoReflect.Descriptor instead.
 func (*PauseRunResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{23}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *PauseRunResponse) GetStatus() string {
@@ -1499,7 +1723,7 @@ type GetPausedStateRequest struct {
 
 func (x *GetPausedStateRequest) Reset() {
 	*x = GetPausedStateRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[24]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1511,7 +1735,7 @@ func (x *GetPausedStateRequest) String() string {
 func (*GetPausedStateRequest) ProtoMessage() {}
 
 func (x *GetPausedStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[24]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1524,7 +1748,7 @@ func (x *GetPausedStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPausedStateRequest.ProtoReflect.Descriptor instead.
 func (*GetPausedStateRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{24}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetPausedStateRequest) GetRunId() string {
@@ -1547,7 +1771,7 @@ type GetPausedStateResponse struct {
 
 func (x *GetPausedStateResponse) Reset() {
 	*x = GetPausedStateResponse{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[25]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1559,7 +1783,7 @@ func (x *GetPausedStateResponse) String() string {
 func (*GetPausedStateResponse) ProtoMessage() {}
 
 func (x *GetPausedStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[25]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1572,7 +1796,7 @@ func (x *GetPausedStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPausedStateResponse.ProtoReflect.Descriptor instead.
 func (*GetPausedStateResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{25}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *GetPausedStateResponse) GetSteps() []*PausedStepInfo {
@@ -1618,7 +1842,7 @@ type PausedStepInfo struct {
 
 func (x *PausedStepInfo) Reset() {
 	*x = PausedStepInfo{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[26]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1630,7 +1854,7 @@ func (x *PausedStepInfo) String() string {
 func (*PausedStepInfo) ProtoMessage() {}
 
 func (x *PausedStepInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[26]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1643,7 +1867,7 @@ func (x *PausedStepInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PausedStepInfo.ProtoReflect.Descriptor instead.
 func (*PausedStepInfo) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{26}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *PausedStepInfo) GetId() string {
@@ -1715,7 +1939,7 @@ type InjectStepOutputRequest struct {
 
 func (x *InjectStepOutputRequest) Reset() {
 	*x = InjectStepOutputRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[27]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1727,7 +1951,7 @@ func (x *InjectStepOutputRequest) String() string {
 func (*InjectStepOutputRequest) ProtoMessage() {}
 
 func (x *InjectStepOutputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[27]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1740,7 +1964,7 @@ func (x *InjectStepOutputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InjectStepOutputRequest.ProtoReflect.Descriptor instead.
 func (*InjectStepOutputRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{27}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *InjectStepOutputRequest) GetRunId() string {
@@ -1781,7 +2005,7 @@ type InjectStepOutputResponse struct {
 
 func (x *InjectStepOutputResponse) Reset() {
 	*x = InjectStepOutputResponse{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[28]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1793,7 +2017,7 @@ func (x *InjectStepOutputResponse) String() string {
 func (*InjectStepOutputResponse) ProtoMessage() {}
 
 func (x *InjectStepOutputResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[28]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1806,7 +2030,7 @@ func (x *InjectStepOutputResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InjectStepOutputResponse.ProtoReflect.Descriptor instead.
 func (*InjectStepOutputResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{28}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *InjectStepOutputResponse) GetStepId() string {
@@ -1831,7 +2055,7 @@ type HealthRequest struct {
 
 func (x *HealthRequest) Reset() {
 	*x = HealthRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[29]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1843,7 +2067,7 @@ func (x *HealthRequest) String() string {
 func (*HealthRequest) ProtoMessage() {}
 
 func (x *HealthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[29]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1856,7 +2080,7 @@ func (x *HealthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthRequest.ProtoReflect.Descriptor instead.
 func (*HealthRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{29}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{31}
 }
 
 type HealthResponse struct {
@@ -1871,7 +2095,7 @@ type HealthResponse struct {
 
 func (x *HealthResponse) Reset() {
 	*x = HealthResponse{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[30]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1883,7 +2107,7 @@ func (x *HealthResponse) String() string {
 func (*HealthResponse) ProtoMessage() {}
 
 func (x *HealthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[30]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1896,7 +2120,7 @@ func (x *HealthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
 func (*HealthResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{30}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *HealthResponse) GetStatus() string {
@@ -1930,7 +2154,7 @@ type ComponentHealth struct {
 
 func (x *ComponentHealth) Reset() {
 	*x = ComponentHealth{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[31]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1942,7 +2166,7 @@ func (x *ComponentHealth) String() string {
 func (*ComponentHealth) ProtoMessage() {}
 
 func (x *ComponentHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[31]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1955,7 +2179,7 @@ func (x *ComponentHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComponentHealth.ProtoReflect.Descriptor instead.
 func (*ComponentHealth) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{31}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ComponentHealth) GetStatus() string {
@@ -1980,7 +2204,7 @@ type InfoRequest struct {
 
 func (x *InfoRequest) Reset() {
 	*x = InfoRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[32]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1992,7 +2216,7 @@ func (x *InfoRequest) String() string {
 func (*InfoRequest) ProtoMessage() {}
 
 func (x *InfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[32]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2005,7 +2229,7 @@ func (x *InfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InfoRequest.ProtoReflect.Descriptor instead.
 func (*InfoRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{32}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{34}
 }
 
 type InfoResponse struct {
@@ -2022,7 +2246,7 @@ type InfoResponse struct {
 
 func (x *InfoResponse) Reset() {
 	*x = InfoResponse{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[33]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2034,7 +2258,7 @@ func (x *InfoResponse) String() string {
 func (*InfoResponse) ProtoMessage() {}
 
 func (x *InfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[33]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2047,7 +2271,7 @@ func (x *InfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InfoResponse.ProtoReflect.Descriptor instead.
 func (*InfoResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{33}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *InfoResponse) GetVersion() string {
@@ -2110,7 +2334,7 @@ type FunctionHistoryEntry struct {
 
 func (x *FunctionHistoryEntry) Reset() {
 	*x = FunctionHistoryEntry{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[34]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2122,7 +2346,7 @@ func (x *FunctionHistoryEntry) String() string {
 func (*FunctionHistoryEntry) ProtoMessage() {}
 
 func (x *FunctionHistoryEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[34]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2135,7 +2359,7 @@ func (x *FunctionHistoryEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FunctionHistoryEntry.ProtoReflect.Descriptor instead.
 func (*FunctionHistoryEntry) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{34}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *FunctionHistoryEntry) GetEventId() string {
@@ -2206,7 +2430,7 @@ type ListFunctionHistoryRequest struct {
 
 func (x *ListFunctionHistoryRequest) Reset() {
 	*x = ListFunctionHistoryRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[35]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2218,7 +2442,7 @@ func (x *ListFunctionHistoryRequest) String() string {
 func (*ListFunctionHistoryRequest) ProtoMessage() {}
 
 func (x *ListFunctionHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[35]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2231,7 +2455,7 @@ func (x *ListFunctionHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFunctionHistoryRequest.ProtoReflect.Descriptor instead.
 func (*ListFunctionHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{35}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ListFunctionHistoryRequest) GetFunctionId() string {
@@ -2265,7 +2489,7 @@ type ListFunctionHistoryResponse struct {
 
 func (x *ListFunctionHistoryResponse) Reset() {
 	*x = ListFunctionHistoryResponse{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[36]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2277,7 +2501,7 @@ func (x *ListFunctionHistoryResponse) String() string {
 func (*ListFunctionHistoryResponse) ProtoMessage() {}
 
 func (x *ListFunctionHistoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[36]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2290,7 +2514,7 @@ func (x *ListFunctionHistoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFunctionHistoryResponse.ProtoReflect.Descriptor instead.
 func (*ListFunctionHistoryResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{36}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ListFunctionHistoryResponse) GetEntries() []*FunctionHistoryEntry {
@@ -2317,7 +2541,7 @@ type GetFunctionAtVersionRequest struct {
 
 func (x *GetFunctionAtVersionRequest) Reset() {
 	*x = GetFunctionAtVersionRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[37]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2329,7 +2553,7 @@ func (x *GetFunctionAtVersionRequest) String() string {
 func (*GetFunctionAtVersionRequest) ProtoMessage() {}
 
 func (x *GetFunctionAtVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[37]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2342,7 +2566,7 @@ func (x *GetFunctionAtVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFunctionAtVersionRequest.ProtoReflect.Descriptor instead.
 func (*GetFunctionAtVersionRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{37}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *GetFunctionAtVersionRequest) GetFunctionId() string {
@@ -2368,7 +2592,7 @@ type GetFunctionAtVersionResponse struct {
 
 func (x *GetFunctionAtVersionResponse) Reset() {
 	*x = GetFunctionAtVersionResponse{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[38]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2380,7 +2604,7 @@ func (x *GetFunctionAtVersionResponse) String() string {
 func (*GetFunctionAtVersionResponse) ProtoMessage() {}
 
 func (x *GetFunctionAtVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[38]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2393,7 +2617,7 @@ func (x *GetFunctionAtVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFunctionAtVersionResponse.ProtoReflect.Descriptor instead.
 func (*GetFunctionAtVersionResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{38}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *GetFunctionAtVersionResponse) GetEntry() *FunctionHistoryEntry {
@@ -2414,7 +2638,7 @@ type RollbackFunctionRequest struct {
 
 func (x *RollbackFunctionRequest) Reset() {
 	*x = RollbackFunctionRequest{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[39]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2426,7 +2650,7 @@ func (x *RollbackFunctionRequest) String() string {
 func (*RollbackFunctionRequest) ProtoMessage() {}
 
 func (x *RollbackFunctionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[39]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2439,7 +2663,7 @@ func (x *RollbackFunctionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackFunctionRequest.ProtoReflect.Descriptor instead.
 func (*RollbackFunctionRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{39}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *RollbackFunctionRequest) GetFunctionId() string {
@@ -2472,7 +2696,7 @@ type RollbackFunctionResponse struct {
 
 func (x *RollbackFunctionResponse) Reset() {
 	*x = RollbackFunctionResponse{}
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[40]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2484,7 +2708,7 @@ func (x *RollbackFunctionResponse) String() string {
 func (*RollbackFunctionResponse) ProtoMessage() {}
 
 func (x *RollbackFunctionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_ironflow_proto_msgTypes[40]
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2497,7 +2721,7 @@ func (x *RollbackFunctionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackFunctionResponse.ProtoReflect.Descriptor instead.
 func (*RollbackFunctionResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{40}
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *RollbackFunctionResponse) GetFunction() *Function {
@@ -2551,35 +2775,54 @@ const file_ironflow_v1_ironflow_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x123\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1b.ironflow.v1.FunctionStatusR\x06status\"'\n" +
 	"\x15DeleteFunctionRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xcb\x01\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x82\x02\n" +
 	"\x0eTriggerRequest\x12\x14\n" +
 	"\x05event\x18\x01 \x01(\tR\x05event\x12+\n" +
-	"\x04data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x04data\x12'\n" +
+	"\x04data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x04data\x125\n" +
+	"\n" +
+	"data_value\x18\x06 \x01(\v2\x16.google.protobuf.ValueR\tdataValue\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x123\n" +
 	"\bmetadata\x18\x04 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12\x18\n" +
 	"\aversion\x18\x05 \x01(\x05R\aversion\"E\n" +
 	"\x0fTriggerResponse\x12\x17\n" +
 	"\arun_ids\x18\x01 \x03(\tR\x06runIds\x12\x19\n" +
-	"\bevent_id\x18\x02 \x01(\tR\aeventId\"\xd4\x01\n" +
+	"\bevent_id\x18\x02 \x01(\tR\aeventId\"\xa5\x02\n" +
 	"\x12TriggerSyncRequest\x12\x14\n" +
 	"\x05event\x18\x01 \x01(\tR\x05event\x12+\n" +
-	"\x04data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x04data\x12'\n" +
+	"\x04data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x04data\x125\n" +
+	"\n" +
+	"data_value\x18\x06 \x01(\v2\x16.google.protobuf.ValueR\tdataValue\x12'\n" +
 	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12\x1d\n" +
 	"\n" +
 	"timeout_ms\x18\x04 \x01(\x05R\ttimeoutMs\x123\n" +
-	"\bmetadata\x18\x05 \x01(\v2\x17.google.protobuf.StructR\bmetadata\"b\n" +
+	"\bmetadata\x18\x05 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12\x18\n" +
+	"\aversion\x18\a \x01(\x05R\aversion\"b\n" +
 	"\x13TriggerSyncResponse\x120\n" +
 	"\aresults\x18\x01 \x03(\v2\x16.ironflow.v1.RunResultR\aresults\x12\x19\n" +
-	"\bevent_id\x18\x02 \x01(\tR\aeventId\"\xef\x01\n" +
+	"\bevent_id\x18\x02 \x01(\tR\aeventId\"\xd0\x02\n" +
 	"\tRunResult\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1f\n" +
 	"\vfunction_id\x18\x02 \x01(\tR\n" +
 	"functionId\x12.\n" +
 	"\x06status\x18\x03 \x01(\x0e2\x16.ironflow.v1.RunStatusR\x06status\x12/\n" +
-	"\x06output\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x06output\x12(\n" +
+	"\x06output\x18\x04 \x01(\v2\x17.google.protobuf.StructR\x06output\x129\n" +
+	"\foutput_value\x18\b \x01(\v2\x16.google.protobuf.ValueR\voutputValue\x12(\n" +
 	"\x05error\x18\x05 \x01(\v2\x12.ironflow.v1.ErrorR\x05error\x12\x1f\n" +
 	"\vduration_ms\x18\x06 \x01(\x05R\n" +
-	"durationMs\"J\n" +
+	"durationMs\x12$\n" +
+	"\x0ewait_timed_out\x18\a \x01(\bR\fwaitTimedOut\"\x9d\x02\n" +
+	"\x19InvokeFunctionSyncRequest\x12\x1f\n" +
+	"\vfunction_id\x18\x01 \x01(\tR\n" +
+	"functionId\x12+\n" +
+	"\x04data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x04data\x125\n" +
+	"\n" +
+	"data_value\x18\x06 \x01(\v2\x16.google.protobuf.ValueR\tdataValue\x12\x1d\n" +
+	"\n" +
+	"timeout_ms\x18\x03 \x01(\x05R\ttimeoutMs\x12'\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x123\n" +
+	"\bmetadata\x18\x05 \x01(\v2\x17.google.protobuf.StructR\bmetadata\"L\n" +
+	"\x1aInvokeFunctionSyncResponse\x12.\n" +
+	"\x06result\x18\x01 \x01(\v2\x16.ironflow.v1.RunResultR\x06result\"J\n" +
 	"\x13TriggerBatchRequest\x123\n" +
 	"\x06events\x18\x01 \x03(\v2\x1b.ironflow.v1.TriggerRequestR\x06events\"N\n" +
 	"\x14TriggerBatchResponse\x126\n" +
@@ -2606,10 +2849,11 @@ const file_ironflow_v1_ironflow_proto_rawDesc = "" +
 	"\x05steps\x18\x01 \x03(\v2\x11.ironflow.v1.StepR\x05steps\":\n" +
 	"\x10CancelRunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"t\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xaf\x01\n" +
 	"\x10PatchStepRequest\x12\x17\n" +
 	"\astep_id\x18\x01 \x01(\tR\x06stepId\x12/\n" +
-	"\x06output\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06output\x12\x16\n" +
+	"\x06output\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06output\x129\n" +
+	"\foutput_value\x18\x04 \x01(\v2\x16.google.protobuf.ValueR\voutputValue\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\"F\n" +
 	"\x10ResumeRunRequest\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x1b\n" +
@@ -2698,7 +2942,7 @@ const file_ironflow_v1_ironflow_proto_rawDesc = "" +
 	"\aversion\x18\x02 \x01(\x03R\aversion\x12#\n" +
 	"\rchange_reason\x18\x03 \x01(\tR\fchangeReason\"M\n" +
 	"\x18RollbackFunctionResponse\x121\n" +
-	"\bfunction\x18\x01 \x01(\v2\x15.ironflow.v1.FunctionR\bfunction2\xdb\x0e\n" +
+	"\bfunction\x18\x01 \x01(\v2\x15.ironflow.v1.FunctionR\bfunction2\xc2\x0f\n" +
 	"\x0fIronflowService\x12_\n" +
 	"\x10RegisterFunction\x12$.ironflow.v1.RegisterFunctionRequest\x1a%.ironflow.v1.RegisterFunctionResponse\x12J\n" +
 	"\vGetFunction\x12\x1f.ironflow.v1.GetFunctionRequest\x1a\x15.ironflow.v1.Function\"\x03\x90\x02\x01\x12[\n" +
@@ -2710,7 +2954,8 @@ const file_ironflow_v1_ironflow_proto_rawDesc = "" +
 	"\x10RollbackFunction\x12$.ironflow.v1.RollbackFunctionRequest\x1a%.ironflow.v1.RollbackFunctionResponse\x12D\n" +
 	"\aTrigger\x12\x1b.ironflow.v1.TriggerRequest\x1a\x1c.ironflow.v1.TriggerResponse\x12A\n" +
 	"\x04Emit\x12\x1b.ironflow.v1.TriggerRequest\x1a\x1c.ironflow.v1.TriggerResponse\x12P\n" +
-	"\vTriggerSync\x12\x1f.ironflow.v1.TriggerSyncRequest\x1a .ironflow.v1.TriggerSyncResponse\x12S\n" +
+	"\vTriggerSync\x12\x1f.ironflow.v1.TriggerSyncRequest\x1a .ironflow.v1.TriggerSyncResponse\x12e\n" +
+	"\x12InvokeFunctionSync\x12&.ironflow.v1.InvokeFunctionSyncRequest\x1a'.ironflow.v1.InvokeFunctionSyncResponse\x12S\n" +
 	"\fTriggerBatch\x12 .ironflow.v1.TriggerBatchRequest\x1a!.ironflow.v1.TriggerBatchResponse\x12;\n" +
 	"\x06GetRun\x12\x1a.ironflow.v1.GetRunRequest\x1a\x10.ironflow.v1.Run\"\x03\x90\x02\x01\x12L\n" +
 	"\bListRuns\x12\x1c.ironflow.v1.ListRunsRequest\x1a\x1d.ironflow.v1.ListRunsResponse\"\x03\x90\x02\x01\x12U\n" +
@@ -2736,7 +2981,7 @@ func file_ironflow_v1_ironflow_proto_rawDescGZIP() []byte {
 	return file_ironflow_v1_ironflow_proto_rawDescData
 }
 
-var file_ironflow_v1_ironflow_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_ironflow_v1_ironflow_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_ironflow_v1_ironflow_proto_goTypes = []any{
 	(*RegisterFunctionRequest)(nil),      // 0: ironflow.v1.RegisterFunctionRequest
 	(*RegisterFunctionResponse)(nil),     // 1: ironflow.v1.RegisterFunctionResponse
@@ -2750,142 +2995,155 @@ var file_ironflow_v1_ironflow_proto_goTypes = []any{
 	(*TriggerSyncRequest)(nil),           // 9: ironflow.v1.TriggerSyncRequest
 	(*TriggerSyncResponse)(nil),          // 10: ironflow.v1.TriggerSyncResponse
 	(*RunResult)(nil),                    // 11: ironflow.v1.RunResult
-	(*TriggerBatchRequest)(nil),          // 12: ironflow.v1.TriggerBatchRequest
-	(*TriggerBatchResponse)(nil),         // 13: ironflow.v1.TriggerBatchResponse
-	(*GetRunRequest)(nil),                // 14: ironflow.v1.GetRunRequest
-	(*ListRunsRequest)(nil),              // 15: ironflow.v1.ListRunsRequest
-	(*ListRunsResponse)(nil),             // 16: ironflow.v1.ListRunsResponse
-	(*GetRunStepsRequest)(nil),           // 17: ironflow.v1.GetRunStepsRequest
-	(*GetRunStepsResponse)(nil),          // 18: ironflow.v1.GetRunStepsResponse
-	(*CancelRunRequest)(nil),             // 19: ironflow.v1.CancelRunRequest
-	(*PatchStepRequest)(nil),             // 20: ironflow.v1.PatchStepRequest
-	(*ResumeRunRequest)(nil),             // 21: ironflow.v1.ResumeRunRequest
-	(*PauseRunRequest)(nil),              // 22: ironflow.v1.PauseRunRequest
-	(*PauseRunResponse)(nil),             // 23: ironflow.v1.PauseRunResponse
-	(*GetPausedStateRequest)(nil),        // 24: ironflow.v1.GetPausedStateRequest
-	(*GetPausedStateResponse)(nil),       // 25: ironflow.v1.GetPausedStateResponse
-	(*PausedStepInfo)(nil),               // 26: ironflow.v1.PausedStepInfo
-	(*InjectStepOutputRequest)(nil),      // 27: ironflow.v1.InjectStepOutputRequest
-	(*InjectStepOutputResponse)(nil),     // 28: ironflow.v1.InjectStepOutputResponse
-	(*HealthRequest)(nil),                // 29: ironflow.v1.HealthRequest
-	(*HealthResponse)(nil),               // 30: ironflow.v1.HealthResponse
-	(*ComponentHealth)(nil),              // 31: ironflow.v1.ComponentHealth
-	(*InfoRequest)(nil),                  // 32: ironflow.v1.InfoRequest
-	(*InfoResponse)(nil),                 // 33: ironflow.v1.InfoResponse
-	(*FunctionHistoryEntry)(nil),         // 34: ironflow.v1.FunctionHistoryEntry
-	(*ListFunctionHistoryRequest)(nil),   // 35: ironflow.v1.ListFunctionHistoryRequest
-	(*ListFunctionHistoryResponse)(nil),  // 36: ironflow.v1.ListFunctionHistoryResponse
-	(*GetFunctionAtVersionRequest)(nil),  // 37: ironflow.v1.GetFunctionAtVersionRequest
-	(*GetFunctionAtVersionResponse)(nil), // 38: ironflow.v1.GetFunctionAtVersionResponse
-	(*RollbackFunctionRequest)(nil),      // 39: ironflow.v1.RollbackFunctionRequest
-	(*RollbackFunctionResponse)(nil),     // 40: ironflow.v1.RollbackFunctionResponse
-	nil,                                  // 41: ironflow.v1.HealthResponse.ComponentsEntry
-	(*Trigger)(nil),                      // 42: ironflow.v1.Trigger
-	(*RetryConfig)(nil),                  // 43: ironflow.v1.RetryConfig
-	(*ConcurrencyConfig)(nil),            // 44: ironflow.v1.ConcurrencyConfig
-	(ExecutionMode)(0),                   // 45: ironflow.v1.ExecutionMode
-	(*structpb.Struct)(nil),              // 46: google.protobuf.Struct
-	(*DebounceConfig)(nil),               // 47: ironflow.v1.DebounceConfig
-	(*CancelOnSpec)(nil),                 // 48: ironflow.v1.CancelOnSpec
-	(*Function)(nil),                     // 49: ironflow.v1.Function
-	(FunctionStatus)(0),                  // 50: ironflow.v1.FunctionStatus
-	(RunStatus)(0),                       // 51: ironflow.v1.RunStatus
-	(*Error)(nil),                        // 52: ironflow.v1.Error
-	(*timestamppb.Timestamp)(nil),        // 53: google.protobuf.Timestamp
-	(*Run)(nil),                          // 54: ironflow.v1.Run
-	(*Step)(nil),                         // 55: ironflow.v1.Step
-	(*emptypb.Empty)(nil),                // 56: google.protobuf.Empty
+	(*InvokeFunctionSyncRequest)(nil),    // 12: ironflow.v1.InvokeFunctionSyncRequest
+	(*InvokeFunctionSyncResponse)(nil),   // 13: ironflow.v1.InvokeFunctionSyncResponse
+	(*TriggerBatchRequest)(nil),          // 14: ironflow.v1.TriggerBatchRequest
+	(*TriggerBatchResponse)(nil),         // 15: ironflow.v1.TriggerBatchResponse
+	(*GetRunRequest)(nil),                // 16: ironflow.v1.GetRunRequest
+	(*ListRunsRequest)(nil),              // 17: ironflow.v1.ListRunsRequest
+	(*ListRunsResponse)(nil),             // 18: ironflow.v1.ListRunsResponse
+	(*GetRunStepsRequest)(nil),           // 19: ironflow.v1.GetRunStepsRequest
+	(*GetRunStepsResponse)(nil),          // 20: ironflow.v1.GetRunStepsResponse
+	(*CancelRunRequest)(nil),             // 21: ironflow.v1.CancelRunRequest
+	(*PatchStepRequest)(nil),             // 22: ironflow.v1.PatchStepRequest
+	(*ResumeRunRequest)(nil),             // 23: ironflow.v1.ResumeRunRequest
+	(*PauseRunRequest)(nil),              // 24: ironflow.v1.PauseRunRequest
+	(*PauseRunResponse)(nil),             // 25: ironflow.v1.PauseRunResponse
+	(*GetPausedStateRequest)(nil),        // 26: ironflow.v1.GetPausedStateRequest
+	(*GetPausedStateResponse)(nil),       // 27: ironflow.v1.GetPausedStateResponse
+	(*PausedStepInfo)(nil),               // 28: ironflow.v1.PausedStepInfo
+	(*InjectStepOutputRequest)(nil),      // 29: ironflow.v1.InjectStepOutputRequest
+	(*InjectStepOutputResponse)(nil),     // 30: ironflow.v1.InjectStepOutputResponse
+	(*HealthRequest)(nil),                // 31: ironflow.v1.HealthRequest
+	(*HealthResponse)(nil),               // 32: ironflow.v1.HealthResponse
+	(*ComponentHealth)(nil),              // 33: ironflow.v1.ComponentHealth
+	(*InfoRequest)(nil),                  // 34: ironflow.v1.InfoRequest
+	(*InfoResponse)(nil),                 // 35: ironflow.v1.InfoResponse
+	(*FunctionHistoryEntry)(nil),         // 36: ironflow.v1.FunctionHistoryEntry
+	(*ListFunctionHistoryRequest)(nil),   // 37: ironflow.v1.ListFunctionHistoryRequest
+	(*ListFunctionHistoryResponse)(nil),  // 38: ironflow.v1.ListFunctionHistoryResponse
+	(*GetFunctionAtVersionRequest)(nil),  // 39: ironflow.v1.GetFunctionAtVersionRequest
+	(*GetFunctionAtVersionResponse)(nil), // 40: ironflow.v1.GetFunctionAtVersionResponse
+	(*RollbackFunctionRequest)(nil),      // 41: ironflow.v1.RollbackFunctionRequest
+	(*RollbackFunctionResponse)(nil),     // 42: ironflow.v1.RollbackFunctionResponse
+	nil,                                  // 43: ironflow.v1.HealthResponse.ComponentsEntry
+	(*Trigger)(nil),                      // 44: ironflow.v1.Trigger
+	(*RetryConfig)(nil),                  // 45: ironflow.v1.RetryConfig
+	(*ConcurrencyConfig)(nil),            // 46: ironflow.v1.ConcurrencyConfig
+	(ExecutionMode)(0),                   // 47: ironflow.v1.ExecutionMode
+	(*structpb.Struct)(nil),              // 48: google.protobuf.Struct
+	(*DebounceConfig)(nil),               // 49: ironflow.v1.DebounceConfig
+	(*CancelOnSpec)(nil),                 // 50: ironflow.v1.CancelOnSpec
+	(*Function)(nil),                     // 51: ironflow.v1.Function
+	(FunctionStatus)(0),                  // 52: ironflow.v1.FunctionStatus
+	(*structpb.Value)(nil),               // 53: google.protobuf.Value
+	(RunStatus)(0),                       // 54: ironflow.v1.RunStatus
+	(*Error)(nil),                        // 55: ironflow.v1.Error
+	(*timestamppb.Timestamp)(nil),        // 56: google.protobuf.Timestamp
+	(*Run)(nil),                          // 57: ironflow.v1.Run
+	(*Step)(nil),                         // 58: ironflow.v1.Step
+	(*emptypb.Empty)(nil),                // 59: google.protobuf.Empty
 }
 var file_ironflow_v1_ironflow_proto_depIdxs = []int32{
-	42, // 0: ironflow.v1.RegisterFunctionRequest.triggers:type_name -> ironflow.v1.Trigger
-	43, // 1: ironflow.v1.RegisterFunctionRequest.retry:type_name -> ironflow.v1.RetryConfig
-	44, // 2: ironflow.v1.RegisterFunctionRequest.concurrency:type_name -> ironflow.v1.ConcurrencyConfig
-	45, // 3: ironflow.v1.RegisterFunctionRequest.preferred_mode:type_name -> ironflow.v1.ExecutionMode
-	46, // 4: ironflow.v1.RegisterFunctionRequest.metadata:type_name -> google.protobuf.Struct
-	47, // 5: ironflow.v1.RegisterFunctionRequest.debounce:type_name -> ironflow.v1.DebounceConfig
-	48, // 6: ironflow.v1.RegisterFunctionRequest.cancel_on:type_name -> ironflow.v1.CancelOnSpec
-	49, // 7: ironflow.v1.RegisterFunctionResponse.function:type_name -> ironflow.v1.Function
-	50, // 8: ironflow.v1.ListFunctionsRequest.status:type_name -> ironflow.v1.FunctionStatus
-	49, // 9: ironflow.v1.ListFunctionsResponse.functions:type_name -> ironflow.v1.Function
-	50, // 10: ironflow.v1.UpdateFunctionStatusRequest.status:type_name -> ironflow.v1.FunctionStatus
-	46, // 11: ironflow.v1.TriggerRequest.data:type_name -> google.protobuf.Struct
-	46, // 12: ironflow.v1.TriggerRequest.metadata:type_name -> google.protobuf.Struct
-	46, // 13: ironflow.v1.TriggerSyncRequest.data:type_name -> google.protobuf.Struct
-	46, // 14: ironflow.v1.TriggerSyncRequest.metadata:type_name -> google.protobuf.Struct
-	11, // 15: ironflow.v1.TriggerSyncResponse.results:type_name -> ironflow.v1.RunResult
-	51, // 16: ironflow.v1.RunResult.status:type_name -> ironflow.v1.RunStatus
-	46, // 17: ironflow.v1.RunResult.output:type_name -> google.protobuf.Struct
-	52, // 18: ironflow.v1.RunResult.error:type_name -> ironflow.v1.Error
-	7,  // 19: ironflow.v1.TriggerBatchRequest.events:type_name -> ironflow.v1.TriggerRequest
-	8,  // 20: ironflow.v1.TriggerBatchResponse.results:type_name -> ironflow.v1.TriggerResponse
-	51, // 21: ironflow.v1.ListRunsRequest.status:type_name -> ironflow.v1.RunStatus
-	53, // 22: ironflow.v1.ListRunsRequest.since:type_name -> google.protobuf.Timestamp
-	53, // 23: ironflow.v1.ListRunsRequest.until:type_name -> google.protobuf.Timestamp
-	54, // 24: ironflow.v1.ListRunsResponse.runs:type_name -> ironflow.v1.Run
-	55, // 25: ironflow.v1.GetRunStepsResponse.steps:type_name -> ironflow.v1.Step
-	46, // 26: ironflow.v1.PatchStepRequest.output:type_name -> google.protobuf.Struct
-	26, // 27: ironflow.v1.GetPausedStateResponse.steps:type_name -> ironflow.v1.PausedStepInfo
-	53, // 28: ironflow.v1.PausedStepInfo.completed_at:type_name -> google.protobuf.Timestamp
-	53, // 29: ironflow.v1.HealthResponse.timestamp:type_name -> google.protobuf.Timestamp
-	41, // 30: ironflow.v1.HealthResponse.components:type_name -> ironflow.v1.HealthResponse.ComponentsEntry
-	53, // 31: ironflow.v1.InfoResponse.started_at:type_name -> google.protobuf.Timestamp
-	49, // 32: ironflow.v1.FunctionHistoryEntry.function_snapshot:type_name -> ironflow.v1.Function
-	53, // 33: ironflow.v1.FunctionHistoryEntry.recorded_at:type_name -> google.protobuf.Timestamp
-	34, // 34: ironflow.v1.ListFunctionHistoryResponse.entries:type_name -> ironflow.v1.FunctionHistoryEntry
-	34, // 35: ironflow.v1.GetFunctionAtVersionResponse.entry:type_name -> ironflow.v1.FunctionHistoryEntry
-	49, // 36: ironflow.v1.RollbackFunctionResponse.function:type_name -> ironflow.v1.Function
-	31, // 37: ironflow.v1.HealthResponse.ComponentsEntry.value:type_name -> ironflow.v1.ComponentHealth
-	0,  // 38: ironflow.v1.IronflowService.RegisterFunction:input_type -> ironflow.v1.RegisterFunctionRequest
-	2,  // 39: ironflow.v1.IronflowService.GetFunction:input_type -> ironflow.v1.GetFunctionRequest
-	3,  // 40: ironflow.v1.IronflowService.ListFunctions:input_type -> ironflow.v1.ListFunctionsRequest
-	5,  // 41: ironflow.v1.IronflowService.UpdateFunctionStatus:input_type -> ironflow.v1.UpdateFunctionStatusRequest
-	6,  // 42: ironflow.v1.IronflowService.DeleteFunction:input_type -> ironflow.v1.DeleteFunctionRequest
-	35, // 43: ironflow.v1.IronflowService.ListFunctionHistory:input_type -> ironflow.v1.ListFunctionHistoryRequest
-	37, // 44: ironflow.v1.IronflowService.GetFunctionAtVersion:input_type -> ironflow.v1.GetFunctionAtVersionRequest
-	39, // 45: ironflow.v1.IronflowService.RollbackFunction:input_type -> ironflow.v1.RollbackFunctionRequest
-	7,  // 46: ironflow.v1.IronflowService.Trigger:input_type -> ironflow.v1.TriggerRequest
-	7,  // 47: ironflow.v1.IronflowService.Emit:input_type -> ironflow.v1.TriggerRequest
-	9,  // 48: ironflow.v1.IronflowService.TriggerSync:input_type -> ironflow.v1.TriggerSyncRequest
-	12, // 49: ironflow.v1.IronflowService.TriggerBatch:input_type -> ironflow.v1.TriggerBatchRequest
-	14, // 50: ironflow.v1.IronflowService.GetRun:input_type -> ironflow.v1.GetRunRequest
-	15, // 51: ironflow.v1.IronflowService.ListRuns:input_type -> ironflow.v1.ListRunsRequest
-	17, // 52: ironflow.v1.IronflowService.GetRunSteps:input_type -> ironflow.v1.GetRunStepsRequest
-	19, // 53: ironflow.v1.IronflowService.CancelRun:input_type -> ironflow.v1.CancelRunRequest
-	20, // 54: ironflow.v1.IronflowService.PatchStep:input_type -> ironflow.v1.PatchStepRequest
-	21, // 55: ironflow.v1.IronflowService.ResumeRun:input_type -> ironflow.v1.ResumeRunRequest
-	22, // 56: ironflow.v1.IronflowService.PauseRun:input_type -> ironflow.v1.PauseRunRequest
-	24, // 57: ironflow.v1.IronflowService.GetPausedState:input_type -> ironflow.v1.GetPausedStateRequest
-	27, // 58: ironflow.v1.IronflowService.InjectStepOutput:input_type -> ironflow.v1.InjectStepOutputRequest
-	29, // 59: ironflow.v1.IronflowService.Health:input_type -> ironflow.v1.HealthRequest
-	32, // 60: ironflow.v1.IronflowService.Info:input_type -> ironflow.v1.InfoRequest
-	1,  // 61: ironflow.v1.IronflowService.RegisterFunction:output_type -> ironflow.v1.RegisterFunctionResponse
-	49, // 62: ironflow.v1.IronflowService.GetFunction:output_type -> ironflow.v1.Function
-	4,  // 63: ironflow.v1.IronflowService.ListFunctions:output_type -> ironflow.v1.ListFunctionsResponse
-	49, // 64: ironflow.v1.IronflowService.UpdateFunctionStatus:output_type -> ironflow.v1.Function
-	56, // 65: ironflow.v1.IronflowService.DeleteFunction:output_type -> google.protobuf.Empty
-	36, // 66: ironflow.v1.IronflowService.ListFunctionHistory:output_type -> ironflow.v1.ListFunctionHistoryResponse
-	38, // 67: ironflow.v1.IronflowService.GetFunctionAtVersion:output_type -> ironflow.v1.GetFunctionAtVersionResponse
-	40, // 68: ironflow.v1.IronflowService.RollbackFunction:output_type -> ironflow.v1.RollbackFunctionResponse
-	8,  // 69: ironflow.v1.IronflowService.Trigger:output_type -> ironflow.v1.TriggerResponse
-	8,  // 70: ironflow.v1.IronflowService.Emit:output_type -> ironflow.v1.TriggerResponse
-	10, // 71: ironflow.v1.IronflowService.TriggerSync:output_type -> ironflow.v1.TriggerSyncResponse
-	13, // 72: ironflow.v1.IronflowService.TriggerBatch:output_type -> ironflow.v1.TriggerBatchResponse
-	54, // 73: ironflow.v1.IronflowService.GetRun:output_type -> ironflow.v1.Run
-	16, // 74: ironflow.v1.IronflowService.ListRuns:output_type -> ironflow.v1.ListRunsResponse
-	18, // 75: ironflow.v1.IronflowService.GetRunSteps:output_type -> ironflow.v1.GetRunStepsResponse
-	54, // 76: ironflow.v1.IronflowService.CancelRun:output_type -> ironflow.v1.Run
-	55, // 77: ironflow.v1.IronflowService.PatchStep:output_type -> ironflow.v1.Step
-	54, // 78: ironflow.v1.IronflowService.ResumeRun:output_type -> ironflow.v1.Run
-	23, // 79: ironflow.v1.IronflowService.PauseRun:output_type -> ironflow.v1.PauseRunResponse
-	25, // 80: ironflow.v1.IronflowService.GetPausedState:output_type -> ironflow.v1.GetPausedStateResponse
-	28, // 81: ironflow.v1.IronflowService.InjectStepOutput:output_type -> ironflow.v1.InjectStepOutputResponse
-	30, // 82: ironflow.v1.IronflowService.Health:output_type -> ironflow.v1.HealthResponse
-	33, // 83: ironflow.v1.IronflowService.Info:output_type -> ironflow.v1.InfoResponse
-	61, // [61:84] is the sub-list for method output_type
-	38, // [38:61] is the sub-list for method input_type
-	38, // [38:38] is the sub-list for extension type_name
-	38, // [38:38] is the sub-list for extension extendee
-	0,  // [0:38] is the sub-list for field type_name
+	44, // 0: ironflow.v1.RegisterFunctionRequest.triggers:type_name -> ironflow.v1.Trigger
+	45, // 1: ironflow.v1.RegisterFunctionRequest.retry:type_name -> ironflow.v1.RetryConfig
+	46, // 2: ironflow.v1.RegisterFunctionRequest.concurrency:type_name -> ironflow.v1.ConcurrencyConfig
+	47, // 3: ironflow.v1.RegisterFunctionRequest.preferred_mode:type_name -> ironflow.v1.ExecutionMode
+	48, // 4: ironflow.v1.RegisterFunctionRequest.metadata:type_name -> google.protobuf.Struct
+	49, // 5: ironflow.v1.RegisterFunctionRequest.debounce:type_name -> ironflow.v1.DebounceConfig
+	50, // 6: ironflow.v1.RegisterFunctionRequest.cancel_on:type_name -> ironflow.v1.CancelOnSpec
+	51, // 7: ironflow.v1.RegisterFunctionResponse.function:type_name -> ironflow.v1.Function
+	52, // 8: ironflow.v1.ListFunctionsRequest.status:type_name -> ironflow.v1.FunctionStatus
+	51, // 9: ironflow.v1.ListFunctionsResponse.functions:type_name -> ironflow.v1.Function
+	52, // 10: ironflow.v1.UpdateFunctionStatusRequest.status:type_name -> ironflow.v1.FunctionStatus
+	48, // 11: ironflow.v1.TriggerRequest.data:type_name -> google.protobuf.Struct
+	53, // 12: ironflow.v1.TriggerRequest.data_value:type_name -> google.protobuf.Value
+	48, // 13: ironflow.v1.TriggerRequest.metadata:type_name -> google.protobuf.Struct
+	48, // 14: ironflow.v1.TriggerSyncRequest.data:type_name -> google.protobuf.Struct
+	53, // 15: ironflow.v1.TriggerSyncRequest.data_value:type_name -> google.protobuf.Value
+	48, // 16: ironflow.v1.TriggerSyncRequest.metadata:type_name -> google.protobuf.Struct
+	11, // 17: ironflow.v1.TriggerSyncResponse.results:type_name -> ironflow.v1.RunResult
+	54, // 18: ironflow.v1.RunResult.status:type_name -> ironflow.v1.RunStatus
+	48, // 19: ironflow.v1.RunResult.output:type_name -> google.protobuf.Struct
+	53, // 20: ironflow.v1.RunResult.output_value:type_name -> google.protobuf.Value
+	55, // 21: ironflow.v1.RunResult.error:type_name -> ironflow.v1.Error
+	48, // 22: ironflow.v1.InvokeFunctionSyncRequest.data:type_name -> google.protobuf.Struct
+	53, // 23: ironflow.v1.InvokeFunctionSyncRequest.data_value:type_name -> google.protobuf.Value
+	48, // 24: ironflow.v1.InvokeFunctionSyncRequest.metadata:type_name -> google.protobuf.Struct
+	11, // 25: ironflow.v1.InvokeFunctionSyncResponse.result:type_name -> ironflow.v1.RunResult
+	7,  // 26: ironflow.v1.TriggerBatchRequest.events:type_name -> ironflow.v1.TriggerRequest
+	8,  // 27: ironflow.v1.TriggerBatchResponse.results:type_name -> ironflow.v1.TriggerResponse
+	54, // 28: ironflow.v1.ListRunsRequest.status:type_name -> ironflow.v1.RunStatus
+	56, // 29: ironflow.v1.ListRunsRequest.since:type_name -> google.protobuf.Timestamp
+	56, // 30: ironflow.v1.ListRunsRequest.until:type_name -> google.protobuf.Timestamp
+	57, // 31: ironflow.v1.ListRunsResponse.runs:type_name -> ironflow.v1.Run
+	58, // 32: ironflow.v1.GetRunStepsResponse.steps:type_name -> ironflow.v1.Step
+	48, // 33: ironflow.v1.PatchStepRequest.output:type_name -> google.protobuf.Struct
+	53, // 34: ironflow.v1.PatchStepRequest.output_value:type_name -> google.protobuf.Value
+	28, // 35: ironflow.v1.GetPausedStateResponse.steps:type_name -> ironflow.v1.PausedStepInfo
+	56, // 36: ironflow.v1.PausedStepInfo.completed_at:type_name -> google.protobuf.Timestamp
+	56, // 37: ironflow.v1.HealthResponse.timestamp:type_name -> google.protobuf.Timestamp
+	43, // 38: ironflow.v1.HealthResponse.components:type_name -> ironflow.v1.HealthResponse.ComponentsEntry
+	56, // 39: ironflow.v1.InfoResponse.started_at:type_name -> google.protobuf.Timestamp
+	51, // 40: ironflow.v1.FunctionHistoryEntry.function_snapshot:type_name -> ironflow.v1.Function
+	56, // 41: ironflow.v1.FunctionHistoryEntry.recorded_at:type_name -> google.protobuf.Timestamp
+	36, // 42: ironflow.v1.ListFunctionHistoryResponse.entries:type_name -> ironflow.v1.FunctionHistoryEntry
+	36, // 43: ironflow.v1.GetFunctionAtVersionResponse.entry:type_name -> ironflow.v1.FunctionHistoryEntry
+	51, // 44: ironflow.v1.RollbackFunctionResponse.function:type_name -> ironflow.v1.Function
+	33, // 45: ironflow.v1.HealthResponse.ComponentsEntry.value:type_name -> ironflow.v1.ComponentHealth
+	0,  // 46: ironflow.v1.IronflowService.RegisterFunction:input_type -> ironflow.v1.RegisterFunctionRequest
+	2,  // 47: ironflow.v1.IronflowService.GetFunction:input_type -> ironflow.v1.GetFunctionRequest
+	3,  // 48: ironflow.v1.IronflowService.ListFunctions:input_type -> ironflow.v1.ListFunctionsRequest
+	5,  // 49: ironflow.v1.IronflowService.UpdateFunctionStatus:input_type -> ironflow.v1.UpdateFunctionStatusRequest
+	6,  // 50: ironflow.v1.IronflowService.DeleteFunction:input_type -> ironflow.v1.DeleteFunctionRequest
+	37, // 51: ironflow.v1.IronflowService.ListFunctionHistory:input_type -> ironflow.v1.ListFunctionHistoryRequest
+	39, // 52: ironflow.v1.IronflowService.GetFunctionAtVersion:input_type -> ironflow.v1.GetFunctionAtVersionRequest
+	41, // 53: ironflow.v1.IronflowService.RollbackFunction:input_type -> ironflow.v1.RollbackFunctionRequest
+	7,  // 54: ironflow.v1.IronflowService.Trigger:input_type -> ironflow.v1.TriggerRequest
+	7,  // 55: ironflow.v1.IronflowService.Emit:input_type -> ironflow.v1.TriggerRequest
+	9,  // 56: ironflow.v1.IronflowService.TriggerSync:input_type -> ironflow.v1.TriggerSyncRequest
+	12, // 57: ironflow.v1.IronflowService.InvokeFunctionSync:input_type -> ironflow.v1.InvokeFunctionSyncRequest
+	14, // 58: ironflow.v1.IronflowService.TriggerBatch:input_type -> ironflow.v1.TriggerBatchRequest
+	16, // 59: ironflow.v1.IronflowService.GetRun:input_type -> ironflow.v1.GetRunRequest
+	17, // 60: ironflow.v1.IronflowService.ListRuns:input_type -> ironflow.v1.ListRunsRequest
+	19, // 61: ironflow.v1.IronflowService.GetRunSteps:input_type -> ironflow.v1.GetRunStepsRequest
+	21, // 62: ironflow.v1.IronflowService.CancelRun:input_type -> ironflow.v1.CancelRunRequest
+	22, // 63: ironflow.v1.IronflowService.PatchStep:input_type -> ironflow.v1.PatchStepRequest
+	23, // 64: ironflow.v1.IronflowService.ResumeRun:input_type -> ironflow.v1.ResumeRunRequest
+	24, // 65: ironflow.v1.IronflowService.PauseRun:input_type -> ironflow.v1.PauseRunRequest
+	26, // 66: ironflow.v1.IronflowService.GetPausedState:input_type -> ironflow.v1.GetPausedStateRequest
+	29, // 67: ironflow.v1.IronflowService.InjectStepOutput:input_type -> ironflow.v1.InjectStepOutputRequest
+	31, // 68: ironflow.v1.IronflowService.Health:input_type -> ironflow.v1.HealthRequest
+	34, // 69: ironflow.v1.IronflowService.Info:input_type -> ironflow.v1.InfoRequest
+	1,  // 70: ironflow.v1.IronflowService.RegisterFunction:output_type -> ironflow.v1.RegisterFunctionResponse
+	51, // 71: ironflow.v1.IronflowService.GetFunction:output_type -> ironflow.v1.Function
+	4,  // 72: ironflow.v1.IronflowService.ListFunctions:output_type -> ironflow.v1.ListFunctionsResponse
+	51, // 73: ironflow.v1.IronflowService.UpdateFunctionStatus:output_type -> ironflow.v1.Function
+	59, // 74: ironflow.v1.IronflowService.DeleteFunction:output_type -> google.protobuf.Empty
+	38, // 75: ironflow.v1.IronflowService.ListFunctionHistory:output_type -> ironflow.v1.ListFunctionHistoryResponse
+	40, // 76: ironflow.v1.IronflowService.GetFunctionAtVersion:output_type -> ironflow.v1.GetFunctionAtVersionResponse
+	42, // 77: ironflow.v1.IronflowService.RollbackFunction:output_type -> ironflow.v1.RollbackFunctionResponse
+	8,  // 78: ironflow.v1.IronflowService.Trigger:output_type -> ironflow.v1.TriggerResponse
+	8,  // 79: ironflow.v1.IronflowService.Emit:output_type -> ironflow.v1.TriggerResponse
+	10, // 80: ironflow.v1.IronflowService.TriggerSync:output_type -> ironflow.v1.TriggerSyncResponse
+	13, // 81: ironflow.v1.IronflowService.InvokeFunctionSync:output_type -> ironflow.v1.InvokeFunctionSyncResponse
+	15, // 82: ironflow.v1.IronflowService.TriggerBatch:output_type -> ironflow.v1.TriggerBatchResponse
+	57, // 83: ironflow.v1.IronflowService.GetRun:output_type -> ironflow.v1.Run
+	18, // 84: ironflow.v1.IronflowService.ListRuns:output_type -> ironflow.v1.ListRunsResponse
+	20, // 85: ironflow.v1.IronflowService.GetRunSteps:output_type -> ironflow.v1.GetRunStepsResponse
+	57, // 86: ironflow.v1.IronflowService.CancelRun:output_type -> ironflow.v1.Run
+	58, // 87: ironflow.v1.IronflowService.PatchStep:output_type -> ironflow.v1.Step
+	57, // 88: ironflow.v1.IronflowService.ResumeRun:output_type -> ironflow.v1.Run
+	25, // 89: ironflow.v1.IronflowService.PauseRun:output_type -> ironflow.v1.PauseRunResponse
+	27, // 90: ironflow.v1.IronflowService.GetPausedState:output_type -> ironflow.v1.GetPausedStateResponse
+	30, // 91: ironflow.v1.IronflowService.InjectStepOutput:output_type -> ironflow.v1.InjectStepOutputResponse
+	32, // 92: ironflow.v1.IronflowService.Health:output_type -> ironflow.v1.HealthResponse
+	35, // 93: ironflow.v1.IronflowService.Info:output_type -> ironflow.v1.InfoResponse
+	70, // [70:94] is the sub-list for method output_type
+	46, // [46:70] is the sub-list for method input_type
+	46, // [46:46] is the sub-list for extension type_name
+	46, // [46:46] is the sub-list for extension extendee
+	0,  // [0:46] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_ironflow_proto_init() }
@@ -2900,7 +3158,7 @@ func file_ironflow_v1_ironflow_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ironflow_v1_ironflow_proto_rawDesc), len(file_ironflow_v1_ironflow_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   42,
+			NumMessages:   44,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

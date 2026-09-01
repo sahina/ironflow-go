@@ -38,6 +38,15 @@ var (
 
 	// ErrForbidden is returned when the caller lacks permission (HTTP 403).
 	ErrForbidden = errors.New("forbidden")
+
+	// ErrConflict is returned when the server rejects a request because it
+	// conflicts with state already in flight (HTTP 409 / Connect
+	// CodeAlreadyExists). ResumeRun returns it when an identical resume is
+	// already inside the stream's dedupe window (#1963); the run is left as it
+	// was found, so the caller should wait for the first resume to land rather
+	// than retry. Never Retryable — retrying is the thing it is reporting
+	// against.
+	ErrConflict = errors.New("conflict")
 )
 
 // IronflowError is the base error type for all Ironflow errors.
