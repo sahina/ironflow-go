@@ -979,8 +979,13 @@ type GetProjectionResponse struct {
 	LastEventTime *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=last_event_time,json=lastEventTime,proto3" json:"last_event_time,omitempty"`
 	Version       int64                  `protobuf:"varint,6,opt,name=version,proto3" json:"version,omitempty"`
 	Mode          string                 `protobuf:"bytes,7,opt,name=mode,proto3" json:"mode,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Registry metadata is independent of the selected state row's version/cursor.
+	Registry           *ProjectionInfo        `protobuf:"bytes,9,opt,name=registry,proto3" json:"registry,omitempty"`
+	StateLastEventSeq  int64                  `protobuf:"varint,10,opt,name=state_last_event_seq,json=stateLastEventSeq,proto3" json:"state_last_event_seq,omitempty"`
+	StateUpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=state_updated_at,json=stateUpdatedAt,proto3" json:"state_updated_at,omitempty"`
+	StateEnvironmentId string                 `protobuf:"bytes,12,opt,name=state_environment_id,json=stateEnvironmentId,proto3" json:"state_environment_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *GetProjectionResponse) Reset() {
@@ -1069,6 +1074,34 @@ func (x *GetProjectionResponse) GetMode() string {
 	return ""
 }
 
+func (x *GetProjectionResponse) GetRegistry() *ProjectionInfo {
+	if x != nil {
+		return x.Registry
+	}
+	return nil
+}
+
+func (x *GetProjectionResponse) GetStateLastEventSeq() int64 {
+	if x != nil {
+		return x.StateLastEventSeq
+	}
+	return 0
+}
+
+func (x *GetProjectionResponse) GetStateUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StateUpdatedAt
+	}
+	return nil
+}
+
+func (x *GetProjectionResponse) GetStateEnvironmentId() string {
+	if x != nil {
+		return x.StateEnvironmentId
+	}
+	return ""
+}
+
 type ListProjectionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
@@ -1138,16 +1171,27 @@ func (x *ListProjectionsRequest) GetOffset() int32 {
 }
 
 type ProjectionInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Mode          string                 `protobuf:"bytes,2,opt,name=mode,proto3" json:"mode,omitempty"`
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	Events        []string               `protobuf:"bytes,4,rep,name=events,proto3" json:"events,omitempty"`
-	PartitionKey  string                 `protobuf:"bytes,5,opt,name=partition_key,json=partitionKey,proto3" json:"partition_key,omitempty"`
-	Version       int32                  `protobuf:"varint,6,opt,name=version,proto3" json:"version,omitempty"`
-	LastEventSeq  int64                  `protobuf:"varint,7,opt,name=last_event_seq,json=lastEventSeq,proto3" json:"last_event_seq,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Name               string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Mode               string                 `protobuf:"bytes,2,opt,name=mode,proto3" json:"mode,omitempty"`
+	Status             string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Events             []string               `protobuf:"bytes,4,rep,name=events,proto3" json:"events,omitempty"`
+	PartitionKey       string                 `protobuf:"bytes,5,opt,name=partition_key,json=partitionKey,proto3" json:"partition_key,omitempty"`
+	Version            int32                  `protobuf:"varint,6,opt,name=version,proto3" json:"version,omitempty"`
+	LastEventSeq       int64                  `protobuf:"varint,7,opt,name=last_event_seq,json=lastEventSeq,proto3" json:"last_event_seq,omitempty"`
+	CreatedAt          *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt          *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	EnvironmentId      string                 `protobuf:"bytes,10,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
+	ErrorMessage       string                 `protobuf:"bytes,11,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	Type               string                 `protobuf:"bytes,12,opt,name=type,proto3" json:"type,omitempty"`
+	SqlDefinition      string                 `protobuf:"bytes,13,opt,name=sql_definition,json=sqlDefinition,proto3" json:"sql_definition,omitempty"`
+	EventHandlers      *structpb.Struct       `protobuf:"bytes,14,opt,name=event_handlers,json=eventHandlers,proto3" json:"event_handlers,omitempty"`
+	Description        string                 `protobuf:"bytes,15,opt,name=description,proto3" json:"description,omitempty"`
+	RebuildTargetSeq   *int64                 `protobuf:"varint,16,opt,name=rebuild_target_seq,json=rebuildTargetSeq,proto3,oneof" json:"rebuild_target_seq,omitempty"`
+	RebuildStartCursor *int64                 `protobuf:"varint,17,opt,name=rebuild_start_cursor,json=rebuildStartCursor,proto3,oneof" json:"rebuild_start_cursor,omitempty"`
+	RebuildStartedAt   *timestamppb.Timestamp `protobuf:"bytes,18,opt,name=rebuild_started_at,json=rebuildStartedAt,proto3" json:"rebuild_started_at,omitempty"`
+	// Full stored version; version remains for existing clients.
+	VersionFull   int64 `protobuf:"varint,19,opt,name=version_full,json=versionFull,proto3" json:"version_full,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1243,6 +1287,76 @@ func (x *ProjectionInfo) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *ProjectionInfo) GetEnvironmentId() string {
+	if x != nil {
+		return x.EnvironmentId
+	}
+	return ""
+}
+
+func (x *ProjectionInfo) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *ProjectionInfo) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *ProjectionInfo) GetSqlDefinition() string {
+	if x != nil {
+		return x.SqlDefinition
+	}
+	return ""
+}
+
+func (x *ProjectionInfo) GetEventHandlers() *structpb.Struct {
+	if x != nil {
+		return x.EventHandlers
+	}
+	return nil
+}
+
+func (x *ProjectionInfo) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ProjectionInfo) GetRebuildTargetSeq() int64 {
+	if x != nil && x.RebuildTargetSeq != nil {
+		return *x.RebuildTargetSeq
+	}
+	return 0
+}
+
+func (x *ProjectionInfo) GetRebuildStartCursor() int64 {
+	if x != nil && x.RebuildStartCursor != nil {
+		return *x.RebuildStartCursor
+	}
+	return 0
+}
+
+func (x *ProjectionInfo) GetRebuildStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RebuildStartedAt
+	}
+	return nil
+}
+
+func (x *ProjectionInfo) GetVersionFull() int64 {
+	if x != nil {
+		return x.VersionFull
+	}
+	return 0
 }
 
 type ListProjectionsResponse struct {
@@ -3097,7 +3211,7 @@ const file_ironflow_v1_projection_proto_rawDesc = "" +
 	"\x14GetProjectionRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
 	"\tpartition\x18\x02 \x01(\tR\tpartition\x12/\n" +
-	"\x05as_of\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x04asOf\"\xc7\x02\n" +
+	"\x05as_of\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x04asOf\"\xa9\x04\n" +
 	"\x15GetProjectionResponse\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
 	"\tpartition\x18\x02 \x01(\tR\tpartition\x12-\n" +
@@ -3107,12 +3221,17 @@ const file_ironflow_v1_projection_proto_rawDesc = "" +
 	"\rlast_event_id\x18\x04 \x01(\tR\vlastEventId\x12B\n" +
 	"\x0flast_event_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\rlastEventTime\x12\x18\n" +
 	"\aversion\x18\x06 \x01(\x03R\aversion\x12\x12\n" +
-	"\x04mode\x18\a \x01(\tR\x04mode\"r\n" +
+	"\x04mode\x18\a \x01(\tR\x04mode\x127\n" +
+	"\bregistry\x18\t \x01(\v2\x1b.ironflow.v1.ProjectionInfoR\bregistry\x12/\n" +
+	"\x14state_last_event_seq\x18\n" +
+	" \x01(\x03R\x11stateLastEventSeq\x12D\n" +
+	"\x10state_updated_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x0estateUpdatedAt\x120\n" +
+	"\x14state_environment_id\x18\f \x01(\tR\x12stateEnvironmentId\"r\n" +
 	"\x16ListProjectionsRequest\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\tR\x04mode\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x04 \x01(\x05R\x06offset\"\xc3\x02\n" +
+	"\x06offset\x18\x04 \x01(\x05R\x06offset\"\xb3\x06\n" +
 	"\x0eProjectionInfo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\tR\x04mode\x12\x16\n" +
@@ -3124,7 +3243,20 @@ const file_ironflow_v1_projection_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"y\n" +
+	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12%\n" +
+	"\x0eenvironment_id\x18\n" +
+	" \x01(\tR\renvironmentId\x12#\n" +
+	"\rerror_message\x18\v \x01(\tR\ferrorMessage\x12\x12\n" +
+	"\x04type\x18\f \x01(\tR\x04type\x12%\n" +
+	"\x0esql_definition\x18\r \x01(\tR\rsqlDefinition\x12>\n" +
+	"\x0eevent_handlers\x18\x0e \x01(\v2\x17.google.protobuf.StructR\reventHandlers\x12 \n" +
+	"\vdescription\x18\x0f \x01(\tR\vdescription\x121\n" +
+	"\x12rebuild_target_seq\x18\x10 \x01(\x03H\x00R\x10rebuildTargetSeq\x88\x01\x01\x125\n" +
+	"\x14rebuild_start_cursor\x18\x11 \x01(\x03H\x01R\x12rebuildStartCursor\x88\x01\x01\x12H\n" +
+	"\x12rebuild_started_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\x10rebuildStartedAt\x12!\n" +
+	"\fversion_full\x18\x13 \x01(\x03R\vversionFullB\x15\n" +
+	"\x13_rebuild_target_seqB\x17\n" +
+	"\x15_rebuild_start_cursor\"y\n" +
 	"\x17ListProjectionsResponse\x12=\n" +
 	"\vprojections\x18\x01 \x03(\v2\x1b.ironflow.v1.ProjectionInfoR\vprojections\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x05R\n" +
@@ -3380,72 +3512,76 @@ var file_ironflow_v1_projection_proto_depIdxs = []int32{
 	48, // 12: ironflow.v1.GetProjectionResponse.state:type_name -> google.protobuf.Struct
 	49, // 13: ironflow.v1.GetProjectionResponse.state_value:type_name -> google.protobuf.Value
 	50, // 14: ironflow.v1.GetProjectionResponse.last_event_time:type_name -> google.protobuf.Timestamp
-	50, // 15: ironflow.v1.ProjectionInfo.created_at:type_name -> google.protobuf.Timestamp
-	50, // 16: ironflow.v1.ProjectionInfo.updated_at:type_name -> google.protobuf.Timestamp
-	17, // 17: ironflow.v1.ListProjectionsResponse.projections:type_name -> ironflow.v1.ProjectionInfo
-	50, // 18: ironflow.v1.GetProjectionStatusResponse.updated_at:type_name -> google.protobuf.Timestamp
-	50, // 19: ironflow.v1.GetProjectionStatusResponse.rebuild_started_at:type_name -> google.protobuf.Timestamp
-	23, // 20: ironflow.v1.RebuildProjectionResponse.job:type_name -> ironflow.v1.RebuildJob
-	50, // 21: ironflow.v1.RebuildJob.started_at:type_name -> google.protobuf.Timestamp
-	51, // 22: ironflow.v1.RebuildJob.estimated_remaining:type_name -> google.protobuf.Duration
-	23, // 23: ironflow.v1.GetRebuildJobResponse.job:type_name -> ironflow.v1.RebuildJob
-	47, // 24: ironflow.v1.CreateSQLProjectionRequest.event_handlers:type_name -> ironflow.v1.CreateSQLProjectionRequest.EventHandlersEntry
-	38, // 25: ironflow.v1.QuerySQLProjectionResponse.rows:type_name -> ironflow.v1.QuerySQLRow
-	49, // 26: ironflow.v1.QuerySQLRow.typed_values:type_name -> google.protobuf.Value
-	51, // 27: ironflow.v1.WaitProjectionCatchupRequest.timeout:type_name -> google.protobuf.Duration
-	41, // 28: ironflow.v1.WaitProjectionCatchupBatchRequest.items:type_name -> ironflow.v1.WaitItem
-	51, // 29: ironflow.v1.WaitProjectionCatchupBatchRequest.timeout:type_name -> google.protobuf.Duration
-	40, // 30: ironflow.v1.WaitItemResult.result:type_name -> ironflow.v1.WaitProjectionCatchupResponse
-	43, // 31: ironflow.v1.WaitProjectionCatchupBatchResponse.results:type_name -> ironflow.v1.WaitItemResult
-	51, // 32: ironflow.v1.WaitForEventRequest.timeout:type_name -> google.protobuf.Duration
-	1,  // 33: ironflow.v1.WaitProjectionCatchupStreamResponse.kind:type_name -> ironflow.v1.WaitStreamFrameKind
-	2,  // 34: ironflow.v1.ProjectionService.RegisterProjection:input_type -> ironflow.v1.RegisterProjectionRequest
-	4,  // 35: ironflow.v1.ProjectionService.UnregisterProjection:input_type -> ironflow.v1.UnregisterProjectionRequest
-	6,  // 36: ironflow.v1.ProjectionService.PollProjectionEvents:input_type -> ironflow.v1.PollProjectionEventsRequest
-	9,  // 37: ironflow.v1.ProjectionService.StreamProjectionEvents:input_type -> ironflow.v1.StreamProjectionEventsRequest
-	10, // 38: ironflow.v1.ProjectionService.SaveProjectionState:input_type -> ironflow.v1.SaveProjectionStateRequest
-	12, // 39: ironflow.v1.ProjectionService.AckProjectionEvents:input_type -> ironflow.v1.AckProjectionEventsRequest
-	14, // 40: ironflow.v1.ProjectionService.GetProjection:input_type -> ironflow.v1.GetProjectionRequest
-	16, // 41: ironflow.v1.ProjectionService.ListProjections:input_type -> ironflow.v1.ListProjectionsRequest
-	19, // 42: ironflow.v1.ProjectionService.GetProjectionStatus:input_type -> ironflow.v1.GetProjectionStatusRequest
-	21, // 43: ironflow.v1.ProjectionService.RebuildProjection:input_type -> ironflow.v1.RebuildProjectionRequest
-	24, // 44: ironflow.v1.ProjectionService.GetRebuildJob:input_type -> ironflow.v1.GetRebuildJobRequest
-	26, // 45: ironflow.v1.ProjectionService.CancelRebuild:input_type -> ironflow.v1.CancelRebuildRequest
-	28, // 46: ironflow.v1.ProjectionService.ReportRebuildProgress:input_type -> ironflow.v1.ReportRebuildProgressRequest
-	30, // 47: ironflow.v1.ProjectionService.PauseProjection:input_type -> ironflow.v1.PauseProjectionRequest
-	32, // 48: ironflow.v1.ProjectionService.ResumeProjection:input_type -> ironflow.v1.ResumeProjectionRequest
-	34, // 49: ironflow.v1.ProjectionService.CreateSQLProjection:input_type -> ironflow.v1.CreateSQLProjectionRequest
-	36, // 50: ironflow.v1.ProjectionService.QuerySQLProjection:input_type -> ironflow.v1.QuerySQLProjectionRequest
-	39, // 51: ironflow.v1.ProjectionService.WaitProjectionCatchup:input_type -> ironflow.v1.WaitProjectionCatchupRequest
-	42, // 52: ironflow.v1.ProjectionService.WaitProjectionCatchupBatch:input_type -> ironflow.v1.WaitProjectionCatchupBatchRequest
-	45, // 53: ironflow.v1.ProjectionService.WaitForEvent:input_type -> ironflow.v1.WaitForEventRequest
-	39, // 54: ironflow.v1.ProjectionService.WaitProjectionCatchupStream:input_type -> ironflow.v1.WaitProjectionCatchupRequest
-	3,  // 55: ironflow.v1.ProjectionService.RegisterProjection:output_type -> ironflow.v1.RegisterProjectionResponse
-	5,  // 56: ironflow.v1.ProjectionService.UnregisterProjection:output_type -> ironflow.v1.UnregisterProjectionResponse
-	8,  // 57: ironflow.v1.ProjectionService.PollProjectionEvents:output_type -> ironflow.v1.PollProjectionEventsResponse
-	7,  // 58: ironflow.v1.ProjectionService.StreamProjectionEvents:output_type -> ironflow.v1.ProjectionEvent
-	11, // 59: ironflow.v1.ProjectionService.SaveProjectionState:output_type -> ironflow.v1.SaveProjectionStateResponse
-	13, // 60: ironflow.v1.ProjectionService.AckProjectionEvents:output_type -> ironflow.v1.AckProjectionEventsResponse
-	15, // 61: ironflow.v1.ProjectionService.GetProjection:output_type -> ironflow.v1.GetProjectionResponse
-	18, // 62: ironflow.v1.ProjectionService.ListProjections:output_type -> ironflow.v1.ListProjectionsResponse
-	20, // 63: ironflow.v1.ProjectionService.GetProjectionStatus:output_type -> ironflow.v1.GetProjectionStatusResponse
-	22, // 64: ironflow.v1.ProjectionService.RebuildProjection:output_type -> ironflow.v1.RebuildProjectionResponse
-	25, // 65: ironflow.v1.ProjectionService.GetRebuildJob:output_type -> ironflow.v1.GetRebuildJobResponse
-	27, // 66: ironflow.v1.ProjectionService.CancelRebuild:output_type -> ironflow.v1.CancelRebuildResponse
-	29, // 67: ironflow.v1.ProjectionService.ReportRebuildProgress:output_type -> ironflow.v1.ReportRebuildProgressResponse
-	31, // 68: ironflow.v1.ProjectionService.PauseProjection:output_type -> ironflow.v1.PauseProjectionResponse
-	33, // 69: ironflow.v1.ProjectionService.ResumeProjection:output_type -> ironflow.v1.ResumeProjectionResponse
-	35, // 70: ironflow.v1.ProjectionService.CreateSQLProjection:output_type -> ironflow.v1.CreateSQLProjectionResponse
-	37, // 71: ironflow.v1.ProjectionService.QuerySQLProjection:output_type -> ironflow.v1.QuerySQLProjectionResponse
-	40, // 72: ironflow.v1.ProjectionService.WaitProjectionCatchup:output_type -> ironflow.v1.WaitProjectionCatchupResponse
-	44, // 73: ironflow.v1.ProjectionService.WaitProjectionCatchupBatch:output_type -> ironflow.v1.WaitProjectionCatchupBatchResponse
-	40, // 74: ironflow.v1.ProjectionService.WaitForEvent:output_type -> ironflow.v1.WaitProjectionCatchupResponse
-	46, // 75: ironflow.v1.ProjectionService.WaitProjectionCatchupStream:output_type -> ironflow.v1.WaitProjectionCatchupStreamResponse
-	55, // [55:76] is the sub-list for method output_type
-	34, // [34:55] is the sub-list for method input_type
-	34, // [34:34] is the sub-list for extension type_name
-	34, // [34:34] is the sub-list for extension extendee
-	0,  // [0:34] is the sub-list for field type_name
+	17, // 15: ironflow.v1.GetProjectionResponse.registry:type_name -> ironflow.v1.ProjectionInfo
+	50, // 16: ironflow.v1.GetProjectionResponse.state_updated_at:type_name -> google.protobuf.Timestamp
+	50, // 17: ironflow.v1.ProjectionInfo.created_at:type_name -> google.protobuf.Timestamp
+	50, // 18: ironflow.v1.ProjectionInfo.updated_at:type_name -> google.protobuf.Timestamp
+	48, // 19: ironflow.v1.ProjectionInfo.event_handlers:type_name -> google.protobuf.Struct
+	50, // 20: ironflow.v1.ProjectionInfo.rebuild_started_at:type_name -> google.protobuf.Timestamp
+	17, // 21: ironflow.v1.ListProjectionsResponse.projections:type_name -> ironflow.v1.ProjectionInfo
+	50, // 22: ironflow.v1.GetProjectionStatusResponse.updated_at:type_name -> google.protobuf.Timestamp
+	50, // 23: ironflow.v1.GetProjectionStatusResponse.rebuild_started_at:type_name -> google.protobuf.Timestamp
+	23, // 24: ironflow.v1.RebuildProjectionResponse.job:type_name -> ironflow.v1.RebuildJob
+	50, // 25: ironflow.v1.RebuildJob.started_at:type_name -> google.protobuf.Timestamp
+	51, // 26: ironflow.v1.RebuildJob.estimated_remaining:type_name -> google.protobuf.Duration
+	23, // 27: ironflow.v1.GetRebuildJobResponse.job:type_name -> ironflow.v1.RebuildJob
+	47, // 28: ironflow.v1.CreateSQLProjectionRequest.event_handlers:type_name -> ironflow.v1.CreateSQLProjectionRequest.EventHandlersEntry
+	38, // 29: ironflow.v1.QuerySQLProjectionResponse.rows:type_name -> ironflow.v1.QuerySQLRow
+	49, // 30: ironflow.v1.QuerySQLRow.typed_values:type_name -> google.protobuf.Value
+	51, // 31: ironflow.v1.WaitProjectionCatchupRequest.timeout:type_name -> google.protobuf.Duration
+	41, // 32: ironflow.v1.WaitProjectionCatchupBatchRequest.items:type_name -> ironflow.v1.WaitItem
+	51, // 33: ironflow.v1.WaitProjectionCatchupBatchRequest.timeout:type_name -> google.protobuf.Duration
+	40, // 34: ironflow.v1.WaitItemResult.result:type_name -> ironflow.v1.WaitProjectionCatchupResponse
+	43, // 35: ironflow.v1.WaitProjectionCatchupBatchResponse.results:type_name -> ironflow.v1.WaitItemResult
+	51, // 36: ironflow.v1.WaitForEventRequest.timeout:type_name -> google.protobuf.Duration
+	1,  // 37: ironflow.v1.WaitProjectionCatchupStreamResponse.kind:type_name -> ironflow.v1.WaitStreamFrameKind
+	2,  // 38: ironflow.v1.ProjectionService.RegisterProjection:input_type -> ironflow.v1.RegisterProjectionRequest
+	4,  // 39: ironflow.v1.ProjectionService.UnregisterProjection:input_type -> ironflow.v1.UnregisterProjectionRequest
+	6,  // 40: ironflow.v1.ProjectionService.PollProjectionEvents:input_type -> ironflow.v1.PollProjectionEventsRequest
+	9,  // 41: ironflow.v1.ProjectionService.StreamProjectionEvents:input_type -> ironflow.v1.StreamProjectionEventsRequest
+	10, // 42: ironflow.v1.ProjectionService.SaveProjectionState:input_type -> ironflow.v1.SaveProjectionStateRequest
+	12, // 43: ironflow.v1.ProjectionService.AckProjectionEvents:input_type -> ironflow.v1.AckProjectionEventsRequest
+	14, // 44: ironflow.v1.ProjectionService.GetProjection:input_type -> ironflow.v1.GetProjectionRequest
+	16, // 45: ironflow.v1.ProjectionService.ListProjections:input_type -> ironflow.v1.ListProjectionsRequest
+	19, // 46: ironflow.v1.ProjectionService.GetProjectionStatus:input_type -> ironflow.v1.GetProjectionStatusRequest
+	21, // 47: ironflow.v1.ProjectionService.RebuildProjection:input_type -> ironflow.v1.RebuildProjectionRequest
+	24, // 48: ironflow.v1.ProjectionService.GetRebuildJob:input_type -> ironflow.v1.GetRebuildJobRequest
+	26, // 49: ironflow.v1.ProjectionService.CancelRebuild:input_type -> ironflow.v1.CancelRebuildRequest
+	28, // 50: ironflow.v1.ProjectionService.ReportRebuildProgress:input_type -> ironflow.v1.ReportRebuildProgressRequest
+	30, // 51: ironflow.v1.ProjectionService.PauseProjection:input_type -> ironflow.v1.PauseProjectionRequest
+	32, // 52: ironflow.v1.ProjectionService.ResumeProjection:input_type -> ironflow.v1.ResumeProjectionRequest
+	34, // 53: ironflow.v1.ProjectionService.CreateSQLProjection:input_type -> ironflow.v1.CreateSQLProjectionRequest
+	36, // 54: ironflow.v1.ProjectionService.QuerySQLProjection:input_type -> ironflow.v1.QuerySQLProjectionRequest
+	39, // 55: ironflow.v1.ProjectionService.WaitProjectionCatchup:input_type -> ironflow.v1.WaitProjectionCatchupRequest
+	42, // 56: ironflow.v1.ProjectionService.WaitProjectionCatchupBatch:input_type -> ironflow.v1.WaitProjectionCatchupBatchRequest
+	45, // 57: ironflow.v1.ProjectionService.WaitForEvent:input_type -> ironflow.v1.WaitForEventRequest
+	39, // 58: ironflow.v1.ProjectionService.WaitProjectionCatchupStream:input_type -> ironflow.v1.WaitProjectionCatchupRequest
+	3,  // 59: ironflow.v1.ProjectionService.RegisterProjection:output_type -> ironflow.v1.RegisterProjectionResponse
+	5,  // 60: ironflow.v1.ProjectionService.UnregisterProjection:output_type -> ironflow.v1.UnregisterProjectionResponse
+	8,  // 61: ironflow.v1.ProjectionService.PollProjectionEvents:output_type -> ironflow.v1.PollProjectionEventsResponse
+	7,  // 62: ironflow.v1.ProjectionService.StreamProjectionEvents:output_type -> ironflow.v1.ProjectionEvent
+	11, // 63: ironflow.v1.ProjectionService.SaveProjectionState:output_type -> ironflow.v1.SaveProjectionStateResponse
+	13, // 64: ironflow.v1.ProjectionService.AckProjectionEvents:output_type -> ironflow.v1.AckProjectionEventsResponse
+	15, // 65: ironflow.v1.ProjectionService.GetProjection:output_type -> ironflow.v1.GetProjectionResponse
+	18, // 66: ironflow.v1.ProjectionService.ListProjections:output_type -> ironflow.v1.ListProjectionsResponse
+	20, // 67: ironflow.v1.ProjectionService.GetProjectionStatus:output_type -> ironflow.v1.GetProjectionStatusResponse
+	22, // 68: ironflow.v1.ProjectionService.RebuildProjection:output_type -> ironflow.v1.RebuildProjectionResponse
+	25, // 69: ironflow.v1.ProjectionService.GetRebuildJob:output_type -> ironflow.v1.GetRebuildJobResponse
+	27, // 70: ironflow.v1.ProjectionService.CancelRebuild:output_type -> ironflow.v1.CancelRebuildResponse
+	29, // 71: ironflow.v1.ProjectionService.ReportRebuildProgress:output_type -> ironflow.v1.ReportRebuildProgressResponse
+	31, // 72: ironflow.v1.ProjectionService.PauseProjection:output_type -> ironflow.v1.PauseProjectionResponse
+	33, // 73: ironflow.v1.ProjectionService.ResumeProjection:output_type -> ironflow.v1.ResumeProjectionResponse
+	35, // 74: ironflow.v1.ProjectionService.CreateSQLProjection:output_type -> ironflow.v1.CreateSQLProjectionResponse
+	37, // 75: ironflow.v1.ProjectionService.QuerySQLProjection:output_type -> ironflow.v1.QuerySQLProjectionResponse
+	40, // 76: ironflow.v1.ProjectionService.WaitProjectionCatchup:output_type -> ironflow.v1.WaitProjectionCatchupResponse
+	44, // 77: ironflow.v1.ProjectionService.WaitProjectionCatchupBatch:output_type -> ironflow.v1.WaitProjectionCatchupBatchResponse
+	40, // 78: ironflow.v1.ProjectionService.WaitForEvent:output_type -> ironflow.v1.WaitProjectionCatchupResponse
+	46, // 79: ironflow.v1.ProjectionService.WaitProjectionCatchupStream:output_type -> ironflow.v1.WaitProjectionCatchupStreamResponse
+	59, // [59:80] is the sub-list for method output_type
+	38, // [38:59] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_projection_proto_init() }
@@ -3453,6 +3589,7 @@ func file_ironflow_v1_projection_proto_init() {
 	if File_ironflow_v1_projection_proto != nil {
 		return
 	}
+	file_ironflow_v1_projection_proto_msgTypes[15].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

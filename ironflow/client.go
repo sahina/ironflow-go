@@ -8,11 +8,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
+
+	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
+	"github.com/sahina/ironflow-go/api/ironflow/v1/ironflowv1connect"
 )
 
 // RetryEvent contains information about a retry attempt.
@@ -905,6 +911,10 @@ func (c *Client) GetStepOutputAt(ctx context.Context, runID, stepID string, at t
 //
 //	run, err := client.ResumeRun(ctx, "run_abc123", "")
 //	run, err := client.ResumeRun(ctx, "run_abc123", "step_xyz") // from specific step
+//
+// Two errors share HTTP 409 and want opposite things (#2074): ErrConflict means
+// an identical resume is already in flight, so wait; ErrContended means a CAS
+// race was lost and nothing was applied, so re-read and reissue.
 func (c *Client) ResumeRun(ctx context.Context, runID string, fromStep string) (*WorkflowRun, error) {
 	req := map[string]string{"run_id": runID}
 	if fromStep != "" {
@@ -1011,45 +1021,38 @@ type WorkerInfo struct {
 
 // PatchStep patches a step's output (hot patching).
 func (c *Client) PatchStep(ctx context.Context, stepID string, output map[string]any, reason string) error {
-	return c.request(ctx, "POST", "/api/v1/steps/patch", map[string]any{
-		"step_id": stepID,
-		"output":  output,
-		"reason":  reason,
-	}, nil)
+	data, err := json.Marshal(output)
+	if err != nil {
+		return err
+	}
+	var value *structpb.Struct
+	if output != nil {
+		value = &structpb.Struct{}
+		if err := protojson.Unmarshal(data, value); err != nil {
+			return err
+		}
+	}
+	client := ironflowv1connect.NewIronflowServiceClient(c.httpClient, c.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(bearerInterceptor(c.apiKey)))
+	// sdkcoverage: POST /ironflow.v1.IronflowService/PatchStep
+	return c.withRetry(ctx, func() error {
+		_, err := client.PatchStep(ctx, connect.NewRequest(&ironflowv1.PatchStepRequest{StepId: stepID, Output: value, Reason: reason}))
+		return connectError(err)
+	})
 }
 
 // ListFunctions returns all registered functions.
 func (c *Client) ListFunctions(ctx context.Context) ([]FunctionInfo, error) {
-	url := c.serverURL + "/api/v1/functions"
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	rpc := ironflowv1connect.NewIronflowServiceClient(c.httpClient, c.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(bearerInterceptor(c.apiKey)))
+	// sdkcoverage: POST /ironflow.v1.IronflowService/ListFunctions
+	resp, err := rpc.ListFunctions(ctx, connect.NewRequest(&ironflowv1.ListFunctionsRequest{}))
 	if err != nil {
-		return nil, WrapError(err, "failed to create request", "REQUEST_ERROR", true)
+		return nil, connectError(err)
 	}
-
-	req.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	result := make([]FunctionInfo, 0, len(resp.Msg.Functions))
+	for _, fn := range resp.Msg.Functions {
+		result = append(result, FunctionInfo{ID: fn.Id, Name: fn.Name, Status: strings.ToLower(strings.TrimPrefix(fn.Status.String(), "FUNCTION_STATUS_")), PreferredMode: strings.ToLower(strings.TrimPrefix(fn.PreferredMode.String(), "EXECUTION_MODE_")), CreatedAt: streamTimestamp(fn.CreatedAt), UpdatedAt: streamTimestamp(fn.UpdatedAt)})
 	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, WrapError(err, "request failed", "REQUEST_FAILED", true)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, NewError(fmt.Sprintf("failed to list functions: %d", resp.StatusCode), "HTTP_ERROR", false)
-	}
-
-	var result struct {
-		Functions []FunctionInfo `json:"functions"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, WrapError(err, "failed to decode response", "DECODE_ERROR", false)
-	}
-
-	return result.Functions, nil
+	return result, nil
 }
 
 // ListWorkers returns all connected workers.
@@ -1815,96 +1818,6 @@ func (c *Client) GetStreamInfo(ctx context.Context, entityID string) (*StreamInf
 	return &result, nil
 }
 
-// ListStreams returns all entity streams.
-//
-// Example:
-//
-//	streams, err := client.ListStreams(ctx)
-//	for _, s := range streams {
-//	    fmt.Printf("Entity %s (%s) at version %d\n", s.EntityID, s.EntityType, s.Version)
-//	}
-func (c *Client) ListStreams(ctx context.Context) ([]StreamListEntry, error) {
-	var resp struct {
-		Streams []StreamListEntry `json:"streams"`
-	}
-	if err := c.restRequest(ctx, "GET", "/api/v1/streams", nil, &resp); err != nil {
-		return nil, err
-	}
-	if resp.Streams == nil {
-		return []StreamListEntry{}, nil
-	}
-	return resp.Streams, nil
-}
-
-// GetEntityHistory returns the full event history for an entity.
-//
-// Example:
-//
-//	events, err := client.GetEntityHistory(ctx, "order-123")
-//	for _, e := range events {
-//	    fmt.Printf("Version %d: %s\n", e.Version, e.EventName)
-//	}
-func (c *Client) GetEntityHistory(ctx context.Context, entityID string) ([]EntityHistoryEntry, error) {
-	var resp struct {
-		Entries []EntityHistoryEntry `json:"entries"`
-	}
-	path := fmt.Sprintf("/api/v1/streams/%s/history", url.PathEscape(entityID))
-	if err := c.restRequest(ctx, "GET", path, nil, &resp); err != nil {
-		return nil, err
-	}
-	if resp.Entries == nil {
-		return []EntityHistoryEntry{}, nil
-	}
-	return resp.Entries, nil
-}
-
-// CreateSnapshot creates a snapshot for an entity stream.
-//
-// Example:
-//
-//	snapshot, err := client.CreateSnapshot(ctx, "order-123", ironflow.CreateSnapshotInput{
-//	    EntityType:    "order",
-//	    EntityVersion: 10,
-//	    State:         map[string]any{"status": "shipped"},
-//	})
-func (c *Client) CreateSnapshot(ctx context.Context, entityID string, input CreateSnapshotInput) (*StreamSnapshot, error) {
-	var snapshot StreamSnapshot
-	path := fmt.Sprintf("/api/v1/streams/%s/snapshots", url.PathEscape(entityID))
-	if err := c.restRequest(ctx, "POST", path, input, &snapshot); err != nil {
-		return nil, err
-	}
-	// The server only returns {"snapshot_id": "..."} on creation.
-	// Populate the remaining fields from the input so callers can use them immediately.
-	if snapshot.EntityID == "" {
-		snapshot.EntityID = entityID
-	}
-	if snapshot.EntityType == "" {
-		snapshot.EntityType = input.EntityType
-	}
-	if snapshot.EntityVersion == 0 {
-		snapshot.EntityVersion = input.EntityVersion
-	}
-	if snapshot.State == nil {
-		snapshot.State = input.State
-	}
-	return &snapshot, nil
-}
-
-// GetSnapshot returns the latest snapshot for an entity stream.
-//
-// Example:
-//
-//	snapshot, err := client.GetSnapshot(ctx, "order-123")
-//	fmt.Printf("Snapshot at version %d: %v\n", snapshot.EntityVersion, snapshot.State)
-func (c *Client) GetSnapshot(ctx context.Context, entityID string) (*StreamSnapshot, error) {
-	var snapshot StreamSnapshot
-	path := fmt.Sprintf("/api/v1/streams/%s/snapshots", url.PathEscape(entityID))
-	if err := c.restRequest(ctx, "GET", path, nil, &snapshot); err != nil {
-		return nil, err
-	}
-	return &snapshot, nil
-}
-
 // ============================================================================
 // Developer Pub/Sub Methods
 // ============================================================================
@@ -2079,15 +1992,22 @@ func (c *Client) requestWith(ctx context.Context, httpClient *http.Client, metho
 		}
 	}
 
+	return c.withRetry(ctx, func() error {
+		return c.executeRequest(ctx, httpClient, method, url, bodyBytes, result)
+	})
+}
+
+// withRetry applies the client's retry policy to HTTP and Connect calls.
+func (c *Client) withRetry(ctx context.Context, execute func() error) error {
 	// If retry is disabled, execute once
 	if c.retryConfig == nil {
-		return c.executeRequest(ctx, httpClient, method, url, bodyBytes, result)
+		return execute()
 	}
 
 	// Execute with retry logic
 	var lastErr error
 	for attempt := 1; attempt <= c.retryConfig.MaxAttempts; attempt++ {
-		err := c.executeRequest(ctx, httpClient, method, url, bodyBytes, result)
+		err := execute()
 		if err == nil {
 			return nil
 		}
@@ -2240,7 +2160,34 @@ func (c *Client) executeRequest(ctx context.Context, httpClient *http.Client, me
 			// Without this, a 409 is indistinguishable from any other 4xx and
 			// callers have to string-match the message to tell "already in
 			// flight, wait" apart from a real failure (#1963).
-			ironflowErr.Cause = ErrConflict
+			//
+			// Two Connect codes land here and want opposite things (#2074).
+			// "aborted" is a lost CAS race: nothing was applied, so re-read and
+			// reissue. Anything else — "already_exists", or a REST body carrying
+			// no code at all — is a deduplicated resume: wait, do not reissue.
+			//
+			// Retryable stays false on both. gRPC defines Aborted as "retry at a
+			// higher level" — restart the read-modify-write — and Retryable here
+			// means something narrower: requestWith re-sends the identical
+			// marshaled body, which is wrong for both halves of "aborted".
+			// Entity-stream append and the webhook mutators CAS on a version
+			// the caller supplied, so a reissue is futile by construction;
+			// UpdateFunction, UpdateFunctionStatus, RollbackFunction and
+			// CancelRun CAS on a version the server read itself, so a reissue
+			// could land — silently re-applying a write the caller never
+			// re-read. The discrimination callers need is the sentinel, not
+			// the flag.
+			// The reason header splits the two meanings of "aborted" the same
+			// way the Connect path does (#2093); see connectError.
+			if errResp.Code == connect.CodeAborted.String() {
+				if resp.Header.Get(ErrorReasonHeader) == ReasonInjectionUnverified {
+					ironflowErr.Cause = ErrInjectionUnverified
+				} else {
+					ironflowErr.Cause = ErrContended
+				}
+			} else {
+				ironflowErr.Cause = ErrConflict
+			}
 		}
 
 		// Parse Retry-After header if present
@@ -2364,9 +2311,13 @@ func mapRunResponse(r *runResponse) (*WorkflowRun, error) {
 //	})
 //	// Now safe to read the projection.
 //
-// Errors: 404 (projection not found), 409 (paused / rebuilding /
-// partition-unsupported-for-external), 429 (wait capacity exceeded), 503
-// (NATS bridge unavailable).
+// Errors: 400 (partition rejected — external projection, or a managed
+// projection that declares no partition key and has no state row under the
+// requested partition), 404 (projection not found), 409 (paused /
+// rebuilding), 429 (wait capacity exceeded, or more than 64 distinct
+// partitions of this projection already have a live wait), 503 (NATS bridge
+// unavailable, or the shared poller stopped before this wait attached — both
+// retryable).
 func (c *Client) WaitForProjection(ctx context.Context, name string, opts WaitForProjectionOpts) (*WaitResult, error) {
 	body := map[string]any{
 		"name": name,

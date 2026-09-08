@@ -43,6 +43,9 @@ const (
 	// IronflowServiceListFunctionsProcedure is the fully-qualified name of the IronflowService's
 	// ListFunctions RPC.
 	IronflowServiceListFunctionsProcedure = "/ironflow.v1.IronflowService/ListFunctions"
+	// IronflowServiceInvokeFunctionProcedure is the fully-qualified name of the IronflowService's
+	// InvokeFunction RPC.
+	IronflowServiceInvokeFunctionProcedure = "/ironflow.v1.IronflowService/InvokeFunction"
 	// IronflowServiceUpdateFunctionStatusProcedure is the fully-qualified name of the IronflowService's
 	// UpdateFunctionStatus RPC.
 	IronflowServiceUpdateFunctionStatusProcedure = "/ironflow.v1.IronflowService/UpdateFunctionStatus"
@@ -111,6 +114,9 @@ type IronflowServiceClient interface {
 	GetFunction(context.Context, *connect.Request[v1.GetFunctionRequest]) (*connect.Response[v1.Function], error)
 	// List all registered functions
 	ListFunctions(context.Context, *connect.Request[v1.ListFunctionsRequest]) (*connect.Response[v1.ListFunctionsResponse], error)
+	// Start one function by ID and return its run and event IDs immediately.
+	// Disconnecting after the response does not cancel the run.
+	InvokeFunction(context.Context, *connect.Request[v1.InvokeFunctionRequest]) (*connect.Response[v1.InvokeFunctionResponse], error)
 	// Update function status (pause, activate, archive)
 	UpdateFunctionStatus(context.Context, *connect.Request[v1.UpdateFunctionStatusRequest]) (*connect.Response[v1.Function], error)
 	// Delete a function
@@ -188,6 +194,12 @@ func NewIronflowServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			baseURL+IronflowServiceListFunctionsProcedure,
 			connect.WithSchema(ironflowServiceMethods.ByName("ListFunctions")),
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		invokeFunction: connect.NewClient[v1.InvokeFunctionRequest, v1.InvokeFunctionResponse](
+			httpClient,
+			baseURL+IronflowServiceInvokeFunctionProcedure,
+			connect.WithSchema(ironflowServiceMethods.ByName("InvokeFunction")),
 			connect.WithClientOptions(opts...),
 		),
 		updateFunctionStatus: connect.NewClient[v1.UpdateFunctionStatusRequest, v1.Function](
@@ -330,6 +342,7 @@ type ironflowServiceClient struct {
 	registerFunction     *connect.Client[v1.RegisterFunctionRequest, v1.RegisterFunctionResponse]
 	getFunction          *connect.Client[v1.GetFunctionRequest, v1.Function]
 	listFunctions        *connect.Client[v1.ListFunctionsRequest, v1.ListFunctionsResponse]
+	invokeFunction       *connect.Client[v1.InvokeFunctionRequest, v1.InvokeFunctionResponse]
 	updateFunctionStatus *connect.Client[v1.UpdateFunctionStatusRequest, v1.Function]
 	deleteFunction       *connect.Client[v1.DeleteFunctionRequest, emptypb.Empty]
 	listFunctionHistory  *connect.Client[v1.ListFunctionHistoryRequest, v1.ListFunctionHistoryResponse]
@@ -366,6 +379,11 @@ func (c *ironflowServiceClient) GetFunction(ctx context.Context, req *connect.Re
 // ListFunctions calls ironflow.v1.IronflowService.ListFunctions.
 func (c *ironflowServiceClient) ListFunctions(ctx context.Context, req *connect.Request[v1.ListFunctionsRequest]) (*connect.Response[v1.ListFunctionsResponse], error) {
 	return c.listFunctions.CallUnary(ctx, req)
+}
+
+// InvokeFunction calls ironflow.v1.IronflowService.InvokeFunction.
+func (c *ironflowServiceClient) InvokeFunction(ctx context.Context, req *connect.Request[v1.InvokeFunctionRequest]) (*connect.Response[v1.InvokeFunctionResponse], error) {
+	return c.invokeFunction.CallUnary(ctx, req)
 }
 
 // UpdateFunctionStatus calls ironflow.v1.IronflowService.UpdateFunctionStatus.
@@ -481,6 +499,9 @@ type IronflowServiceHandler interface {
 	GetFunction(context.Context, *connect.Request[v1.GetFunctionRequest]) (*connect.Response[v1.Function], error)
 	// List all registered functions
 	ListFunctions(context.Context, *connect.Request[v1.ListFunctionsRequest]) (*connect.Response[v1.ListFunctionsResponse], error)
+	// Start one function by ID and return its run and event IDs immediately.
+	// Disconnecting after the response does not cancel the run.
+	InvokeFunction(context.Context, *connect.Request[v1.InvokeFunctionRequest]) (*connect.Response[v1.InvokeFunctionResponse], error)
 	// Update function status (pause, activate, archive)
 	UpdateFunctionStatus(context.Context, *connect.Request[v1.UpdateFunctionStatusRequest]) (*connect.Response[v1.Function], error)
 	// Delete a function
@@ -554,6 +575,12 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 		svc.ListFunctions,
 		connect.WithSchema(ironflowServiceMethods.ByName("ListFunctions")),
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	ironflowServiceInvokeFunctionHandler := connect.NewUnaryHandler(
+		IronflowServiceInvokeFunctionProcedure,
+		svc.InvokeFunction,
+		connect.WithSchema(ironflowServiceMethods.ByName("InvokeFunction")),
 		connect.WithHandlerOptions(opts...),
 	)
 	ironflowServiceUpdateFunctionStatusHandler := connect.NewUnaryHandler(
@@ -696,6 +723,8 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 			ironflowServiceGetFunctionHandler.ServeHTTP(w, r)
 		case IronflowServiceListFunctionsProcedure:
 			ironflowServiceListFunctionsHandler.ServeHTTP(w, r)
+		case IronflowServiceInvokeFunctionProcedure:
+			ironflowServiceInvokeFunctionHandler.ServeHTTP(w, r)
 		case IronflowServiceUpdateFunctionStatusProcedure:
 			ironflowServiceUpdateFunctionStatusHandler.ServeHTTP(w, r)
 		case IronflowServiceDeleteFunctionProcedure:
@@ -757,6 +786,10 @@ func (UnimplementedIronflowServiceHandler) GetFunction(context.Context, *connect
 
 func (UnimplementedIronflowServiceHandler) ListFunctions(context.Context, *connect.Request[v1.ListFunctionsRequest]) (*connect.Response[v1.ListFunctionsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.ListFunctions is not implemented"))
+}
+
+func (UnimplementedIronflowServiceHandler) InvokeFunction(context.Context, *connect.Request[v1.InvokeFunctionRequest]) (*connect.Response[v1.InvokeFunctionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.InvokeFunction is not implemented"))
 }
 
 func (UnimplementedIronflowServiceHandler) UpdateFunctionStatus(context.Context, *connect.Request[v1.UpdateFunctionStatusRequest]) (*connect.Response[v1.Function], error) {

@@ -82,6 +82,22 @@ const (
 	stateStopped
 )
 
+// storeStateUnlessStopped moves the worker to next unless Stop() already marked
+// it stopped. Stop() is terminal: without this, a connect path that stores
+// stateConnecting/stateConnected after a concurrent Stop() resurrects a stopped
+// worker (last write wins on an atomic).
+func storeStateUnlessStopped(state *atomic.Int32, next workerState) {
+	for {
+		cur := state.Load()
+		if cur == int32(stateStopped) {
+			return
+		}
+		if state.CompareAndSwap(cur, int32(next)) {
+			return
+		}
+	}
+}
+
 type activeJob struct {
 	jobID     string
 	runID     string
@@ -243,7 +259,7 @@ func (w *Worker) Stop() {
 
 // connect establishes a connection to the server.
 func (w *Worker) connect(ctx context.Context) error {
-	w.state.Store(int32(stateConnecting))
+	storeStateUnlessStopped(&w.state, stateConnecting)
 
 	// Register functions so the event router can find them
 	if err := registerFunctions(ctx, w.config.ServerURL, w.getHeaders(), w.functions, w.httpClient, w.logger); err != nil {
@@ -255,7 +271,7 @@ func (w *Worker) connect(ctx context.Context) error {
 		return err
 	}
 
-	w.state.Store(int32(stateConnected))
+	storeStateUnlessStopped(&w.state, stateConnected)
 	w.logger.Info("Connected to server")
 
 	// Stop any existing projection runners before starting new ones (prevents leak on reconnect)

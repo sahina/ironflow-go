@@ -46,7 +46,60 @@ var (
 	// was found, so the caller should wait for the first resume to land rather
 	// than retry. Never Retryable — retrying is the thing it is reporting
 	// against.
+	//
+	// Two Connect codes serialize to 409 with opposite retry advice, so the
+	// status alone cannot pick between them (#2074). CodeAlreadyExists lands
+	// here; CodeAborted lands on ErrContended. A 409 carrying no Connect code —
+	// every REST route — still lands here, which is the pre-#2074 behavior.
 	ErrConflict = errors.New("conflict")
+
+	// ErrContended is returned when a concurrent write won and the server
+	// abandoned this one (HTTP 409 / Connect CodeAborted). The sibling of
+	// ErrConflict at the same status and its opposite: nothing was applied, so
+	// the call can be made again — but re-read first. gRPC defines Aborted as
+	// "retry at a higher level", meaning restart the read-modify-write. The
+	// error is deliberately NOT Retryable — that flag makes requestWith re-send
+	// the identical body, which is wrong either way. Where the caller supplied
+	// the version (entity-stream append, the webhook mutators) reissuing it
+	// fails identically; where the server read the version itself
+	// (UpdateFunction, UpdateFunctionStatus, RollbackFunction, CancelRun) a
+	// reissue could land, silently re-applying a write the caller never
+	// re-read. ResumeRun is in that second group and #1972 does not move it:
+	// the RPC takes no version from the caller, and engine.ResumeRun reads it
+	// server-side for the CAS.
+	ErrContended = errors.New("contended")
+
+	// ErrInjectionUnverified is returned when InjectStepOutput wrote the step
+	// but could not confirm the run still stood still around the write
+	// (Connect CodeAborted + Ironflow-Error-Reason: injection_unverified).
+	//
+	// The opposite of ErrContended at the SAME Connect code, which is why the
+	// header exists: contention means nothing was applied and the call may be
+	// reissued; this means the step DID change and a blind reissue writes over
+	// state the caller has not looked at. Read the step -- Output carries the
+	// injected value and OriginalOutput the pre-injection one -- and decide,
+	// rather than retrying. Never Retryable.
+	//
+	// Before #2093's review the SDK collapsed every CodeAborted into
+	// ErrContended, whose doc says "nothing was applied": true for three of
+	// the four sentinels behind that code and a lie for this one.
+	ErrInjectionUnverified = errors.New("injection unverified")
+)
+
+// ErrorReasonHeader names the response-metadata key the server uses to refine
+// an ambiguous Connect code. ADR 0079 section 3 keeps the connect.Code as the
+// contract; this header refines the one code that carries two opposite
+// meanings, the way Retry-After refines CodeResourceExhausted.
+//
+// Duplicated rather than imported: sdk/go/ironflow is a separate module and
+// cannot reach internal/server/connect. The string is the wire contract, so it
+// is pinned on both sides by test rather than by the type system.
+const ErrorReasonHeader = "Ironflow-Error-Reason"
+
+// Reason values for ErrorReasonHeader.
+const (
+	ReasonContended           = "contended"
+	ReasonInjectionUnverified = "injection_unverified"
 )
 
 // IronflowError is the base error type for all Ironflow errors.

@@ -198,6 +198,7 @@ type GetSchemaResponse struct {
 	SchemaJson    string                 `protobuf:"bytes,3,opt,name=schema_json,json=schemaJson,proto3" json:"schema_json,omitempty"`
 	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	EnvironmentId string                 `protobuf:"bytes,6,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -265,6 +266,13 @@ func (x *GetSchemaResponse) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *GetSchemaResponse) GetEnvironmentId() string {
+	if x != nil {
+		return x.EnvironmentId
+	}
+	return ""
 }
 
 type ListSchemasRequest struct {
@@ -380,11 +388,14 @@ func (x *ListSchemasResponse) GetTotalCount() int32 {
 }
 
 type SchemaInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	EventName     string                 `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
-	Version       int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	EventName   string                 `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
+	Version     int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Include the document so list consumers retain the former REST result.
+	SchemaJson    string `protobuf:"bytes,5,opt,name=schema_json,json=schemaJson,proto3" json:"schema_json,omitempty"`
+	EnvironmentId string `protobuf:"bytes,6,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -445,6 +456,20 @@ func (x *SchemaInfo) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *SchemaInfo) GetSchemaJson() string {
+	if x != nil {
+		return x.SchemaJson
+	}
+	return ""
+}
+
+func (x *SchemaInfo) GetEnvironmentId() string {
+	if x != nil {
+		return x.EnvironmentId
+	}
+	return ""
 }
 
 type DeleteSchemaRequest struct {
@@ -1056,7 +1081,7 @@ const file_ironflow_v1_event_schema_proto_rawDesc = "" +
 	"\x10GetSchemaRequest\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\x05R\aversion\"\xca\x01\n" +
+	"\aversion\x18\x02 \x01(\x05R\aversion\"\xf1\x01\n" +
 	"\x11GetSchemaResponse\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12\x18\n" +
@@ -1065,7 +1090,8 @@ const file_ironflow_v1_event_schema_proto_rawDesc = "" +
 	"schemaJson\x12 \n" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"a\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12%\n" +
+	"\x0eenvironment_id\x18\x06 \x01(\tR\renvironmentId\"a\n" +
 	"\x12ListSchemasRequest\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12\x14\n" +
@@ -1074,7 +1100,7 @@ const file_ironflow_v1_event_schema_proto_rawDesc = "" +
 	"\x13ListSchemasResponse\x121\n" +
 	"\aschemas\x18\x01 \x03(\v2\x17.ironflow.v1.SchemaInfoR\aschemas\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x05R\n" +
-	"totalCount\"\xa2\x01\n" +
+	"totalCount\"\xea\x01\n" +
 	"\n" +
 	"SchemaInfo\x12\x1d\n" +
 	"\n" +
@@ -1082,7 +1108,10 @@ const file_ironflow_v1_event_schema_proto_rawDesc = "" +
 	"\aversion\x18\x02 \x01(\x05R\aversion\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x129\n" +
 	"\n" +
-	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"N\n" +
+	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1f\n" +
+	"\vschema_json\x18\x05 \x01(\tR\n" +
+	"schemaJson\x12%\n" +
+	"\x0eenvironment_id\x18\x06 \x01(\tR\renvironmentId\"N\n" +
 	"\x13DeleteSchemaRequest\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12\x18\n" +

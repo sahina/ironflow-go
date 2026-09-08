@@ -104,7 +104,7 @@ func TestClient_PauseRun(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"code":"INTERNAL","message":"database unavailable"}`))
+			w.Write([]byte(`{"code":"internal","message":"database unavailable"}`))
 		}))
 		defer server.Close()
 
@@ -131,8 +131,8 @@ func TestClient_PauseRun(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "INTERNAL" {
-			t.Errorf("expected code 'INTERNAL', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "internal" {
+			t.Errorf("expected code 'internal', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -140,7 +140,7 @@ func TestClient_PauseRun(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"code":"NOT_FOUND","message":"run not found"}`))
+			w.Write([]byte(`{"code":"not_found","message":"run not found"}`))
 		}))
 		defer server.Close()
 
@@ -163,8 +163,8 @@ func TestClient_PauseRun(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "NOT_FOUND" {
-			t.Errorf("expected code 'NOT_FOUND', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "not_found" {
+			t.Errorf("expected code 'not_found', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -172,7 +172,12 @@ func TestClient_PauseRun(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"code":"INVALID_ARGUMENT","message":"run is not in a pausable state"}`))
+			// The code string is what the server puts on the wire, and
+			// requestWith copies it into IronflowError.Code verbatim. Connect
+			// emits lower_snake, and PauseRun answers failed_precondition for a
+			// terminal-state pause since #2098 -- the same code ResumeRun and
+			// InjectStepOutput already answered.
+			w.Write([]byte(`{"code":"failed_precondition","message":"run is not in a pausable state"}`))
 		}))
 		defer server.Close()
 
@@ -195,8 +200,8 @@ func TestClient_PauseRun(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "INVALID_ARGUMENT" {
-			t.Errorf("expected code 'INVALID_ARGUMENT', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "failed_precondition" {
+			t.Errorf("expected code 'failed_precondition', got '%s'", ironflowErr.Code)
 		}
 		// 400 errors should not be retryable
 		if ironflowErr.Retryable {

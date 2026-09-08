@@ -4,7 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
+	"math"
+	"time"
+
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
+	"github.com/sahina/ironflow-go/api/ironflow/v1/ironflowv1connect"
 )
 
 // SchemaClient provides access to the Ironflow Event Schema Registry API.
@@ -17,96 +26,111 @@ func (c *Client) Schemas() *SchemaClient {
 	return &SchemaClient{client: c}
 }
 
-// registerSchemaRequest is the wire format expected by the server.
-type registerSchemaRequest struct {
-	EventName   string `json:"event_name"`
-	Version     int    `json:"version"`
-	SchemaJSON  string `json:"schema_json"`
-	Description string `json:"description,omitempty"`
+func (sc *SchemaClient) rpc() ironflowv1connect.EventSchemaServiceClient {
+	return ironflowv1connect.NewEventSchemaServiceClient(sc.client.httpClient, sc.client.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(bearerInterceptor(sc.client.apiKey)))
 }
 
-// Register registers a new event schema (or a new version of an existing schema).
+// Register registers a new event schema or a new version.
 func (sc *SchemaClient) Register(ctx context.Context, input RegisterSchemaInput) (*EventSchema, error) {
-	// The server expects schema_json as a serialized JSON string, not an object.
-	schemaBytes, err := json.Marshal(input.Schema)
+	if input.Version <= 0 || input.Version > math.MaxInt32 {
+		return nil, NewError("version must be a positive int32", "INVALID_ARGUMENT", false)
+	}
+	data, err := json.Marshal(input.Schema)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal schema: %w", err)
 	}
-
-	wireReq := registerSchemaRequest{
-		EventName:  input.Name,
-		Version:    input.Version,
-		SchemaJSON: string(schemaBytes),
+	// sdkcoverage: POST /ironflow.v1.EventSchemaService/RegisterSchema
+	_, err = sc.rpc().RegisterSchema(ctx, connect.NewRequest(&ironflowv1.RegisterSchemaRequest{EventName: input.Name, Version: int32(input.Version), SchemaJson: string(data)}))
+	if err != nil {
+		return nil, connectError(err)
 	}
-
-	// Server returns {"status": "created"} on success.
-	// Try to decode a full EventSchema; if the server only returned a status object,
-	// fall back to building the result from the input.
-	var result EventSchema
-	if err := sc.client.restRequest(ctx, "POST", "/api/v1/events/schemas", wireReq, &result); err != nil {
-		return nil, err
-	}
-
-	// If the server didn't return a full schema (e.g. only {"status":"created"}),
-	// populate from the input we sent.
-	if result.Name == "" {
-		result.Name = input.Name
-	}
-	if result.Version == 0 {
-		result.Version = input.Version
-	}
-	if result.Schema == nil {
-		result.Schema = input.Schema
-	}
-
-	return &result, nil
+	return &EventSchema{Name: input.Name, Version: input.Version, Schema: input.Schema}, nil
 }
 
-// List returns all registered event schemas.
+// List returns registered event schemas.
 func (sc *SchemaClient) List(ctx context.Context) ([]EventSchema, error) {
-	var result struct {
-		Schemas []EventSchema `json:"schemas"`
+	// sdkcoverage: POST /ironflow.v1.EventSchemaService/ListSchemas
+	resp, err := sc.rpc().ListSchemas(ctx, connect.NewRequest(&ironflowv1.ListSchemasRequest{}))
+	if err != nil {
+		return nil, connectError(err)
 	}
-	if err := sc.client.restRequest(ctx, "GET", "/api/v1/events/schemas", nil, &result); err != nil {
-		return nil, err
+	result := make([]EventSchema, 0, len(resp.Msg.Schemas))
+	for _, schema := range resp.Msg.Schemas {
+		result = append(result, *schemaFromProto(schema.EventName, schema.Version, schema.SchemaJson, schema.CreatedAt))
 	}
-	if result.Schemas == nil {
-		return []EventSchema{}, nil
-	}
-	return result.Schemas, nil
+	return result, nil
 }
 
-// Get returns the latest registered version of an event schema by name.
+// Get returns the latest registered version of an event schema.
 func (sc *SchemaClient) Get(ctx context.Context, name string) (*EventSchema, error) {
-	var result EventSchema
-	path := fmt.Sprintf("/api/v1/events/schemas/%s", url.PathEscape(name))
-	if err := sc.client.restRequest(ctx, "GET", path, nil, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
+	return sc.get(ctx, name, 0)
 }
 
-// GetVersion returns a specific version of an event schema.
+// GetVersion returns a specific registered version.
 func (sc *SchemaClient) GetVersion(ctx context.Context, name string, version int) (*EventSchema, error) {
-	var result EventSchema
-	path := fmt.Sprintf("/api/v1/events/schemas/%s/%d", url.PathEscape(name), version)
-	if err := sc.client.restRequest(ctx, "GET", path, nil, &result); err != nil {
-		return nil, err
+	if version <= 0 || version > math.MaxInt32 {
+		return nil, NewError("version must be positive", "INVALID_ARGUMENT", false)
 	}
-	return &result, nil
+	return sc.get(ctx, name, version)
+}
+
+func (sc *SchemaClient) get(ctx context.Context, name string, version int) (*EventSchema, error) {
+	// sdkcoverage: POST /ironflow.v1.EventSchemaService/GetSchema
+	resp, err := sc.rpc().GetSchema(ctx, connect.NewRequest(&ironflowv1.GetSchemaRequest{EventName: name, Version: int32(version)}))
+	if err != nil {
+		return nil, connectError(err)
+	}
+	schema := resp.Msg
+	return schemaFromProto(schema.EventName, schema.Version, schema.SchemaJson, schema.CreatedAt), nil
+}
+
+func schemaFromProto(name string, version int32, document string, createdAt *timestamppb.Timestamp) *EventSchema {
+	result := &EventSchema{Name: name, Version: int(version)}
+	// Legacy rows may contain documents that do not parse. Match EventSchema.UnmarshalJSON.
+	_ = json.Unmarshal([]byte(document), &result.Schema)
+	if createdAt != nil {
+		result.CreatedAt = createdAt.AsTime().Format(time.RFC3339Nano)
+	}
+	return result
 }
 
 // Delete removes a specific version of an event schema.
 func (sc *SchemaClient) Delete(ctx context.Context, name string, version int) error {
-	path := fmt.Sprintf("/api/v1/events/schemas/%s/%d", url.PathEscape(name), version)
-	return sc.client.restRequest(ctx, "DELETE", path, nil, nil)
+	if version <= 0 || version > math.MaxInt32 {
+		return NewError("version must be a positive int32", "INVALID_ARGUMENT", false)
+	}
+	// sdkcoverage: POST /ironflow.v1.EventSchemaService/DeleteSchema
+	_, err := sc.rpc().DeleteSchema(ctx, connect.NewRequest(&ironflowv1.DeleteSchemaRequest{EventName: name, Version: int32(version)}))
+	return connectError(err)
 }
 
 // TestUpcast tests an upcast transformation between two schema versions.
 func (sc *SchemaClient) TestUpcast(ctx context.Context, input TestUpcastInput) (*UpcastResult, error) {
-	var result UpcastResult
-	if err := sc.client.restRequest(ctx, "POST", "/api/v1/events/upcast", input, &result); err != nil {
+	data, err := json.Marshal(input.Data)
+	if err != nil {
 		return nil, err
 	}
-	return &result, nil
+	value := &structpb.Value{}
+	if err := protojson.Unmarshal(data, value); err != nil {
+		return nil, err
+	}
+	req := &ironflowv1.TestUpcastRequest{EventName: input.EventName, FromVersion: int32(input.FromVersion), ToVersion: int32(input.ToVersion)}
+	if object := value.GetStructValue(); object != nil {
+		req.Data = object
+	} else {
+		req.DataValue = value
+	}
+	client := sc.rpc()
+	// sdkcoverage: POST /ironflow.v1.EventSchemaService/TestUpcast
+	resp, err := client.TestUpcast(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, connectError(err)
+	}
+	var result any
+	if resp.Msg.DataValue != nil {
+		result = resp.Msg.DataValue.AsInterface()
+	} else if resp.Msg.Data != nil {
+		result = resp.Msg.Data.AsMap()
+	}
+	return &UpcastResult{Success: true, Data: result}, nil
 }

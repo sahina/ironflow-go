@@ -211,7 +211,7 @@ func (w *StreamingWorker) Stop() {
 
 // connectStream establishes a single bidirectional stream connection.
 func (w *StreamingWorker) connectStream(ctx context.Context) error {
-	w.state.Store(int32(stateConnecting))
+	storeStateUnlessStopped(&w.state, stateConnecting)
 
 	// Register functions via HTTP (not the stream) so the event router can find them.
 	headers := w.getHeaders()
@@ -275,7 +275,7 @@ func (w *StreamingWorker) connectStream(ctx context.Context) error {
 		heartbeatInterval = time.Duration(serverMs) * time.Millisecond
 	}
 
-	w.state.Store(int32(stateConnected))
+	storeStateUnlessStopped(&w.state, stateConnected)
 	w.logger.Info("Connected to server (streaming)")
 
 	// Stop any existing projection runners before starting new ones (prevents leak on reconnect)

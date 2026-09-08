@@ -580,7 +580,9 @@ type DebounceConfig struct {
 	// JSON-path expression for the debounce group key (e.g. "userId",
 	// "data.customerId"). Empty-payload events use a global sentinel.
 	// See internal/eventpath for path syntax.
-	Key           string `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	Key string `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	// Optional maximum delay before a pending debounce group fires.
+	MaxWaitMs     int64 `protobuf:"varint,3,opt,name=max_wait_ms,json=maxWaitMs,proto3" json:"max_wait_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -627,6 +629,13 @@ func (x *DebounceConfig) GetKey() string {
 		return x.Key
 	}
 	return ""
+}
+
+func (x *DebounceConfig) GetMaxWaitMs() int64 {
+	if x != nil {
+		return x.MaxWaitMs
+	}
+	return 0
 }
 
 type Function struct {
@@ -1036,8 +1045,21 @@ type Run struct {
 	PauseReason string `protobuf:"bytes,20,opt,name=pause_reason,json=pauseReason,proto3" json:"pause_reason,omitempty"`
 	// Function version at the time the run was created
 	FunctionVersion int32 `protobuf:"varint,21,opt,name=function_version,json=functionVersion,proto3" json:"function_version,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Run context retained when a REST consumer moves to Connect.
+	ResumeFromStep    string                 `protobuf:"bytes,24,opt,name=resume_from_step,json=resumeFromStep,proto3" json:"resume_from_step,omitempty"`
+	ParentRunId       string                 `protobuf:"bytes,25,opt,name=parent_run_id,json=parentRunId,proto3" json:"parent_run_id,omitempty"`
+	ParentStepId      string                 `protobuf:"bytes,26,opt,name=parent_step_id,json=parentStepId,proto3" json:"parent_step_id,omitempty"`
+	TimeoutAt         *timestamppb.Timestamp `protobuf:"bytes,27,opt,name=timeout_at,json=timeoutAt,proto3" json:"timeout_at,omitempty"`
+	EnvironmentId     string                 `protobuf:"bytes,28,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
+	Version           int32                  `protobuf:"varint,29,opt,name=version,proto3" json:"version,omitempty"`
+	ClaimedBy         string                 `protobuf:"bytes,30,opt,name=claimed_by,json=claimedBy,proto3" json:"claimed_by,omitempty"`
+	ClaimedAt         *timestamppb.Timestamp `protobuf:"bytes,31,opt,name=claimed_at,json=claimedAt,proto3" json:"claimed_at,omitempty"`
+	CancellationCause string                 `protobuf:"bytes,32,opt,name=cancellation_cause,json=cancellationCause,proto3" json:"cancellation_cause,omitempty"`
+	// Complete persisted error, including application-specific fields.
+	ErrorValue    *structpb.Value `protobuf:"bytes,33,opt,name=error_value,json=errorValue,proto3" json:"error_value,omitempty"`
+	EventName     string          `protobuf:"bytes,34,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Run) Reset() {
@@ -1217,6 +1239,83 @@ func (x *Run) GetFunctionVersion() int32 {
 	return 0
 }
 
+func (x *Run) GetResumeFromStep() string {
+	if x != nil {
+		return x.ResumeFromStep
+	}
+	return ""
+}
+
+func (x *Run) GetParentRunId() string {
+	if x != nil {
+		return x.ParentRunId
+	}
+	return ""
+}
+
+func (x *Run) GetParentStepId() string {
+	if x != nil {
+		return x.ParentStepId
+	}
+	return ""
+}
+
+func (x *Run) GetTimeoutAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.TimeoutAt
+	}
+	return nil
+}
+
+func (x *Run) GetEnvironmentId() string {
+	if x != nil {
+		return x.EnvironmentId
+	}
+	return ""
+}
+
+func (x *Run) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *Run) GetClaimedBy() string {
+	if x != nil {
+		return x.ClaimedBy
+	}
+	return ""
+}
+
+func (x *Run) GetClaimedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ClaimedAt
+	}
+	return nil
+}
+
+func (x *Run) GetCancellationCause() string {
+	if x != nil {
+		return x.CancellationCause
+	}
+	return ""
+}
+
+func (x *Run) GetErrorValue() *structpb.Value {
+	if x != nil {
+		return x.ErrorValue
+	}
+	return nil
+}
+
+func (x *Run) GetEventName() string {
+	if x != nil {
+		return x.EventName
+	}
+	return ""
+}
+
 type Step struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Step record ID
@@ -1270,8 +1369,18 @@ type Step struct {
 	PatchedBy string `protobuf:"bytes,17,opt,name=patched_by,json=patchedBy,proto3" json:"patched_by,omitempty"`
 	// For compensation steps: the step_id of the original step being compensated
 	CompensationFor string `protobuf:"bytes,18,opt,name=compensation_for,json=compensationFor,proto3" json:"compensation_for,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Full duration with presence: zero milliseconds differs from not measured.
+	DurationMsFull *int64                 `protobuf:"varint,22,opt,name=duration_ms_full,json=durationMsFull,proto3,oneof" json:"duration_ms_full,omitempty"`
+	SleepUntil     *timestamppb.Timestamp `protobuf:"bytes,23,opt,name=sleep_until,json=sleepUntil,proto3" json:"sleep_until,omitempty"`
+	WaitEventName  string                 `protobuf:"bytes,24,opt,name=wait_event_name,json=waitEventName,proto3" json:"wait_event_name,omitempty"`
+	WaitTimeout    *timestamppb.Timestamp `protobuf:"bytes,25,opt,name=wait_timeout,json=waitTimeout,proto3" json:"wait_timeout,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,26,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,27,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	ErrorValue     *structpb.Value        `protobuf:"bytes,28,opt,name=error_value,json=errorValue,proto3" json:"error_value,omitempty"`
+	// Preserve persisted states such as waking in introspection clients.
+	StoredStatus  string `protobuf:"bytes,29,opt,name=stored_status,json=storedStatus,proto3" json:"stored_status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Step) Reset() {
@@ -1451,6 +1560,62 @@ func (x *Step) GetCompensationFor() string {
 	return ""
 }
 
+func (x *Step) GetDurationMsFull() int64 {
+	if x != nil && x.DurationMsFull != nil {
+		return *x.DurationMsFull
+	}
+	return 0
+}
+
+func (x *Step) GetSleepUntil() *timestamppb.Timestamp {
+	if x != nil {
+		return x.SleepUntil
+	}
+	return nil
+}
+
+func (x *Step) GetWaitEventName() string {
+	if x != nil {
+		return x.WaitEventName
+	}
+	return ""
+}
+
+func (x *Step) GetWaitTimeout() *timestamppb.Timestamp {
+	if x != nil {
+		return x.WaitTimeout
+	}
+	return nil
+}
+
+func (x *Step) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Step) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *Step) GetErrorValue() *structpb.Value {
+	if x != nil {
+		return x.ErrorValue
+	}
+	return nil
+}
+
+func (x *Step) GetStoredStatus() string {
+	if x != nil {
+		return x.StoredStatus
+	}
+	return ""
+}
+
 type Error struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Error message
@@ -1618,10 +1783,11 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\x03key\x18\x02 \x01(\tR\x03key\":\n" +
 	"\fCancelOnSpec\x12\x14\n" +
 	"\x05event\x18\x01 \x01(\tR\x05event\x12\x14\n" +
-	"\x05match\x18\x02 \x01(\tR\x05match\"?\n" +
+	"\x05match\x18\x02 \x01(\tR\x05match\"_\n" +
 	"\x0eDebounceConfig\x12\x1b\n" +
 	"\tperiod_ms\x18\x01 \x01(\x05R\bperiodMs\x12\x10\n" +
-	"\x03key\x18\x02 \x01(\tR\x03key\"\x82\a\n" +
+	"\x03key\x18\x02 \x01(\tR\x03key\x12\x1e\n" +
+	"\vmax_wait_ms\x18\x03 \x01(\x03R\tmaxWaitMs\"\x82\a\n" +
 	"\bFunction\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -1661,7 +1827,7 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\ventity_type\x18\n" +
 	" \x01(\tR\n" +
 	"entityType\x12%\n" +
-	"\x0eentity_version\x18\v \x01(\x03R\rentityVersion\"\xbd\a\n" +
+	"\x0eentity_version\x18\v \x01(\x03R\rentityVersion\"\x8e\v\n" +
 	"\x03Run\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vfunction_id\x18\x02 \x01(\tR\n" +
@@ -1689,7 +1855,24 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"updated_at\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12'\n" +
 	"\x0fpause_requested\x18\x13 \x01(\bR\x0epauseRequested\x12!\n" +
 	"\fpause_reason\x18\x14 \x01(\tR\vpauseReason\x12)\n" +
-	"\x10function_version\x18\x15 \x01(\x05R\x0ffunctionVersionJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11R\x0fconcurrency_keyR\bpriority\"\xa4\a\n" +
+	"\x10function_version\x18\x15 \x01(\x05R\x0ffunctionVersion\x12(\n" +
+	"\x10resume_from_step\x18\x18 \x01(\tR\x0eresumeFromStep\x12\"\n" +
+	"\rparent_run_id\x18\x19 \x01(\tR\vparentRunId\x12$\n" +
+	"\x0eparent_step_id\x18\x1a \x01(\tR\fparentStepId\x129\n" +
+	"\n" +
+	"timeout_at\x18\x1b \x01(\v2\x1a.google.protobuf.TimestampR\ttimeoutAt\x12%\n" +
+	"\x0eenvironment_id\x18\x1c \x01(\tR\renvironmentId\x12\x18\n" +
+	"\aversion\x18\x1d \x01(\x05R\aversion\x12\x1d\n" +
+	"\n" +
+	"claimed_by\x18\x1e \x01(\tR\tclaimedBy\x129\n" +
+	"\n" +
+	"claimed_at\x18\x1f \x01(\v2\x1a.google.protobuf.TimestampR\tclaimedAt\x12-\n" +
+	"\x12cancellation_cause\x18  \x01(\tR\x11cancellationCause\x127\n" +
+	"\verror_value\x18! \x01(\v2\x16.google.protobuf.ValueR\n" +
+	"errorValue\x12\x1d\n" +
+	"\n" +
+	"event_name\x18\" \x01(\tR\teventNameJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11R\x0fconcurrency_keyR\bpriority\"\xe0\n" +
+	"\n" +
 	"\x04Step\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06run_id\x18\x02 \x01(\tR\x05runId\x12\x17\n" +
@@ -1718,7 +1901,20 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"patched_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampR\tpatchedAt\x12\x1d\n" +
 	"\n" +
 	"patched_by\x18\x11 \x01(\tR\tpatchedBy\x12)\n" +
-	"\x10compensation_for\x18\x12 \x01(\tR\x0fcompensationFor\"\x9c\x01\n" +
+	"\x10compensation_for\x18\x12 \x01(\tR\x0fcompensationFor\x12-\n" +
+	"\x10duration_ms_full\x18\x16 \x01(\x03H\x00R\x0edurationMsFull\x88\x01\x01\x12;\n" +
+	"\vsleep_until\x18\x17 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"sleepUntil\x12&\n" +
+	"\x0fwait_event_name\x18\x18 \x01(\tR\rwaitEventName\x12=\n" +
+	"\fwait_timeout\x18\x19 \x01(\v2\x1a.google.protobuf.TimestampR\vwaitTimeout\x129\n" +
+	"\n" +
+	"created_at\x18\x1a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\x1b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x127\n" +
+	"\verror_value\x18\x1c \x01(\v2\x16.google.protobuf.ValueR\n" +
+	"errorValue\x12#\n" +
+	"\rstored_status\x18\x1d \x01(\tR\fstoredStatusB\x13\n" +
+	"\x11_duration_ms_full\"\x9c\x01\n" +
 	"\x05Error\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x14\n" +
@@ -1833,25 +2029,33 @@ var file_ironflow_v1_types_proto_depIdxs = []int32{
 	17, // 22: ironflow.v1.Run.ended_at:type_name -> google.protobuf.Timestamp
 	17, // 23: ironflow.v1.Run.created_at:type_name -> google.protobuf.Timestamp
 	17, // 24: ironflow.v1.Run.updated_at:type_name -> google.protobuf.Timestamp
-	4,  // 25: ironflow.v1.Step.step_type:type_name -> ironflow.v1.StepType
-	3,  // 26: ironflow.v1.Step.status:type_name -> ironflow.v1.StepStatus
-	18, // 27: ironflow.v1.Step.input:type_name -> google.protobuf.Struct
-	19, // 28: ironflow.v1.Step.input_value:type_name -> google.protobuf.Value
-	18, // 29: ironflow.v1.Step.output:type_name -> google.protobuf.Struct
-	19, // 30: ironflow.v1.Step.output_value:type_name -> google.protobuf.Value
-	14, // 31: ironflow.v1.Step.error:type_name -> ironflow.v1.Error
-	17, // 32: ironflow.v1.Step.started_at:type_name -> google.protobuf.Timestamp
-	17, // 33: ironflow.v1.Step.ended_at:type_name -> google.protobuf.Timestamp
-	18, // 34: ironflow.v1.Step.original_output:type_name -> google.protobuf.Struct
-	19, // 35: ironflow.v1.Step.original_output_value:type_name -> google.protobuf.Value
-	17, // 36: ironflow.v1.Step.patched_at:type_name -> google.protobuf.Timestamp
-	18, // 37: ironflow.v1.Error.details:type_name -> google.protobuf.Struct
-	16, // 38: ironflow.v1.ErrorInfo.metadata:type_name -> ironflow.v1.ErrorInfo.MetadataEntry
-	39, // [39:39] is the sub-list for method output_type
-	39, // [39:39] is the sub-list for method input_type
-	39, // [39:39] is the sub-list for extension type_name
-	39, // [39:39] is the sub-list for extension extendee
-	0,  // [0:39] is the sub-list for field type_name
+	17, // 25: ironflow.v1.Run.timeout_at:type_name -> google.protobuf.Timestamp
+	17, // 26: ironflow.v1.Run.claimed_at:type_name -> google.protobuf.Timestamp
+	19, // 27: ironflow.v1.Run.error_value:type_name -> google.protobuf.Value
+	4,  // 28: ironflow.v1.Step.step_type:type_name -> ironflow.v1.StepType
+	3,  // 29: ironflow.v1.Step.status:type_name -> ironflow.v1.StepStatus
+	18, // 30: ironflow.v1.Step.input:type_name -> google.protobuf.Struct
+	19, // 31: ironflow.v1.Step.input_value:type_name -> google.protobuf.Value
+	18, // 32: ironflow.v1.Step.output:type_name -> google.protobuf.Struct
+	19, // 33: ironflow.v1.Step.output_value:type_name -> google.protobuf.Value
+	14, // 34: ironflow.v1.Step.error:type_name -> ironflow.v1.Error
+	17, // 35: ironflow.v1.Step.started_at:type_name -> google.protobuf.Timestamp
+	17, // 36: ironflow.v1.Step.ended_at:type_name -> google.protobuf.Timestamp
+	18, // 37: ironflow.v1.Step.original_output:type_name -> google.protobuf.Struct
+	19, // 38: ironflow.v1.Step.original_output_value:type_name -> google.protobuf.Value
+	17, // 39: ironflow.v1.Step.patched_at:type_name -> google.protobuf.Timestamp
+	17, // 40: ironflow.v1.Step.sleep_until:type_name -> google.protobuf.Timestamp
+	17, // 41: ironflow.v1.Step.wait_timeout:type_name -> google.protobuf.Timestamp
+	17, // 42: ironflow.v1.Step.created_at:type_name -> google.protobuf.Timestamp
+	17, // 43: ironflow.v1.Step.updated_at:type_name -> google.protobuf.Timestamp
+	19, // 44: ironflow.v1.Step.error_value:type_name -> google.protobuf.Value
+	18, // 45: ironflow.v1.Error.details:type_name -> google.protobuf.Struct
+	16, // 46: ironflow.v1.ErrorInfo.metadata:type_name -> ironflow.v1.ErrorInfo.MetadataEntry
+	47, // [47:47] is the sub-list for method output_type
+	47, // [47:47] is the sub-list for method input_type
+	47, // [47:47] is the sub-list for extension type_name
+	47, // [47:47] is the sub-list for extension extendee
+	0,  // [0:47] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_types_proto_init() }
@@ -1859,6 +2063,7 @@ func file_ironflow_v1_types_proto_init() {
 	if File_ironflow_v1_types_proto != nil {
 		return
 	}
+	file_ironflow_v1_types_proto_msgTypes[8].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

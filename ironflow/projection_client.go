@@ -7,6 +7,13 @@ import (
 	"fmt"
 	"net/url"
 	"time"
+
+	"connectrpc.com/connect"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
+	"github.com/sahina/ironflow-go/api/ironflow/v1/ironflowv1connect"
 )
 
 // ProjectionClient provides access to the Ironflow Projection Management API.
@@ -21,8 +28,7 @@ func (c *Client) Projections() *ProjectionClient {
 
 // Get retrieves the current materialized state of a projection by name.
 //
-// Returns a flat *ProjectionStateResult after stripping the server REST
-// envelope. See peelProjection / issue #610 / CHANGELOG 0.20.0.
+// Returns registry metadata and the selected partition state through Connect.
 //
 // Pass WithPartition("key") to read a specific partition. When omitted the
 // server returns the __global__ partition.
@@ -32,16 +38,35 @@ func (pc *ProjectionClient) Get(ctx context.Context, name string, opts ...GetPro
 		opt(&options)
 	}
 
-	path := "/api/v1/projections/" + url.PathEscape(name)
-	if options.partition != "" {
-		path += "?partition=" + url.QueryEscape(options.partition)
+	// sdkcoverage: POST /ironflow.v1.ProjectionService/GetProjection
+	resp, err := pc.rpc().GetProjection(ctx, connect.NewRequest(&ironflowv1.GetProjectionRequest{Name: name, Partition: options.partition}))
+	if err != nil {
+		return nil, connectError(err)
 	}
-
-	var raw json.RawMessage
-	if err := pc.client.restRequest(ctx, "GET", path, nil, &raw); err != nil {
-		return nil, err
+	msg := resp.Msg
+	result := &ProjectionStateResult{Name: msg.Name, Partition: msg.Partition, Mode: msg.Mode, Version: msg.Version, LastEventID: msg.LastEventId, State: map[string]any{}}
+	if msg.StateValue != nil {
+		result.State = msg.StateValue.AsInterface()
+	} else if msg.State != nil {
+		result.State = msg.State.AsMap()
 	}
-	return peelProjection(raw, options.partition)
+	if result.State == nil {
+		result.State = map[string]any{}
+	}
+	if msg.LastEventTime != nil && !msg.LastEventTime.AsTime().IsZero() {
+		t := msg.LastEventTime.AsTime()
+		result.LastEventTime = &t
+	}
+	if reg := msg.Registry; reg != nil {
+		result.Version = reg.VersionFull
+		result.LastEventSeq = reg.LastEventSeq
+		result.Status = reg.Status
+		result.ErrorMessage = reg.ErrorMessage
+		if reg.UpdatedAt != nil {
+			result.UpdatedAt = reg.UpdatedAt.AsTime()
+		}
+	}
+	return result, nil
 }
 
 // peelProjection strips the server REST envelope and returns a flat
@@ -240,43 +265,71 @@ func decodeMode(raw json.RawMessage) string {
 
 // List returns the status of all projections.
 func (pc *ProjectionClient) List(ctx context.Context) ([]ProjectionStatusInfo, error) {
-	var result struct {
-		Projections []ProjectionStatusInfo `json:"projections"`
+	// sdkcoverage: POST /ironflow.v1.ProjectionService/ListProjections
+	resp, err := pc.rpc().ListProjections(ctx, connect.NewRequest(&ironflowv1.ListProjectionsRequest{}))
+	if err != nil {
+		return nil, connectError(err)
 	}
-	if err := pc.client.restRequest(ctx, "GET", "/api/v1/projections", nil, &result); err != nil {
-		return nil, err
+	result := make([]ProjectionStatusInfo, 0, len(resp.Msg.Projections))
+	for _, p := range resp.Msg.Projections {
+		// ProjectionInfo carries no lag — only GetProjectionStatus reads the
+		// consumer. Lag stays zero here, which is why Status is what a caller
+		// listing projections should read.
+		info := ProjectionStatusInfo{
+			Name:               p.Name,
+			Status:             p.Status,
+			Mode:               p.Mode,
+			LastEventSeq:       p.LastEventSeq,
+			LastError:          p.ErrorMessage,
+			UpdatedAt:          rfc3339OrEmpty(p.UpdatedAt),
+			RebuildTargetSeq:   p.GetRebuildTargetSeq(),
+			RebuildStartCursor: p.GetRebuildStartCursor(),
+			RebuildStartedAt:   rfc3339OrEmpty(p.RebuildStartedAt),
+		}
+		result = append(result, info)
 	}
-	if result.Projections == nil {
-		return []ProjectionStatusInfo{}, nil
-	}
-	return result.Projections, nil
+	return result, nil
 }
 
 // GetStatus retrieves the operational status of a projection by name.
 func (pc *ProjectionClient) GetStatus(ctx context.Context, name string) (*ProjectionStatusInfo, error) {
-	var result ProjectionStatusInfo
-	if err := pc.client.restRequest(ctx, "GET", "/api/v1/projections/"+url.PathEscape(name)+"/status", nil, &result); err != nil {
-		return nil, err
+	// sdkcoverage: POST /ironflow.v1.ProjectionService/GetProjectionStatus
+	resp, err := pc.rpc().GetProjectionStatus(ctx, connect.NewRequest(&ironflowv1.GetProjectionStatusRequest{Name: name}))
+	if err != nil {
+		return nil, connectError(err)
 	}
-	return &result, nil
+	return &ProjectionStatusInfo{
+		Name:               resp.Msg.Name,
+		Status:             resp.Msg.Status,
+		Mode:               resp.Msg.Mode,
+		LastEventSeq:       resp.Msg.LastEventSeq,
+		Lag:                resp.Msg.Lag,
+		LastError:          resp.Msg.ErrorMessage,
+		UpdatedAt:          rfc3339OrEmpty(resp.Msg.UpdatedAt),
+		RebuildTargetSeq:   resp.Msg.RebuildTargetSeq,
+		RebuildStartCursor: resp.Msg.RebuildStartCursor,
+		RebuildStartedAt:   rfc3339OrEmpty(resp.Msg.RebuildStartedAt),
+	}, nil
 }
 
 // Rebuild triggers a full rebuild of a projection and returns the rebuild job.
 func (pc *ProjectionClient) Rebuild(ctx context.Context, name string) (*RebuildJob, error) {
-	var result RebuildJob
-	if err := pc.client.restRequest(ctx, "POST", "/api/v1/projections/"+url.PathEscape(name)+"/rebuild", nil, &result); err != nil {
-		return nil, err
+	// sdkcoverage: POST /ironflow.v1.ProjectionService/RebuildProjection
+	resp, err := pc.rpc().RebuildProjection(ctx, connect.NewRequest(&ironflowv1.RebuildProjectionRequest{Name: name}))
+	if err != nil {
+		return nil, connectError(err)
 	}
-	return &result, nil
+	return sdkRebuildJob(resp.Msg.Job), nil
 }
 
 // GetRebuildJob retrieves the current state of an in-progress or completed rebuild job.
 func (pc *ProjectionClient) GetRebuildJob(ctx context.Context, name string) (*RebuildJob, error) {
-	var result RebuildJob
-	if err := pc.client.restRequest(ctx, "GET", "/api/v1/projections/"+url.PathEscape(name)+"/rebuild", nil, &result); err != nil {
-		return nil, err
+	// sdkcoverage: POST /ironflow.v1.ProjectionService/GetRebuildJob
+	resp, err := pc.rpc().GetRebuildJob(ctx, connect.NewRequest(&ironflowv1.GetRebuildJobRequest{Name: name}))
+	if err != nil {
+		return nil, connectError(err)
 	}
-	return &result, nil
+	return sdkRebuildJob(resp.Msg.Job), nil
 }
 
 // Delete removes a projection by name.
@@ -286,24 +339,100 @@ func (pc *ProjectionClient) Delete(ctx context.Context, name string) error {
 
 // Pause pauses a running projection.
 func (pc *ProjectionClient) Pause(ctx context.Context, name string) error {
-	return pc.client.restRequest(ctx, "POST", "/api/v1/projections/"+url.PathEscape(name)+"/pause", nil, nil)
+	// sdkcoverage: POST /ironflow.v1.ProjectionService/PauseProjection
+	_, err := pc.rpc().PauseProjection(ctx, connect.NewRequest(&ironflowv1.PauseProjectionRequest{Name: name}))
+	return connectError(err)
 }
 
 // Resume resumes a paused projection.
 func (pc *ProjectionClient) Resume(ctx context.Context, name string) error {
-	return pc.client.restRequest(ctx, "POST", "/api/v1/projections/"+url.PathEscape(name)+"/resume", nil, nil)
+	// sdkcoverage: POST /ironflow.v1.ProjectionService/ResumeProjection
+	_, err := pc.rpc().ResumeProjection(ctx, connect.NewRequest(&ironflowv1.ResumeProjectionRequest{Name: name}))
+	return connectError(err)
 }
 
 // CancelRebuild cancels an in-progress rebuild job.
 func (pc *ProjectionClient) CancelRebuild(ctx context.Context, name string) error {
-	return pc.client.restRequest(ctx, "POST", "/api/v1/projections/"+url.PathEscape(name)+"/cancel", nil, nil)
+	// sdkcoverage: POST /ironflow.v1.ProjectionService/CancelRebuild
+	_, err := pc.rpc().CancelRebuild(ctx, connect.NewRequest(&ironflowv1.CancelRebuildRequest{Name: name}))
+	return connectError(err)
 }
 
 // ExecuteSQL runs a SQL query against projection tables.
+//
+// Speaks ConnectRPC. The REST route POST /api/v1/sql was removed in #1972 step
+// 10; QueryService/ExecuteSQL is the only transport for this capability.
+//
+// Errors are *IronflowError, as on every other method here — connectError maps
+// the Connect code to the same Code, Retryable flag and sentinel Cause the REST
+// path produced. Returning the raw *connect.Error would have made IsRetryable
+// answer true for a rejected query, because it defaults to true for a type it
+// does not recognize.
+//
+// Cell values are strings. That is not a change in what the server can return
+// — store.QuerySQL produces [][]string on both SQLite and PostgreSQL, so the
+// REST response carried strings too. What did change is that the values now
+// arrive: the REST response listed them positionally, this struct declares
+// Rows as []map[string]any, and json.Unmarshal rejected the mismatch, so every
+// non-empty result set failed to decode. Count comes from total_rows, which the
+// old `json:"count"` tag never matched either.
 func (pc *ProjectionClient) ExecuteSQL(ctx context.Context, query string) (*SQLQueryResult, error) {
-	var result SQLQueryResult
-	if err := pc.client.restRequest(ctx, "POST", "/api/v1/sql", map[string]string{"query": query}, &result); err != nil {
-		return nil, err
+	queryClient := ironflowv1connect.NewQueryServiceClient(
+		pc.client.httpClient,
+		pc.client.serverURL,
+		connect.WithProtoJSON(),
+		connect.WithInterceptors(bearerInterceptor(pc.client.apiKey)),
+	)
+
+	req := connect.NewRequest(&ironflowv1.ExecuteSQLRequest{Query: query})
+
+	// sdkcoverage: POST /ironflow.v1.QueryService/ExecuteSQL
+	resp, err := queryClient.ExecuteSQL(ctx, req)
+	if err != nil {
+		return nil, connectError(err)
 	}
-	return &result, nil
+
+	msg := resp.Msg
+	rows := make([]map[string]any, 0, len(msg.GetRows()))
+	for _, row := range msg.GetRows() {
+		values := row.GetValues()
+		cells := make(map[string]any, len(values))
+		for i, col := range msg.GetColumns() {
+			if i >= len(values) {
+				break
+			}
+			cells[col] = values[i]
+		}
+		rows = append(rows, cells)
+	}
+
+	return &SQLQueryResult{
+		Columns: msg.GetColumns(),
+		Rows:    rows,
+		Count:   int64(msg.GetTotalRows()),
+	}, nil
+}
+
+func (pc *ProjectionClient) rpc() ironflowv1connect.ProjectionServiceClient {
+	return ironflowv1connect.NewProjectionServiceClient(pc.client.httpClient, pc.client.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(bearerInterceptor(pc.client.apiKey)))
+}
+
+// rfc3339OrEmpty renders a protobuf timestamp the way the rest of this package
+// renders times, and yields "" for an absent one rather than the zero instant.
+func rfc3339OrEmpty(ts *timestamppb.Timestamp) string {
+	if ts == nil {
+		return ""
+	}
+	return ts.AsTime().Format(time.RFC3339Nano)
+}
+
+func sdkRebuildJob(job *ironflowv1.RebuildJob) *RebuildJob {
+	if job == nil {
+		return nil
+	}
+	result := &RebuildJob{Name: job.ProjectionName, Status: job.Status, Progress: int(job.Progress)}
+	if job.StartedAt != nil {
+		result.StartedAt = job.StartedAt.AsTime().Format(time.RFC3339Nano)
+	}
+	return result
 }

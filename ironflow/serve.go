@@ -283,8 +283,12 @@ func (h *serveHandler) handleWebhook(w http.ResponseWriter, r *http.Request, pro
 	// Emit event to Ironflow server if configured
 	if h.serverURL != "" {
 		emitReq := map[string]any{
-			"name": event.Name,
-			"data": event.Data,
+			"event": event.Name,
+			"data":  event.Data,
+		}
+		if raw := bytes.TrimSpace(event.Data); len(raw) == 0 || raw[0] != '{' {
+			delete(emitReq, "data")
+			emitReq["dataValue"] = event.Data
 		}
 		if event.IdempotencyKey != "" {
 			emitReq["idempotencyKey"] = event.IdempotencyKey
@@ -294,11 +298,11 @@ func (h *serveHandler) handleWebhook(w http.ResponseWriter, r *http.Request, pro
 			h.sendError(w, http.StatusInternalServerError, "EMIT_FAILED", fmt.Sprintf("failed to marshal event: %v", err))
 			return
 		}
-		// /api/v1/events requires auth (isPublicPath rejects every /api/ path),
+		// Event emission requires authentication,
 		// so an unauthenticated emit fails the whole webhook outside dev mode.
 		// Same env key executeHandler gives the step callbacks.
 		emitHTTPReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost,
-			h.serverURL+"/api/v1/events", bytes.NewReader(emitBody))
+			h.serverURL+"/ironflow.v1.IronflowService/Emit", bytes.NewReader(emitBody))
 		if err != nil {
 			h.sendError(w, http.StatusInternalServerError, "EMIT_FAILED", fmt.Sprintf("failed to build emit request: %v", err))
 			return

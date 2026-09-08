@@ -543,6 +543,8 @@ result, err := client.Emit(ctx, "order.placed", data,
 syncResults, err := client.EmitSync(ctx, "order.placed", data, 30*time.Second,
     ironflow.WithSyncIdempotencyKey("order-123-placed"),
     ironflow.WithSyncMetadata(map[string]any{"source": "api"}),
+    ironflow.WithSyncVersion(2), // event schema version; no-op on InvokeSync,
+                                 // which generates no event to select a schema for
 )
 for _, r := range syncResults {
     if r.Status == ironflow.RunStatusCompleted {
@@ -558,6 +560,14 @@ results, err := client.TriggerBatch(ctx, []ironflow.TriggerBatchEvent{
     {Event: "order.placed", Data: map[string]any{"orderId": "1"}},
     {Event: "order.placed", Data: map[string]any{"orderId": "2"}},
 })
+```
+
+Client calls made from inside a handler should carry the run id so the flow map
+can attribute them. `ctx.RunContext()` does this for you; `ironflow.WithRunID`
+tags a different parent context when you need to keep its cancellation:
+
+```go
+client.Emit(ironflow.WithRunID(parentCtx, ctx.Run.ID), "order.shipped", data)
 ```
 
 ### Reading Stored Events
@@ -840,6 +850,9 @@ subClient := ironflow.NewSubscriptionClient(ironflow.SubscriptionClientConfig{
 subClient.SetConnectionCallback(func(connected bool) {
     fmt.Println("Connected:", connected)
 })
+
+fmt.Println(subClient.IsConnected()) // bool snapshot
+fmt.Println(subClient.State())       // "connecting" | "connected" | "disconnected" | "reconnecting"
 ```
 
 ### gRPC (HTTP Streaming) Subscriptions
@@ -1684,6 +1697,10 @@ func TestProcessOrder(t *testing.T) {
 }
 ```
 
+`ironflow.NewContextForTest(req *PushRequest)` builds a bare `Context` from a
+push request when you want to drive a handler directly instead of through
+`ironflowtest`. Not for production use.
+
 ### Test Behavior
 
 | Behavior | Description |
@@ -1750,6 +1767,10 @@ errors.Is(err, ironflow.ErrInvalidSignature)
 errors.Is(err, ironflow.ErrSignatureExpired)
 errors.Is(err, ironflow.ErrMissingSignature)
 errors.Is(err, ironflow.ErrValidation)
+errors.Is(err, ironflow.ErrConflict)   // HTTP 409 / Connect AlreadyExists — an identical
+                                        // request is already in flight; wait, do not retry
+errors.Is(err, ironflow.ErrContended)  // HTTP 409 / Connect Aborted — a concurrent write won
+                                        // and nothing was applied; re-read, then reissue
 ```
 
 ### Retryability

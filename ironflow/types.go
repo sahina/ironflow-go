@@ -670,7 +670,10 @@ type WaitForProjectionOpts struct {
 
 	// Partition optionally scopes the wait to a single partition of a
 	// managed projection. Empty means global wait. External projections
-	// must omit this.
+	// must omit this, as must managed projections that declare no partition
+	// key — though a partition that already has a state row is still
+	// accepted, and on a partitioned projection a partition no event has
+	// reached yet is accepted too (its cursor reads as 0).
 	Partition string `json:"partition,omitempty"`
 }
 
@@ -995,15 +998,34 @@ func WithPartition(key string) GetProjectionOption {
 	}
 }
 
-// ProjectionStatusInfo represents the operational status of a projection as returned by the API.
+// ProjectionStatusInfo represents the operational status of a projection as
+// returned by ProjectionService/GetProjectionStatus and ListProjections.
+//
+// The fields mirror the wire message. EventCount, LastEventAt, ErrorCount and
+// ConsumerName used to sit here and were never populated by either transport —
+// no response has ever carried them — so a caller reading them got a zero that
+// looked like data. They are gone; LastEventSeq is the cursor that actually
+// exists, and Lag is the consumer lag when it could be read.
+//
+// Lag is int64 with no absent value on the wire, so a projection whose consumer
+// is missing or whose NATS is unreachable reports 0 — the same value a fully
+// caught-up projection reports. Do not alert on Lag == 0 alone; read Status.
+//
+// Rebuild progress is populated only while a rebuild is in flight, and is
+// cleared on completion. Progress is
+// (LastEventSeq - RebuildStartCursor) / (RebuildTargetSeq - RebuildStartCursor).
 type ProjectionStatusInfo struct {
 	Name         string `json:"name"`
 	Status       string `json:"status"`
-	EventCount   int64  `json:"eventCount"`
-	LastEventAt  string `json:"lastEventAt"`
-	ErrorCount   int64  `json:"errorCount"`
+	Mode         string `json:"mode"`
+	LastEventSeq int64  `json:"lastEventSeq"`
+	Lag          int64  `json:"lag"`
 	LastError    string `json:"lastError"`
-	ConsumerName string `json:"consumerName"`
+	UpdatedAt    string `json:"updatedAt"`
+
+	RebuildTargetSeq   int64  `json:"rebuildTargetSeq,omitempty"`
+	RebuildStartCursor int64  `json:"rebuildStartCursor,omitempty"`
+	RebuildStartedAt   string `json:"rebuildStartedAt,omitempty"`
 }
 
 // RebuildJob represents a projection rebuild operation.

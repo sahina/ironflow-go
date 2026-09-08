@@ -196,7 +196,9 @@ func bearerInterceptor(key string) connect.Interceptor { return bearerAuth{key: 
 
 func (b bearerAuth) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		req.Header().Set("Authorization", "Bearer "+b.key)
+		if b.key != "" {
+			req.Header().Set("Authorization", "Bearer "+b.key)
+		}
 		return next(ctx, req)
 	}
 }
@@ -204,7 +206,9 @@ func (b bearerAuth) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 func (b bearerAuth) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
 	return func(ctx context.Context, spec connect.Spec) connect.StreamingClientConn {
 		conn := next(ctx, spec)
-		conn.RequestHeader().Set("Authorization", "Bearer "+b.key)
+		if b.key != "" {
+			conn.RequestHeader().Set("Authorization", "Bearer "+b.key)
+		}
 		return conn
 	}
 }

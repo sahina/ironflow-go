@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -85,5 +86,124 @@ func TestConflict_IsDistinctFromOtherStatuses(t *testing.T) {
 				t.Errorf("status %d must not map to ErrConflict", tc.status)
 			}
 		})
+	}
+}
+
+// #2074: 409 stopped meaning one thing.
+//
+// Connect serializes both CodeAlreadyExists and CodeAborted to 409, and the two
+// want opposite things from the caller -- wait vs retry. The status alone
+// cannot pick between them, so the discriminator is the Connect code in the
+// error body, which executeRequest already unmarshals.
+//
+// The third row is the one that keeps this honest: a REST-shaped 409 carries no
+// Connect code at all, and it has to keep landing on ErrConflict.
+//
+// The sentinel is the whole discrimination. Neither is Retryable -- see
+// TestContended_IsNotReissued below for why -- so a test asserting only on the
+// flag would pass on both rows and prove nothing.
+func TestConflict_DiscriminatesOnConnectCode(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		body         string
+		wantSentinel error
+	}{
+		{
+			name:         "aborted is contention",
+			body:         `{"code":"aborted","message":"resume run contended after retry"}`,
+			wantSentinel: ErrContended,
+		},
+		{
+			name:         "already_exists is dedupe",
+			body:         `{"code":"already_exists","message":"` + dedupeMessage + `"}`,
+			wantSentinel: ErrConflict,
+		},
+		{
+			name:         "no code stays a conflict",
+			body:         `{"error":"conflict"}`,
+			wantSentinel: ErrConflict,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			client := newAuthTestClient(server)
+			_, err := client.ResumeRun(context.Background(), "run-1", "")
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !errors.Is(err, tc.wantSentinel) {
+				t.Errorf("expected errors.Is(err, %v), got: %v", tc.wantSentinel, err)
+			}
+			// A tripwire, not the primary check: today the two sentinels are
+			// independent errors.New values and only one is ever assigned, so
+			// this cannot fire. It exists because #2055 wraps the engine-side
+			// ErrContended in ErrInvalidStateTransition, and the same instinct
+			// applied here -- wrapping one sentinel in the other -- would make
+			// a caller's `errors.Is(err, ErrConflict)` catch contention again,
+			// which is the exact regression #2074 is about.
+			other := ErrConflict
+			if tc.wantSentinel == ErrConflict {
+				other = ErrContended
+			}
+			if errors.Is(err, other) {
+				t.Errorf("must not also match %v", other)
+			}
+			// Read the flag off the error rather than through IsRetryable,
+			// which defaults to true for anything that is not an
+			// *IronflowError -- so the helper would pass here for the wrong
+			// reason if the 4xx path ever stopped returning one.
+			var ifErr *IronflowError
+			if !errors.As(err, &ifErr) {
+				t.Fatalf("expected *IronflowError, got %T", err)
+			}
+			if ifErr.Retryable {
+				t.Error("no 409 is blindly Retryable -- see TestContended_IsNotReissued")
+			}
+		})
+	}
+}
+
+// TestContended_IsNotReissued is the guard on the tempting half of #2074.
+//
+// The issue says contention means "retry", and marking the error Retryable
+// looks like the way to say so. It is not: Retryable is what requestWith reads
+// to re-send the identical marshaled body, while gRPC defines Aborted as
+// "retry at a HIGHER level" -- restart the read-modify-write. Where the caller
+// supplied the version (entity-stream append, the webhook mutators) a blind
+// reissue sends the same stale version and fails identically, three times, on
+// the default retry config; where the server read it (UpdateFunction,
+// UpdateFunctionStatus, RollbackFunction, CancelRun) the reissue could land
+// instead, re-applying a write the caller never re-read.
+//
+// Counting requests is the only assertion that catches this. errors.Is and
+// IsRetryable both still pass with the reissue in place.
+//
+// Deliberately NOT newAuthTestClient: that helper pins MaxAttempts to 1, so the
+// retry loop never runs and this test would pass no matter what Retryable said.
+// The default config is the one shipped callers get.
+func TestContended_IsNotReissued(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"code":"aborted","message":"version conflict"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{ServerURL: server.URL})
+	if client.retryConfig == nil || client.retryConfig.MaxAttempts < 2 {
+		t.Fatalf("this test is vacuous unless the default config retries: %+v", client.retryConfig)
+	}
+
+	if _, err := client.ResumeRun(context.Background(), "run-1", ""); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got := requests.Load(); got != 1 {
+		t.Errorf("server saw %d requests, want 1 -- a contended write must not be reissued with the same body", got)
 	}
 }

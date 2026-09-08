@@ -144,11 +144,13 @@ type Projection struct {
 //	    Name:   "order-totals",
 //	    Events: []string{"order.created", "order.updated"},
 //	    InitialState: func() map[string]any {
-//	        return map[string]any{"total": 0, "count": 0}
+//	        return map[string]any{"total": 0.0, "count": 0.0}
 //	    },
 //	    Handler: func(state map[string]any, event ironflow.ProjectionEvent, ctx ironflow.ProjectionContext) (map[string]any, error) {
 //	        amount, _ := event.Data["amount"].(float64)
-//	        count, _ := state["count"].(int)
+//	        // State is deep-copied via JSON before each invocation, so every
+//	        // number arrives as float64 — never assert .(int) here.
+//	        count, _ := state["count"].(float64)
 //	        total, _ := state["total"].(float64)
 //	        return map[string]any{"total": total + amount, "count": count + 1}, nil
 //	    },
