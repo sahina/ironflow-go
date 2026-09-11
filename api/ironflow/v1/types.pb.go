@@ -670,8 +670,12 @@ type Function struct {
 	UpdatedAt *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	// Whether audit recording is enabled
 	Recording bool `protobuf:"varint,15,opt,name=recording,proto3" json:"recording,omitempty"`
-	// Retention period for audit events (e.g. "7d", "30d", "90d", "forever")
+	// Deprecated compatibility metadata. Global IRONFLOW_AUDIT_RETENTION_DAYS controls pruning, including forever.
+	//
+	// Deprecated: Marked as deprecated in ironflow/v1/types.proto.
 	RecordingRetention string `protobuf:"bytes,16,opt,name=recording_retention,json=recordingRetention,proto3" json:"recording_retention,omitempty"`
+	// Optional workflow audit capture profile: all, run_lifecycle, or steps.
+	RecordingProfile string `protobuf:"bytes,22,opt,name=recording_profile,json=recordingProfile,proto3" json:"recording_profile,omitempty"`
 	// Arbitrary key-value metadata for the function
 	Metadata *structpb.Struct `protobuf:"bytes,18,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	// Debounce configuration (optional). When set, events for this
@@ -822,9 +826,17 @@ func (x *Function) GetRecording() bool {
 	return false
 }
 
+// Deprecated: Marked as deprecated in ironflow/v1/types.proto.
 func (x *Function) GetRecordingRetention() string {
 	if x != nil {
 		return x.RecordingRetention
+	}
+	return ""
+}
+
+func (x *Function) GetRecordingProfile() string {
+	if x != nil {
+		return x.RecordingProfile
 	}
 	return ""
 }
@@ -1787,7 +1799,7 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\x0eDebounceConfig\x12\x1b\n" +
 	"\tperiod_ms\x18\x01 \x01(\x05R\bperiodMs\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x1e\n" +
-	"\vmax_wait_ms\x18\x03 \x01(\x03R\tmaxWaitMs\"\x82\a\n" +
+	"\vmax_wait_ms\x18\x03 \x01(\x03R\tmaxWaitMs\"\xb3\a\n" +
 	"\bFunction\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -1807,8 +1819,9 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"created_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1c\n" +
-	"\trecording\x18\x0f \x01(\bR\trecording\x12/\n" +
-	"\x13recording_retention\x18\x10 \x01(\tR\x12recordingRetention\x123\n" +
+	"\trecording\x18\x0f \x01(\bR\trecording\x123\n" +
+	"\x13recording_retention\x18\x10 \x01(\tB\x02\x18\x01R\x12recordingRetention\x12+\n" +
+	"\x11recording_profile\x18\x16 \x01(\tR\x10recordingProfile\x123\n" +
 	"\bmetadata\x18\x12 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x127\n" +
 	"\bdebounce\x18\x13 \x01(\v2\x1b.ironflow.v1.DebounceConfigR\bdebounce\x126\n" +
 	"\tcancel_on\x18\x15 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOnJ\x04\b\x11\x10\x12J\x04\b\x14\x10\x15R\x0epause_behaviorR\x14compensate_on_cancel\"\xbe\x03\n" +

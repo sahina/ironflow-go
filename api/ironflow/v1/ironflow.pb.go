@@ -25,20 +25,25 @@ const (
 )
 
 type RegisterFunctionRequest struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name               string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Description        string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	Triggers           []*Trigger             `protobuf:"bytes,4,rep,name=triggers,proto3" json:"triggers,omitempty"`
-	Retry              *RetryConfig           `protobuf:"bytes,5,opt,name=retry,proto3" json:"retry,omitempty"`
-	TimeoutMs          int32                  `protobuf:"varint,6,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
-	Concurrency        *ConcurrencyConfig     `protobuf:"bytes,7,opt,name=concurrency,proto3" json:"concurrency,omitempty"`
-	PreferredMode      ExecutionMode          `protobuf:"varint,8,opt,name=preferred_mode,json=preferredMode,proto3,enum=ironflow.v1.ExecutionMode" json:"preferred_mode,omitempty"`
-	EndpointUrl        string                 `protobuf:"bytes,9,opt,name=endpoint_url,json=endpointUrl,proto3" json:"endpoint_url,omitempty"`
-	ActorKey           string                 `protobuf:"bytes,10,opt,name=actor_key,json=actorKey,proto3" json:"actor_key,omitempty"`
-	Secrets            []string               `protobuf:"bytes,11,rep,name=secrets,proto3" json:"secrets,omitempty"`
-	Recording          bool                   `protobuf:"varint,12,opt,name=recording,proto3" json:"recording,omitempty"`
-	RecordingRetention string                 `protobuf:"bytes,13,opt,name=recording_retention,json=recordingRetention,proto3" json:"recording_retention,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Triggers      []*Trigger             `protobuf:"bytes,4,rep,name=triggers,proto3" json:"triggers,omitempty"`
+	Retry         *RetryConfig           `protobuf:"bytes,5,opt,name=retry,proto3" json:"retry,omitempty"`
+	TimeoutMs     int32                  `protobuf:"varint,6,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
+	Concurrency   *ConcurrencyConfig     `protobuf:"bytes,7,opt,name=concurrency,proto3" json:"concurrency,omitempty"`
+	PreferredMode ExecutionMode          `protobuf:"varint,8,opt,name=preferred_mode,json=preferredMode,proto3,enum=ironflow.v1.ExecutionMode" json:"preferred_mode,omitempty"`
+	EndpointUrl   string                 `protobuf:"bytes,9,opt,name=endpoint_url,json=endpointUrl,proto3" json:"endpoint_url,omitempty"`
+	ActorKey      string                 `protobuf:"bytes,10,opt,name=actor_key,json=actorKey,proto3" json:"actor_key,omitempty"`
+	Secrets       []string               `protobuf:"bytes,11,rep,name=secrets,proto3" json:"secrets,omitempty"`
+	Recording     bool                   `protobuf:"varint,12,opt,name=recording,proto3" json:"recording,omitempty"`
+	// Deprecated compatibility metadata. Global IRONFLOW_AUDIT_RETENTION_DAYS controls pruning, including forever.
+	//
+	// Deprecated: Marked as deprecated in ironflow/v1/ironflow.proto.
+	RecordingRetention string `protobuf:"bytes,13,opt,name=recording_retention,json=recordingRetention,proto3" json:"recording_retention,omitempty"`
+	// Optional workflow audit capture profile: all, run_lifecycle, or steps.
+	RecordingProfile string `protobuf:"bytes,20,opt,name=recording_profile,json=recordingProfile,proto3" json:"recording_profile,omitempty"`
 	// Arbitrary key-value metadata for the function
 	Metadata *structpb.Struct `protobuf:"bytes,15,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	// Optional reason for the change (e.g., "deploy v2.1.0")
@@ -165,9 +170,17 @@ func (x *RegisterFunctionRequest) GetRecording() bool {
 	return false
 }
 
+// Deprecated: Marked as deprecated in ironflow/v1/ironflow.proto.
 func (x *RegisterFunctionRequest) GetRecordingRetention() string {
 	if x != nil {
 		return x.RecordingRetention
+	}
+	return ""
+}
+
+func (x *RegisterFunctionRequest) GetRecordingProfile() string {
+	if x != nil {
+		return x.RecordingProfile
 	}
 	return ""
 }
@@ -2911,7 +2924,7 @@ var File_ironflow_v1_ironflow_proto protoreflect.FileDescriptor
 
 const file_ironflow_v1_ironflow_proto_rawDesc = "" +
 	"\n" +
-	"\x1aironflow/v1/ironflow.proto\x12\vironflow.v1\x1a\x17ironflow/v1/types.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8b\x06\n" +
+	"\x1aironflow/v1/ironflow.proto\x12\vironflow.v1\x1a\x17ironflow/v1/types.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbc\x06\n" +
 	"\x17RegisterFunctionRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -2926,8 +2939,9 @@ const file_ironflow_v1_ironflow_proto_rawDesc = "" +
 	"\tactor_key\x18\n" +
 	" \x01(\tR\bactorKey\x12\x18\n" +
 	"\asecrets\x18\v \x03(\tR\asecrets\x12\x1c\n" +
-	"\trecording\x18\f \x01(\bR\trecording\x12/\n" +
-	"\x13recording_retention\x18\r \x01(\tR\x12recordingRetention\x123\n" +
+	"\trecording\x18\f \x01(\bR\trecording\x123\n" +
+	"\x13recording_retention\x18\r \x01(\tB\x02\x18\x01R\x12recordingRetention\x12+\n" +
+	"\x11recording_profile\x18\x14 \x01(\tR\x10recordingProfile\x123\n" +
 	"\bmetadata\x18\x0f \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12#\n" +
 	"\rchange_reason\x18\x10 \x01(\tR\fchangeReason\x127\n" +
 	"\bdebounce\x18\x11 \x01(\v2\x1b.ironflow.v1.DebounceConfigR\bdebounce\x126\n" +

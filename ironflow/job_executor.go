@@ -121,10 +121,11 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 			Metadata:  eventMetadata,
 		},
 		Run: RunInfo{
-			ID:         job.RunID,
-			FunctionID: job.FunctionID,
-			Attempt:    job.Attempt,
-			StartedAt:  time.Now(),
+			ID:          job.RunID,
+			FunctionID:  job.FunctionID,
+			Attempt:     job.Attempt,
+			MaxAttempts: job.MaxAttempts,
+			StartedAt:   time.Now(),
 		},
 		Secrets: NewSecretsReader(jobSecrets(job)),
 		exec:    exec,
@@ -195,10 +196,13 @@ func (e *jobExecutor) callOnError(err error, job *jobAssignment) {
 
 // jobAssignment is a job assignment from the server.
 type jobAssignment struct {
-	JobID          string          `json:"job_id"`
-	RunID          string          `json:"run_id"`
-	FunctionID     string          `json:"function_id"`
-	Attempt        int             `json:"attempt"`
+	JobID      string `json:"job_id"`
+	RunID      string `json:"run_id"`
+	FunctionID string `json:"function_id"`
+	Attempt    int    `json:"attempt"`
+	// MaxAttempts is this run's retry budget; see [RunInfo.MaxAttempts].
+	// Zero from an engine that predates the field.
+	MaxAttempts    int             `json:"max_attempts,omitempty"`
 	Event          jobEvent        `json:"event"`
 	CompletedSteps []completedStep `json:"completed_steps"`
 	ActorID        string          `json:"actor_id,omitempty"`

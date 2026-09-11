@@ -147,8 +147,8 @@ type ApproveOptions[T any] struct {
 	// out. Required.
 	TTL time.Duration
 
-	// Payload is attached to the pending approval (visible to
-	// approvers).
+	// Payload is stored as the waiting step input, visible via GetRunSteps
+	// and the dashboard.
 	Payload T
 }
 

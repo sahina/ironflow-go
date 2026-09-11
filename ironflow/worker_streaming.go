@@ -689,10 +689,19 @@ func (r *streamJobReporter) ReportYielded(_ context.Context, jobID string, yield
 		if yield.EventFilter != nil && yield.EventFilter.Timeout > 0 {
 			timeout = timestamppb.New(time.Now().Add(yield.EventFilter.Timeout))
 		}
-		var eventName, matchExpr string
+		var payloadJSON []byte
+		var eventName, matchExpr, matchValue string
 		if yield.EventFilter != nil {
+			if yield.EventFilter.Payload != nil {
+				var err error
+				payloadJSON, err = json.Marshal(yield.EventFilter.Payload)
+				if err != nil {
+					return fmt.Errorf("marshal wait request payload: %w", err)
+				}
+			}
 			eventName = yield.EventFilter.Event
 			matchExpr = yield.EventFilter.Match
+			matchValue = yield.EventFilter.MatchValue
 		}
 		r.send(&ironflowv1.WorkerMessage{
 			Payload: &ironflowv1.WorkerMessage_StepYielded{
@@ -702,7 +711,9 @@ func (r *streamJobReporter) ReportYielded(_ context.Context, jobID string, yield
 					YieldInfo: &ironflowv1.StepYielded_WaitEvent{
 						WaitEvent: &ironflowv1.WaitEventYield{
 							EventName:       eventName,
+							PayloadJson:     payloadJSON,
 							MatchExpression: matchExpr,
+							MatchValue:      matchValue,
 							Timeout:         timeout,
 						},
 					},
@@ -889,10 +900,11 @@ func protoToJobAssignment(pa *ironflowv1.JobAssignment) (*jobAssignment, error) 
 	}
 
 	return &jobAssignment{
-		JobID:      pa.GetJobId(),
-		RunID:      pa.GetRunId(),
-		FunctionID: pa.GetFunctionId(),
-		Attempt:    int(pa.GetAttempt()),
+		JobID:       pa.GetJobId(),
+		RunID:       pa.GetRunId(),
+		FunctionID:  pa.GetFunctionId(),
+		Attempt:     int(pa.GetAttempt()),
+		MaxAttempts: int(pa.GetMaxAttempts()),
 		Event: jobEvent{
 			ID:        pa.GetEvent().GetId(),
 			Name:      pa.GetEvent().GetName(),

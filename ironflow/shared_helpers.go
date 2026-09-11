@@ -55,6 +55,11 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 				"maxAttempts":    fn.Config.Retry.MaxAttempts,
 				"initialDelayMs": fn.Config.Retry.InitialDelay.Milliseconds(),
 				"backoffFactor":  fn.Config.Retry.BackoffFactor,
+				// Omitted until #2160, so the server fell back to its own
+				// DefaultRetryMaxDelay and every declared MaxDelay was
+				// silently discarded. normalizeFunctionConfig always sets
+				// this, so it is never zero here.
+				"maxDelayMs": fn.Config.Retry.MaxDelay.Milliseconds(),
 			}
 		}
 		if fn.Config.Timeout > 0 {
@@ -71,6 +76,9 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 		}
 		if fn.Config.Recording {
 			body["recording"] = fn.Config.Recording
+		}
+		if fn.Config.RecordingProfile != "" {
+			body["recordingProfile"] = string(fn.Config.RecordingProfile)
 		}
 		if fn.Config.RecordingRetention != "" {
 			body["recordingRetention"] = fn.Config.RecordingRetention

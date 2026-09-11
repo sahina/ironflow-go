@@ -55,6 +55,7 @@ type RegisteredFunction struct {
 	CreatedAt          time.Time                            `json:"createdAt"`
 	UpdatedAt          time.Time                            `json:"updatedAt"`
 	Recording          bool                                 `json:"recording"`
+	RecordingProfile   RecordingProfile                     `json:"recordingProfile"`
 	RecordingRetention string                               `json:"recordingRetention"`
 	Metadata           map[string]any                       `json:"metadata"`
 	CancelOn           []CancelOnConfig                     `json:"cancelOn"`
@@ -184,4 +185,10 @@ func normalizeRegisteredFunction(fn *RegisteredFunction) {
 	}
 	fn.Status = FunctionStatus(strings.TrimPrefix(strings.ToLower(string(fn.Status)), "function_status_"))
 	fn.PreferredMode = ExecutionMode(strings.TrimPrefix(strings.ToLower(string(fn.PreferredMode)), "execution_mode_"))
+	if fn.RecordingProfile == "" && fn.Recording {
+		fn.RecordingProfile = RecordingProfileAll
+	}
+	if fn.RecordingProfile != "" {
+		fn.Recording = true
+	}
 }

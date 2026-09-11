@@ -136,12 +136,27 @@ type FunctionConfig struct {
 	// Recording enables audit recording for this function.
 	Recording bool
 
-	// RecordingRetention is the retention period ("7d", "30d", "90d", "forever").
+	// RecordingProfile selects which workflow audit event families to capture.
+	// An empty profile preserves the legacy Recording boolean behavior.
+	RecordingProfile RecordingProfile
+
+	// RecordingRetention is retained as compatibility metadata.
+	// Deprecated: IRONFLOW_AUDIT_RETENTION_DAYS controls audit pruning.
+	// A value of forever does not exempt rows from the global policy.
 	RecordingRetention string
 
 	// Metadata is custom metadata (e.g., service, team, owner).
 	Metadata map[string]any
 }
+
+// RecordingProfile selects the workflow audit event families captured for a function.
+type RecordingProfile string
+
+const (
+	RecordingProfileAll          RecordingProfile = "all"
+	RecordingProfileRunLifecycle RecordingProfile = "run_lifecycle"
+	RecordingProfileSteps        RecordingProfile = "steps"
+)
 
 // Trigger defines an event trigger configuration.
 type Trigger struct {
@@ -303,17 +318,37 @@ type RunInfo struct {
 	// Attempt is the current attempt number.
 	Attempt int
 
+	// MaxAttempts is THIS run's retry budget, snapshotted by the engine at
+	// run creation. It is what the engine actually terminates on, so it can
+	// differ from the MaxAttempts your code declared: a re-registration
+	// between run creation and this attempt changes the declaration but not
+	// the run. A handler that predicts its own exhaustion — to release a
+	// lock, stamp a terminal row, or emit a final event — must branch on
+	// this, never on a compiled constant (#2160).
+	//
+	// Zero against an engine older than this field. Fall back to your
+	// declared value: min(ctx.Run.MaxAttempts, declared) when it is
+	// positive, declared otherwise.
+	MaxAttempts int
+
 	// StartedAt is when the run started.
 	StartedAt time.Time
 }
 
 // EventFilter defines a filter for waitForEvent.
 type EventFilter struct {
+	// Payload is request data stored as the waiting step input for approvers.
+	Payload any `json:"payload,omitempty"`
+
 	// Event is the event name to wait for.
 	Event string `json:"event"`
 
 	// Match is the JSON path for matching (e.g., "data.orderId").
 	Match string `json:"match,omitempty"`
+
+	// MatchValue is a non-empty literal to compare at Match. If empty, the engine
+	// snapshots Match from the triggering event. Requires Match.
+	MatchValue string `json:"match_value,omitempty"`
 
 	// Timeout is how long to wait (default: 7 days).
 	// Excluded from default JSON marshaling; the YieldInfo serializes it as a duration string.
@@ -394,13 +429,15 @@ type CompletedStep struct {
 
 // PushRequest is the request from engine to SDK in push mode.
 type PushRequest struct {
-	RunID      string            `json:"run_id"`
-	FunctionID string            `json:"function_id"`
-	Attempt    int               `json:"attempt"`
-	Event      PushEvent         `json:"event"`
-	Steps      []CompletedStep   `json:"steps"`
-	Resume     *ResumeContext    `json:"resume,omitempty"`
-	Secrets    map[string]string `json:"secrets,omitempty"`
+	RunID      string `json:"run_id"`
+	FunctionID string `json:"function_id"`
+	Attempt    int    `json:"attempt"`
+	// MaxAttempts is this run's retry budget; see [RunInfo.MaxAttempts].
+	MaxAttempts int               `json:"max_attempts,omitempty"`
+	Event       PushEvent         `json:"event"`
+	Steps       []CompletedStep   `json:"steps"`
+	Resume      *ResumeContext    `json:"resume,omitempty"`
+	Secrets     map[string]string `json:"secrets,omitempty"`
 }
 
 // PushEvent is the event in a push request.

@@ -27,7 +27,7 @@ func TestFunctionLifecycleMethods(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/ironflow.v1.IronflowService/GetFunction":
-			_, _ = w.Write([]byte(`{"id":"fn-1","status":"FUNCTION_STATUS_ACTIVE","preferredMode":"EXECUTION_MODE_PULL"}`))
+			_, _ = w.Write([]byte(`{"id":"fn-1","status":"FUNCTION_STATUS_ACTIVE","preferredMode":"EXECUTION_MODE_PULL","recording":true}`))
 		case "/ironflow.v1.IronflowService/UpdateFunctionStatus":
 			_, _ = w.Write([]byte(`{"id":"fn-1","status":"FUNCTION_STATUS_PAUSED"}`))
 		case "/ironflow.v1.IronflowService/DeleteFunction":
@@ -58,6 +58,9 @@ func TestFunctionLifecycleMethods(t *testing.T) {
 	}
 	if fn.Status != FunctionStatusActive || fn.PreferredMode != PullMode {
 		t.Fatalf("GetFunction normalization = status %q, mode %q", fn.Status, fn.PreferredMode)
+	}
+	if fn.RecordingProfile != RecordingProfileAll {
+		t.Fatalf("GetFunction legacy recording normalization = %q, want %q", fn.RecordingProfile, RecordingProfileAll)
 	}
 
 	fn, err = client.UpdateFunctionStatus(ctx, "fn-1", FunctionStatusPaused)

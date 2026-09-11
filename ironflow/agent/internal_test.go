@@ -69,18 +69,3 @@ func TestHashArgs_DifferentInputsDiffer(t *testing.T) {
 		t.Fatalf("distinct inputs collided: %q == %q", a, b)
 	}
 }
-
-func TestEscapeMatchValue(t *testing.T) {
-	cases := map[string]string{
-		"plain":          "plain",
-		`with "quotes"`:  `with \"quotes\"`,
-		`back\slash`:     `back\\slash`,
-		`mix"\and"`:      `mix\"\\and\"`,
-		`run-id-123-abc`: `run-id-123-abc`,
-	}
-	for in, want := range cases {
-		if got := escapeMatchValue(in); got != want {
-			t.Errorf("escape(%q) = %q, want %q", in, got, want)
-		}
-	}
-}

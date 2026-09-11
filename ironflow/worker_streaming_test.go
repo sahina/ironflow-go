@@ -1533,9 +1533,11 @@ func TestStreamJobReporter_ReportYielded_WaitEvent(t *testing.T) {
 		StepID: "s-wait",
 		Type:   "wait_for_event",
 		EventFilter: &EventFilter{
-			Event:   "payment.completed",
-			Match:   "data.orderId",
-			Timeout: 24 * time.Hour,
+			Event:      "payment.completed",
+			Payload:    map[string]any{"draft": "Review me"},
+			Match:      "data.orderId",
+			MatchValue: "order-123",
+			Timeout:    24 * time.Hour,
 		},
 	})
 	if err != nil {
@@ -1551,6 +1553,12 @@ func TestStreamJobReporter_ReportYielded_WaitEvent(t *testing.T) {
 		waitYield, ok := sy.StepYielded.GetYieldInfo().(*ironflowv1.StepYielded_WaitEvent)
 		if !ok {
 			t.Fatalf("expected wait_event yield, got %T", sy.StepYielded.GetYieldInfo())
+		}
+		if string(waitYield.WaitEvent.GetPayloadJson()) != `{"draft":"Review me"}` {
+			t.Errorf("request payload = %s", waitYield.WaitEvent.GetPayloadJson())
+		}
+		if waitYield.WaitEvent.GetMatchValue() != "order-123" {
+			t.Errorf("match value = %q", waitYield.WaitEvent.GetMatchValue())
 		}
 		if waitYield.WaitEvent.GetEventName() != "payment.completed" {
 			t.Errorf("expected event name 'payment.completed', got %q", waitYield.WaitEvent.GetEventName())

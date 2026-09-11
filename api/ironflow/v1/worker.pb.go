@@ -1055,8 +1055,10 @@ type WaitEventYield struct {
 	MatchExpression string                 `protobuf:"bytes,2,opt,name=match_expression,json=matchExpression,proto3" json:"match_expression,omitempty"`
 	MatchValue      string                 `protobuf:"bytes,3,opt,name=match_value,json=matchValue,proto3" json:"match_value,omitempty"`
 	Timeout         *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timeout,proto3" json:"timeout,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// JSON request data persisted as the waiting step input, separate from the received event.
+	PayloadJson   []byte `protobuf:"bytes,5,opt,name=payload_json,json=payloadJson,proto3" json:"payload_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WaitEventYield) Reset() {
@@ -1113,6 +1115,13 @@ func (x *WaitEventYield) GetMatchValue() string {
 func (x *WaitEventYield) GetTimeout() *timestamppb.Timestamp {
 	if x != nil {
 		return x.Timeout
+	}
+	return nil
+}
+
+func (x *WaitEventYield) GetPayloadJson() []byte {
+	if x != nil {
+		return x.PayloadJson
 	}
 	return nil
 }
@@ -1819,8 +1828,15 @@ type JobAssignment struct {
 	ExecutionSeq   int64                  `protobuf:"varint,9,opt,name=execution_seq,json=executionSeq,proto3" json:"execution_seq,omitempty"`
 	LeaseToken     string                 `protobuf:"bytes,10,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`
 	LeaseExpiresAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=lease_expires_at,json=leaseExpiresAt,proto3" json:"lease_expires_at,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The run's OWN retry budget, snapshotted at run creation. The engine
+	// terminates on this, not on the function's current RetryAttempts, so a
+	// saga that predicts its own exhaustion (to release a lock or stamp a
+	// terminal row) MUST read it here rather than from a compiled constant
+	// — during a rolling deploy the two disagree (#2160). Zero from an
+	// engine older than this field; callers fall back to their own default.
+	MaxAttempts   int32 `protobuf:"varint,12,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *JobAssignment) Reset() {
@@ -1928,6 +1944,13 @@ func (x *JobAssignment) GetLeaseExpiresAt() *timestamppb.Timestamp {
 		return x.LeaseExpiresAt
 	}
 	return nil
+}
+
+func (x *JobAssignment) GetMaxAttempts() int32 {
+	if x != nil {
+		return x.MaxAttempts
+	}
+	return 0
 }
 
 type CompletedStep struct {
@@ -2402,14 +2425,15 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	"yield_info\">\n" +
 	"\n" +
 	"SleepYield\x120\n" +
-	"\x05until\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x05until\"\xb1\x01\n" +
+	"\x05until\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x05until\"\xd4\x01\n" +
 	"\x0eWaitEventYield\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12)\n" +
 	"\x10match_expression\x18\x02 \x01(\tR\x0fmatchExpression\x12\x1f\n" +
 	"\vmatch_value\x18\x03 \x01(\tR\n" +
 	"matchValue\x124\n" +
-	"\atimeout\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\atimeout\"\xf8\x01\n" +
+	"\atimeout\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\atimeout\x12!\n" +
+	"\fpayload_json\x18\x05 \x01(\fR\vpayloadJson\"\xf8\x01\n" +
 	"\fJobCompleted\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12/\n" +
 	"\x06output\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06output\x129\n" +
@@ -2464,7 +2488,7 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	"\x05state\x18\x03 \x01(\x0e2\x17.ironflow.v1.LeaseStateR\x05state\"c\n" +
 	"\x10WorkerRegistered\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x122\n" +
-	"\x15heartbeat_interval_ms\x18\x02 \x01(\x05R\x13heartbeatIntervalMs\"\xc1\x03\n" +
+	"\x15heartbeat_interval_ms\x18\x02 \x01(\x05R\x13heartbeatIntervalMs\"\xe4\x03\n" +
 	"\rJobAssignment\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x15\n" +
 	"\x06run_id\x18\x02 \x01(\tR\x05runId\x12\x1f\n" +
@@ -2479,7 +2503,8 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	"\vlease_token\x18\n" +
 	" \x01(\tR\n" +
 	"leaseToken\x12D\n" +
-	"\x10lease_expires_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\"\xa8\x01\n" +
+	"\x10lease_expires_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\x12!\n" +
+	"\fmax_attempts\x18\f \x01(\x05R\vmaxAttempts\"\xa8\x01\n" +
 	"\rCompletedStep\x12\x17\n" +
 	"\astep_id\x18\x01 \x01(\tR\x06stepId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12/\n" +

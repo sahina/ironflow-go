@@ -38,9 +38,11 @@ func Approve[T any](ctx Context, name string, opts ApproveOptions[T]) (ApproveRe
 	stepName := "approve." + name
 
 	filter := ironflow.EventFilter{
-		Event:   eventName,
-		Match:   fmt.Sprintf(`data.runId == "%s"`, escapeMatchValue(runID)),
-		Timeout: opts.TTL,
+		Event:      eventName,
+		Payload:    opts.Payload,
+		Match:      "data.runId",
+		MatchValue: runID,
+		Timeout:    opts.TTL,
 	}
 
 	event, err := ironflow.WaitForEvent[approvalEventData[T]](ctx.Inner, stepName, filter)

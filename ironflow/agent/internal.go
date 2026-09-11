@@ -126,11 +126,3 @@ func hashArgs(args any) (string, error) {
 	sum := sha256.Sum256(bytes)
 	return hex.EncodeToString(sum[:])[:16], nil
 }
-
-// escapeMatchValue escapes \ and " for safe interpolation into a
-// CEL-style match expression like data.runId == "<value>".
-func escapeMatchValue(value string) string {
-	value = strings.ReplaceAll(value, `\`, `\\`)
-	value = strings.ReplaceAll(value, `"`, `\"`)
-	return value
-}

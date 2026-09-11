@@ -2,7 +2,6 @@ package agent
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 
@@ -45,8 +44,14 @@ func TestApprove_ApprovedDecodesPayload(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	interceptor.waitMocks["approve.ship-it"] = func(filter ironflow.EventFilter) (ironflow.Event, error) {
-		if !strings.Contains(filter.Match, "run-test-1") {
-			t.Errorf("filter.Match missing runID: %q", filter.Match)
+		if filter.Payload != (approvalPayload{Title: "draft"}) {
+			t.Errorf("request payload = %#v, want draft", filter.Payload)
+		}
+		if filter.Match != "data.runId" {
+			t.Errorf("filter.Match = %q, want data.runId", filter.Match)
+		}
+		if filter.MatchValue != "run-test-1" {
+			t.Errorf("filter.MatchValue = %q, want run-test-1", filter.MatchValue)
 		}
 		if filter.Event != "agent.approve.ship-it" {
 			t.Errorf("filter.Event = %q, want agent.approve.ship-it", filter.Event)
@@ -60,7 +65,8 @@ func TestApprove_ApprovedDecodesPayload(t *testing.T) {
 	ctx, _ := newAgentContext(t, AgentConfig{Function: ironflow.FunctionConfig{ID: "a"}}, interceptor)
 
 	res, err := Approve[approvalPayload](ctx, "ship-it", ApproveOptions[approvalPayload]{
-		TTL: time.Second,
+		TTL:     time.Second,
+		Payload: approvalPayload{Title: "draft"},
 	})
 	if err != nil {
 		t.Fatalf("Approve: %v", err)

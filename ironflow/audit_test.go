@@ -270,6 +270,7 @@ func TestAuditEventTypes(t *testing.T) {
 	t.Run("FunctionConfig has recording fields", func(t *testing.T) {
 		config := FunctionConfig{
 			Recording:          true,
+			RecordingProfile:   RecordingProfileSteps,
 			RecordingRetention: "90d",
 		}
 
@@ -278,6 +279,26 @@ func TestAuditEventTypes(t *testing.T) {
 		}
 		if config.RecordingRetention != "90d" {
 			t.Errorf("expected RecordingRetention '90d', got '%s'", config.RecordingRetention)
+		}
+		if config.RecordingProfile != RecordingProfileSteps {
+			t.Errorf("expected RecordingProfile %q, got %q", RecordingProfileSteps, config.RecordingProfile)
+		}
+	})
+
+	t.Run("metadata includes recording profile", func(t *testing.T) {
+		fn := CreateFunction(FunctionConfig{
+			ID:               "fn-profile-metadata",
+			RecordingProfile: RecordingProfileRunLifecycle,
+		}, nil)
+		metadata := GetFunctionMetadata(fn)
+		if metadata["recording_profile"] != RecordingProfileRunLifecycle {
+			t.Errorf("recording_profile metadata = %v, want %q", metadata["recording_profile"], RecordingProfileRunLifecycle)
+		}
+	})
+
+	t.Run("invalid recording profile is rejected", func(t *testing.T) {
+		if err := validateFunctionConfig(FunctionConfig{ID: "fn-invalid-profile", RecordingProfile: "unknown"}); err == nil {
+			t.Fatal("expected invalid recording profile error")
 		}
 	})
 

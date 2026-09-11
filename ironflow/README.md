@@ -144,8 +144,8 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
 
     ActorKey: "event.data.userId",    // sticky routing JSON path
     Secrets:  []string{"STRIPE_KEY"}, // secrets injected at runtime
-    Recording:          true,         // enable audit recording
-    RecordingRetention: "30d",        // "7d", "30d", "90d", "forever"
+    RecordingProfile:   ironflow.RecordingProfileSteps, // capture steps and compensations
+    RecordingRetention: "30d",        // metadata only; global retention applies
 }, func(ctx ironflow.Context) (any, error) {
     // ctx.Event  -- triggering event
     // ctx.Run    -- run metadata (ID, FunctionID, Attempt, StartedAt)
@@ -648,7 +648,7 @@ streams, err := client.GetRunStreams(ctx, "run_abc123")
 
 ### Time-Travel Debugging
 
-Requires `Recording: true` on the function. Reconstructs historical run state
+Requires `RecordingProfile: RecordingProfileAll` (or legacy `Recording: true`) on the function. Reconstructs historical run state
 from the audit record.
 
 ```go

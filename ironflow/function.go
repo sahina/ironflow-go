@@ -91,6 +91,10 @@ func validateFunctionConfig(config FunctionConfig) error {
 	if err := validateFunctionID(config.ID); err != nil {
 		return err
 	}
+	if config.RecordingProfile != "" && config.RecordingProfile != RecordingProfileAll &&
+		config.RecordingProfile != RecordingProfileRunLifecycle && config.RecordingProfile != RecordingProfileSteps {
+		return fmt.Errorf("recording profile must be one of %q, %q, or %q", RecordingProfileAll, RecordingProfileRunLifecycle, RecordingProfileSteps)
+	}
 
 	// Triggers are optional — functions without triggers can be called via Invoke/InvokeAsync
 	for i, trigger := range config.Triggers {
@@ -261,6 +265,9 @@ func GetFunctionMetadata(fn Function) map[string]any {
 
 	if config.Recording {
 		metadata["recording"] = config.Recording
+	}
+	if config.RecordingProfile != "" {
+		metadata["recording_profile"] = config.RecordingProfile
 	}
 	if config.RecordingRetention != "" {
 		metadata["recording_retention"] = config.RecordingRetention
