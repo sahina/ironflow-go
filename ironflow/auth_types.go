@@ -92,6 +92,12 @@ type PolicyInfo struct {
 	Condition string    `json:"condition,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// ResourcesValid is false when Resources has the wrong IRN arity and can
+	// never match a real resource (#2284). A server older than the flag omits
+	// the field, which unmarshals to false — read it together with Resources,
+	// not on its own.
+	ResourcesValid bool `json:"resources_valid"`
 }
 
 // CreatePolicyInput is the input for creating a policy.

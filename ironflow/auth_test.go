@@ -610,7 +610,7 @@ func TestCreatePolicy(t *testing.T) {
 			_ = json.Unmarshal(body, &receivedBody)
 
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"id":"pol_abc","org_id":"org_default","name":"allow-emit","effect":"deny","actions":"emit","resources":"irn:*","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"pol_abc","org_id":"org_default","name":"allow-emit","effect":"deny","actions":"emit","resources":"*","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}`))
 		}))
 		defer server.Close()
 
@@ -619,7 +619,7 @@ func TestCreatePolicy(t *testing.T) {
 			Name:      "allow-emit",
 			Effect:    "deny",
 			Actions:   "emit",
-			Resources: "irn:*",
+			Resources: "*",
 		})
 
 		if err != nil {
@@ -650,7 +650,7 @@ func TestListPolicies(t *testing.T) {
 	t.Run("sends GET and parses array response", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`[{"id":"pol_1","org_id":"org_default","name":"pol-1","effect":"deny","actions":"*","resources":"irn:*","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}]`))
+			_, _ = w.Write([]byte(`[{"id":"pol_1","org_id":"org_default","name":"pol-1","effect":"deny","actions":"*","resources":"*","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}]`))
 		}))
 		defer server.Close()
 
@@ -676,7 +676,7 @@ func TestGetPolicy(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			receivedPath = r.URL.Path
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"pol_abc","org_id":"org_default","name":"my-policy","effect":"deny","actions":"delete","resources":"irn:*","condition":"request.time.getHours() < 9","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"pol_abc","org_id":"org_default","name":"my-policy","effect":"deny","actions":"delete","resources":"*","condition":"request.time.getHours() < 9","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}`))
 		}))
 		defer server.Close()
 
@@ -711,7 +711,7 @@ func TestUpdatePolicy(t *testing.T) {
 			_ = json.Unmarshal(body, &receivedBody)
 
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"pol_abc","org_id":"org_default","name":"updated-policy","effect":"deny","actions":"*","resources":"irn:*","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-02T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"pol_abc","org_id":"org_default","name":"updated-policy","effect":"deny","actions":"*","resources":"*","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-02T00:00:00Z"}`))
 		}))
 		defer server.Close()
 
