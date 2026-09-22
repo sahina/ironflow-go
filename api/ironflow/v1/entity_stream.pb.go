@@ -558,13 +558,15 @@ func (x *GetStreamInfoRequest) GetEntityId() string {
 }
 
 type GetStreamInfoResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	EntityId      string                 `protobuf:"bytes,1,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`
-	EntityType    string                 `protobuf:"bytes,2,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"`
-	Version       int64                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
-	EventCount    int64                  `protobuf:"varint,4,opt,name=event_count,json=eventCount,proto3" json:"event_count,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	EntityId   string                 `protobuf:"bytes,1,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`
+	EntityType string                 `protobuf:"bytes,2,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"`
+	Version    int64                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
+	EventCount int64                  `protobuf:"varint,4,opt,name=event_count,json=eventCount,proto3" json:"event_count,omitempty"`
+	CreatedAt  *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt  *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// true once a $stream.deleted tombstone is the stream's last event
+	Deleted       bool `protobuf:"varint,7,opt,name=deleted,proto3" json:"deleted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -641,14 +643,23 @@ func (x *GetStreamInfoResponse) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *GetStreamInfoResponse) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
 type ListStreamsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	EntityType    string                 `protobuf:"bytes,1,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"` // optional filter
-	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
-	Offset        int32                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
-	Search        string                 `protobuf:"bytes,4,opt,name=search,proto3" json:"search,omitempty"` // entity ID substring
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	EntityType string                 `protobuf:"bytes,1,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"` // optional filter
+	Limit      int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	Offset     int32                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	Search     string                 `protobuf:"bytes,4,opt,name=search,proto3" json:"search,omitempty"` // entity ID substring
+	// tombstoned streams are omitted unless set
+	IncludeDeleted bool `protobuf:"varint,5,opt,name=include_deleted,json=includeDeleted,proto3" json:"include_deleted,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ListStreamsRequest) Reset() {
@@ -707,6 +718,13 @@ func (x *ListStreamsRequest) GetSearch() string {
 		return x.Search
 	}
 	return ""
+}
+
+func (x *ListStreamsRequest) GetIncludeDeleted() bool {
+	if x != nil {
+		return x.IncludeDeleted
+	}
+	return false
 }
 
 type ListStreamsResponse struct {
@@ -1575,6 +1593,104 @@ func (x *GetSnapshotResponse) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+type DeleteStreamRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	EntityId string                 `protobuf:"bytes,1,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`
+	// Also delete every event row below the tombstone. The tombstone row stays.
+	Purge         bool `protobuf:"varint,2,opt,name=purge,proto3" json:"purge,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteStreamRequest) Reset() {
+	*x = DeleteStreamRequest{}
+	mi := &file_ironflow_v1_entity_stream_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteStreamRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteStreamRequest) ProtoMessage() {}
+
+func (x *DeleteStreamRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_entity_stream_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteStreamRequest.ProtoReflect.Descriptor instead.
+func (*DeleteStreamRequest) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_entity_stream_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *DeleteStreamRequest) GetEntityId() string {
+	if x != nil {
+		return x.EntityId
+	}
+	return ""
+}
+
+func (x *DeleteStreamRequest) GetPurge() bool {
+	if x != nil {
+		return x.Purge
+	}
+	return false
+}
+
+type DeleteStreamResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Version of the tombstone, i.e. the stream's final version.
+	EntityVersion int64 `protobuf:"varint,1,opt,name=entity_version,json=entityVersion,proto3" json:"entity_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteStreamResponse) Reset() {
+	*x = DeleteStreamResponse{}
+	mi := &file_ironflow_v1_entity_stream_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteStreamResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteStreamResponse) ProtoMessage() {}
+
+func (x *DeleteStreamResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_entity_stream_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteStreamResponse.ProtoReflect.Descriptor instead.
+func (*DeleteStreamResponse) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_entity_stream_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *DeleteStreamResponse) GetEntityVersion() int64 {
+	if x != nil {
+		return x.EntityVersion
+	}
+	return 0
+}
+
 var File_ironflow_v1_entity_stream_proto protoreflect.FileDescriptor
 
 const file_ironflow_v1_entity_stream_proto_rawDesc = "" +
@@ -1632,7 +1748,7 @@ const file_ironflow_v1_entity_stream_proto_rawDesc = "" +
 	"entityType\x12\x19\n" +
 	"\bnats_seq\x18\x13 \x01(\x03R\anatsSeq\"3\n" +
 	"\x14GetStreamInfoRequest\x12\x1b\n" +
-	"\tentity_id\x18\x01 \x01(\tR\bentityId\"\x86\x02\n" +
+	"\tentity_id\x18\x01 \x01(\tR\bentityId\"\xa0\x02\n" +
 	"\x15GetStreamInfoResponse\x12\x1b\n" +
 	"\tentity_id\x18\x01 \x01(\tR\bentityId\x12\x1f\n" +
 	"\ventity_type\x18\x02 \x01(\tR\n" +
@@ -1643,13 +1759,15 @@ const file_ironflow_v1_entity_stream_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"{\n" +
+	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x18\n" +
+	"\adeleted\x18\a \x01(\bR\adeleted\"\xa4\x01\n" +
 	"\x12ListStreamsRequest\x12\x1f\n" +
 	"\ventity_type\x18\x01 \x01(\tR\n" +
 	"entityType\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x16\n" +
 	"\x06offset\x18\x03 \x01(\x05R\x06offset\x12\x16\n" +
-	"\x06search\x18\x04 \x01(\tR\x06search\"t\n" +
+	"\x06search\x18\x04 \x01(\tR\x06search\x12'\n" +
+	"\x0finclude_deleted\x18\x05 \x01(\bR\x0eincludeDeleted\"t\n" +
 	"\x13ListStreamsResponse\x12<\n" +
 	"\astreams\x18\x01 \x03(\v2\".ironflow.v1.GetStreamInfoResponseR\astreams\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x05R\n" +
@@ -1735,7 +1853,12 @@ const file_ironflow_v1_entity_stream_proto_rawDesc = "" +
 	"\vstate_value\x18\a \x01(\v2\x16.google.protobuf.ValueR\n" +
 	"stateValue\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt2\x87\x05\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"H\n" +
+	"\x13DeleteStreamRequest\x12\x1b\n" +
+	"\tentity_id\x18\x01 \x01(\tR\bentityId\x12\x14\n" +
+	"\x05purge\x18\x02 \x01(\bR\x05purge\"=\n" +
+	"\x14DeleteStreamResponse\x12%\n" +
+	"\x0eentity_version\x18\x01 \x01(\x03R\rentityVersion2\xdc\x05\n" +
 	"\x13EntityStreamService\x12P\n" +
 	"\vAppendEvent\x12\x1f.ironflow.v1.AppendEventRequest\x1a .ironflow.v1.AppendEventResponse\x12R\n" +
 	"\n" +
@@ -1744,7 +1867,8 @@ const file_ironflow_v1_entity_stream_proto_rawDesc = "" +
 	"\vListStreams\x12\x1f.ironflow.v1.ListStreamsRequest\x1a .ironflow.v1.ListStreamsResponse\"\x03\x90\x02\x01\x12d\n" +
 	"\x10GetEntityHistory\x12$.ironflow.v1.GetEntityHistoryRequest\x1a%.ironflow.v1.GetEntityHistoryResponse\"\x03\x90\x02\x01\x12Y\n" +
 	"\x0eCreateSnapshot\x12\".ironflow.v1.CreateSnapshotRequest\x1a#.ironflow.v1.CreateSnapshotResponse\x12U\n" +
-	"\vGetSnapshot\x12\x1f.ironflow.v1.GetSnapshotRequest\x1a .ironflow.v1.GetSnapshotResponse\"\x03\x90\x02\x01B:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
+	"\vGetSnapshot\x12\x1f.ironflow.v1.GetSnapshotRequest\x1a .ironflow.v1.GetSnapshotResponse\"\x03\x90\x02\x01\x12S\n" +
+	"\fDeleteStream\x12 .ironflow.v1.DeleteStreamRequest\x1a!.ironflow.v1.DeleteStreamResponseB:Z8github.com/sahina/ironflow-go/api/ironflow/v1;ironflowv1b\x06proto3"
 
 var (
 	file_ironflow_v1_entity_stream_proto_rawDescOnce sync.Once
@@ -1758,7 +1882,7 @@ func file_ironflow_v1_entity_stream_proto_rawDescGZIP() []byte {
 	return file_ironflow_v1_entity_stream_proto_rawDescData
 }
 
-var file_ironflow_v1_entity_stream_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_ironflow_v1_entity_stream_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_ironflow_v1_entity_stream_proto_goTypes = []any{
 	(*AppendEventRequest)(nil),       // 0: ironflow.v1.AppendEventRequest
 	(*AppendEventResponse)(nil),      // 1: ironflow.v1.AppendEventResponse
@@ -1779,41 +1903,43 @@ var file_ironflow_v1_entity_stream_proto_goTypes = []any{
 	(*CreateSnapshotResponse)(nil),   // 16: ironflow.v1.CreateSnapshotResponse
 	(*GetSnapshotRequest)(nil),       // 17: ironflow.v1.GetSnapshotRequest
 	(*GetSnapshotResponse)(nil),      // 18: ironflow.v1.GetSnapshotResponse
-	(*structpb.Struct)(nil),          // 19: google.protobuf.Struct
-	(*structpb.Value)(nil),           // 20: google.protobuf.Value
-	(*timestamppb.Timestamp)(nil),    // 21: google.protobuf.Timestamp
+	(*DeleteStreamRequest)(nil),      // 19: ironflow.v1.DeleteStreamRequest
+	(*DeleteStreamResponse)(nil),     // 20: ironflow.v1.DeleteStreamResponse
+	(*structpb.Struct)(nil),          // 21: google.protobuf.Struct
+	(*structpb.Value)(nil),           // 22: google.protobuf.Value
+	(*timestamppb.Timestamp)(nil),    // 23: google.protobuf.Timestamp
 }
 var file_ironflow_v1_entity_stream_proto_depIdxs = []int32{
-	19, // 0: ironflow.v1.AppendEventRequest.data:type_name -> google.protobuf.Struct
-	20, // 1: ironflow.v1.AppendEventRequest.data_value:type_name -> google.protobuf.Value
-	19, // 2: ironflow.v1.AppendEventRequest.metadata:type_name -> google.protobuf.Struct
+	21, // 0: ironflow.v1.AppendEventRequest.data:type_name -> google.protobuf.Struct
+	22, // 1: ironflow.v1.AppendEventRequest.data_value:type_name -> google.protobuf.Value
+	21, // 2: ironflow.v1.AppendEventRequest.metadata:type_name -> google.protobuf.Struct
 	4,  // 3: ironflow.v1.ReadStreamResponse.events:type_name -> ironflow.v1.StreamEvent
-	19, // 4: ironflow.v1.StreamEvent.data:type_name -> google.protobuf.Struct
-	20, // 5: ironflow.v1.StreamEvent.data_value:type_name -> google.protobuf.Value
-	21, // 6: ironflow.v1.StreamEvent.timestamp:type_name -> google.protobuf.Timestamp
-	19, // 7: ironflow.v1.StreamEvent.metadata:type_name -> google.protobuf.Struct
-	21, // 8: ironflow.v1.StreamEvent.created_at:type_name -> google.protobuf.Timestamp
-	21, // 9: ironflow.v1.GetStreamInfoResponse.created_at:type_name -> google.protobuf.Timestamp
-	21, // 10: ironflow.v1.GetStreamInfoResponse.updated_at:type_name -> google.protobuf.Timestamp
+	21, // 4: ironflow.v1.StreamEvent.data:type_name -> google.protobuf.Struct
+	22, // 5: ironflow.v1.StreamEvent.data_value:type_name -> google.protobuf.Value
+	23, // 6: ironflow.v1.StreamEvent.timestamp:type_name -> google.protobuf.Timestamp
+	21, // 7: ironflow.v1.StreamEvent.metadata:type_name -> google.protobuf.Struct
+	23, // 8: ironflow.v1.StreamEvent.created_at:type_name -> google.protobuf.Timestamp
+	23, // 9: ironflow.v1.GetStreamInfoResponse.created_at:type_name -> google.protobuf.Timestamp
+	23, // 10: ironflow.v1.GetStreamInfoResponse.updated_at:type_name -> google.protobuf.Timestamp
 	6,  // 11: ironflow.v1.ListStreamsResponse.streams:type_name -> ironflow.v1.GetStreamInfoResponse
-	21, // 12: ironflow.v1.GetEntityHistoryRequest.from_timestamp:type_name -> google.protobuf.Timestamp
-	21, // 13: ironflow.v1.GetEntityHistoryRequest.to_timestamp:type_name -> google.protobuf.Timestamp
+	23, // 12: ironflow.v1.GetEntityHistoryRequest.from_timestamp:type_name -> google.protobuf.Timestamp
+	23, // 13: ironflow.v1.GetEntityHistoryRequest.to_timestamp:type_name -> google.protobuf.Timestamp
 	12, // 14: ironflow.v1.GetEntityHistoryResponse.entries:type_name -> ironflow.v1.EntityHistoryEntry
 	11, // 15: ironflow.v1.GetEntityHistoryResponse.info:type_name -> ironflow.v1.EntityHistoryInfo
-	21, // 16: ironflow.v1.EntityHistoryInfo.created_at:type_name -> google.protobuf.Timestamp
-	21, // 17: ironflow.v1.EntityHistoryInfo.updated_at:type_name -> google.protobuf.Timestamp
-	19, // 18: ironflow.v1.EntityHistoryEntry.event_data:type_name -> google.protobuf.Struct
-	20, // 19: ironflow.v1.EntityHistoryEntry.event_data_value:type_name -> google.protobuf.Value
-	21, // 20: ironflow.v1.EntityHistoryEntry.timestamp:type_name -> google.protobuf.Timestamp
+	23, // 16: ironflow.v1.EntityHistoryInfo.created_at:type_name -> google.protobuf.Timestamp
+	23, // 17: ironflow.v1.EntityHistoryInfo.updated_at:type_name -> google.protobuf.Timestamp
+	21, // 18: ironflow.v1.EntityHistoryEntry.event_data:type_name -> google.protobuf.Struct
+	22, // 19: ironflow.v1.EntityHistoryEntry.event_data_value:type_name -> google.protobuf.Value
+	23, // 20: ironflow.v1.EntityHistoryEntry.timestamp:type_name -> google.protobuf.Timestamp
 	13, // 21: ironflow.v1.EntityHistoryEntry.runs:type_name -> ironflow.v1.EntityHistoryRun
-	21, // 22: ironflow.v1.EntityHistoryRun.started_at:type_name -> google.protobuf.Timestamp
-	21, // 23: ironflow.v1.EntityHistoryRun.ended_at:type_name -> google.protobuf.Timestamp
+	23, // 22: ironflow.v1.EntityHistoryRun.started_at:type_name -> google.protobuf.Timestamp
+	23, // 23: ironflow.v1.EntityHistoryRun.ended_at:type_name -> google.protobuf.Timestamp
 	14, // 24: ironflow.v1.EntityHistoryRun.steps:type_name -> ironflow.v1.EntityHistoryStep
-	19, // 25: ironflow.v1.CreateSnapshotRequest.state:type_name -> google.protobuf.Struct
-	20, // 26: ironflow.v1.CreateSnapshotRequest.state_value:type_name -> google.protobuf.Value
-	19, // 27: ironflow.v1.GetSnapshotResponse.state:type_name -> google.protobuf.Struct
-	20, // 28: ironflow.v1.GetSnapshotResponse.state_value:type_name -> google.protobuf.Value
-	21, // 29: ironflow.v1.GetSnapshotResponse.created_at:type_name -> google.protobuf.Timestamp
+	21, // 25: ironflow.v1.CreateSnapshotRequest.state:type_name -> google.protobuf.Struct
+	22, // 26: ironflow.v1.CreateSnapshotRequest.state_value:type_name -> google.protobuf.Value
+	21, // 27: ironflow.v1.GetSnapshotResponse.state:type_name -> google.protobuf.Struct
+	22, // 28: ironflow.v1.GetSnapshotResponse.state_value:type_name -> google.protobuf.Value
+	23, // 29: ironflow.v1.GetSnapshotResponse.created_at:type_name -> google.protobuf.Timestamp
 	0,  // 30: ironflow.v1.EntityStreamService.AppendEvent:input_type -> ironflow.v1.AppendEventRequest
 	2,  // 31: ironflow.v1.EntityStreamService.ReadStream:input_type -> ironflow.v1.ReadStreamRequest
 	5,  // 32: ironflow.v1.EntityStreamService.GetStreamInfo:input_type -> ironflow.v1.GetStreamInfoRequest
@@ -1821,15 +1947,17 @@ var file_ironflow_v1_entity_stream_proto_depIdxs = []int32{
 	9,  // 34: ironflow.v1.EntityStreamService.GetEntityHistory:input_type -> ironflow.v1.GetEntityHistoryRequest
 	15, // 35: ironflow.v1.EntityStreamService.CreateSnapshot:input_type -> ironflow.v1.CreateSnapshotRequest
 	17, // 36: ironflow.v1.EntityStreamService.GetSnapshot:input_type -> ironflow.v1.GetSnapshotRequest
-	1,  // 37: ironflow.v1.EntityStreamService.AppendEvent:output_type -> ironflow.v1.AppendEventResponse
-	3,  // 38: ironflow.v1.EntityStreamService.ReadStream:output_type -> ironflow.v1.ReadStreamResponse
-	6,  // 39: ironflow.v1.EntityStreamService.GetStreamInfo:output_type -> ironflow.v1.GetStreamInfoResponse
-	8,  // 40: ironflow.v1.EntityStreamService.ListStreams:output_type -> ironflow.v1.ListStreamsResponse
-	10, // 41: ironflow.v1.EntityStreamService.GetEntityHistory:output_type -> ironflow.v1.GetEntityHistoryResponse
-	16, // 42: ironflow.v1.EntityStreamService.CreateSnapshot:output_type -> ironflow.v1.CreateSnapshotResponse
-	18, // 43: ironflow.v1.EntityStreamService.GetSnapshot:output_type -> ironflow.v1.GetSnapshotResponse
-	37, // [37:44] is the sub-list for method output_type
-	30, // [30:37] is the sub-list for method input_type
+	19, // 37: ironflow.v1.EntityStreamService.DeleteStream:input_type -> ironflow.v1.DeleteStreamRequest
+	1,  // 38: ironflow.v1.EntityStreamService.AppendEvent:output_type -> ironflow.v1.AppendEventResponse
+	3,  // 39: ironflow.v1.EntityStreamService.ReadStream:output_type -> ironflow.v1.ReadStreamResponse
+	6,  // 40: ironflow.v1.EntityStreamService.GetStreamInfo:output_type -> ironflow.v1.GetStreamInfoResponse
+	8,  // 41: ironflow.v1.EntityStreamService.ListStreams:output_type -> ironflow.v1.ListStreamsResponse
+	10, // 42: ironflow.v1.EntityStreamService.GetEntityHistory:output_type -> ironflow.v1.GetEntityHistoryResponse
+	16, // 43: ironflow.v1.EntityStreamService.CreateSnapshot:output_type -> ironflow.v1.CreateSnapshotResponse
+	18, // 44: ironflow.v1.EntityStreamService.GetSnapshot:output_type -> ironflow.v1.GetSnapshotResponse
+	20, // 45: ironflow.v1.EntityStreamService.DeleteStream:output_type -> ironflow.v1.DeleteStreamResponse
+	38, // [38:46] is the sub-list for method output_type
+	30, // [30:38] is the sub-list for method input_type
 	30, // [30:30] is the sub-list for extension type_name
 	30, // [30:30] is the sub-list for extension extendee
 	0,  // [0:30] is the sub-list for field type_name
@@ -1846,7 +1974,7 @@ func file_ironflow_v1_entity_stream_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ironflow_v1_entity_stream_proto_rawDesc), len(file_ironflow_v1_entity_stream_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

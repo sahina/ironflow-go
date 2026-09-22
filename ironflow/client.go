@@ -746,6 +746,93 @@ func (c *Client) CancelRun(ctx context.Context, runID string, reason string) (*W
 	return mapRunResponse(&resp)
 }
 
+// DeleteRun permanently deletes a terminal run and its steps.
+func (c *Client) DeleteRun(ctx context.Context, runID string) error {
+	return c.request(ctx, "POST", "/ironflow.v1.IronflowService/DeleteRun", map[string]string{"id": runID}, nil)
+}
+
+// RunDeleteFilter selects terminal runs for DeleteRuns. At least one field is required.
+type RunDeleteFilter struct {
+	FunctionID string
+	Status     RunStatus
+	Until      *time.Time
+}
+
+// DeleteRuns deletes terminal runs matching f in the current environment and
+// returns how many THIS call removed. The server stops at 10,000 per call, so
+// re-issue the same filter until it returns 0. A count below 10,000 does NOT
+// mean drained: a page comes back short whenever another transaction holds
+// some matching rows.
+func (c *Client) DeleteRuns(ctx context.Context, f RunDeleteFilter) (int64, error) {
+	body := map[string]any{}
+	if f.FunctionID != "" {
+		body["functionId"] = f.FunctionID
+	}
+	if f.Status != "" {
+		wire, err := runStatusToWire(f.Status)
+		if err != nil {
+			return 0, err
+		}
+		body["status"] = wire
+	}
+	if f.Until != nil {
+		body["until"] = f.Until.UTC().Format(time.RFC3339Nano)
+	}
+
+	var resp struct {
+		Deleted int64 `json:"deleted,string"`
+	}
+	if err := c.request(ctx, "POST", "/ironflow.v1.IronflowService/DeleteRuns", body, &resp); err != nil {
+		return 0, err
+	}
+	return resp.Deleted, nil
+}
+
+// RedactEvent irreversibly replaces an event's data with a placeholder. The
+// row keeps its id, name, sequence and entity version, so replay ordering is
+// unaffected and reducers receive the placeholder. Idempotent.
+//
+// It does NOT reach the runs the event triggered: their input holds a copy.
+// Call RedactRun for those.
+func (c *Client) RedactEvent(ctx context.Context, eventID string) error {
+	return c.request(ctx, "POST", "/ironflow.v1.IronflowService/RedactEvent", map[string]string{"eventId": eventID}, nil)
+}
+
+// RedactStep irreversibly replaces a step's output and original output, and
+// the payload of every audit row for that step. stepID is the step's row id,
+// not its name. The run must be terminal. Idempotent.
+func (c *Client) RedactStep(ctx context.Context, stepID string) error {
+	return c.request(ctx, "POST", "/ironflow.v1.IronflowService/RedactStep", map[string]string{"stepId": stepID}, nil)
+}
+
+// RedactRun irreversibly replaces a run's input and output, and the payload of
+// every audit row for that run and its steps. The step columns themselves are
+// left alone — call RedactStep for those. The run must be terminal. Idempotent.
+func (c *Client) RedactRun(ctx context.Context, runID string) error {
+	return c.request(ctx, "POST", "/ironflow.v1.IronflowService/RedactRun", map[string]string{"runId": runID}, nil)
+}
+
+// IsRedacted reports whether a payload — an event's data, a step's output, a
+// run's output — is the placeholder a redaction left behind rather than real
+// content. Use it in a reducer before trusting the value. UpcasterRegistry
+// checks it too, and returns a redacted payload untouched rather than running
+// the chain.
+func IsRedacted(payload json.RawMessage) bool {
+	if len(payload) == 0 {
+		return false
+	}
+	var probe map[string]json.RawMessage
+	if json.Unmarshal(payload, &probe) != nil {
+		return false
+	}
+	marker, ok := probe["$redacted"]
+	if !ok {
+		return false
+	}
+	var flag bool
+	return json.Unmarshal(marker, &flag) == nil && flag
+}
+
 // PauseRun pauses a running workflow run for scoped injection.
 //
 // Example:

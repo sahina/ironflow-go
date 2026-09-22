@@ -2,7 +2,9 @@ package ironflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -85,5 +87,40 @@ func TestStreamRegistryConnect(t *testing.T) {
 	_, err = client.ListStreams(ctx)
 	if !errors.Is(err, ErrUnauthorized) || IsRetryable(err) {
 		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestDeleteStream(t *testing.T) {
+	var receivedPath string
+	var receivedBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("failed to read request body: %v", err)
+		}
+		if err := json.Unmarshal(body, &receivedBody); err != nil {
+			t.Errorf("failed to unmarshal request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"entityVersion":"3"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{ServerURL: server.URL, APIKey: "key"})
+	version, err := client.DeleteStream(context.Background(), "order-1", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receivedPath != "/ironflow.v1.EntityStreamService/DeleteStream" {
+		t.Fatalf("path=%s", receivedPath)
+	}
+	if receivedBody["entityId"] != "order-1" || receivedBody["purge"] != true {
+		t.Fatalf("body=%+v", receivedBody)
+	}
+	if version != 3 {
+		t.Fatalf("version=%d", version)
 	}
 }

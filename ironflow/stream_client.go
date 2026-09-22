@@ -95,3 +95,15 @@ func (c *Client) GetSnapshot(ctx context.Context, entityID string) (*StreamSnaps
 	s := resp.Msg
 	return &StreamSnapshot{SnapshotID: s.SnapshotId, EntityID: s.EntityId, EntityType: s.EntityType, EntityVersion: s.EntityVersion, State: streamPayload(s.State, s.StateValue), CreatedAt: streamTimestamp(s.CreatedAt)}, nil
 }
+
+// DeleteStream appends the $stream.deleted tombstone to an entity stream and
+// drops its snapshots; later appends fail. purge also deletes every event
+// below the tombstone. Returns the tombstone's version. Requires streams:delete.
+func (c *Client) DeleteStream(ctx context.Context, entityID string, purge bool) (int64, error) {
+	// sdkcoverage: POST /ironflow.v1.EntityStreamService/DeleteStream
+	resp, err := c.entityRPC().DeleteStream(ctx, connect.NewRequest(&ironflowv1.DeleteStreamRequest{EntityId: entityID, Purge: purge}))
+	if err != nil {
+		return 0, connectError(err)
+	}
+	return resp.Msg.EntityVersion, nil
+}

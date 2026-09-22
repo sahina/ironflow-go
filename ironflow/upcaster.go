@@ -45,6 +45,18 @@ func (r *UpcasterRegistry) Upcast(eventName string, data json.RawMessage, fromVe
 		return data, nil
 	}
 
+	// A redacted payload has no fields left to migrate, and the placeholder's
+	// shape does not depend on the schema version. Running the chain over it is
+	// worse than useless here: an upcaster unmarshals into its own struct, and
+	// the placeholder's keys match none of them, so json.Unmarshal succeeds with
+	// every field zeroed and returns no error. The chain then re-marshals that
+	// zero value WITHOUT the $redacted marker, and every downstream IsRedacted
+	// guard goes blind on a payload that now reads as real content. Pass it
+	// through untouched instead.
+	if IsRedacted(data) {
+		return data, nil
+	}
+
 	currentData := data
 	currentVersion := fromVersion
 

@@ -2069,6 +2069,101 @@ func TestCancelRun(t *testing.T) {
 	})
 }
 
+func TestDeleteRun(t *testing.T) {
+	var receivedPath string
+	var receivedBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("failed to read request body: %v", err)
+		}
+		if err := json.Unmarshal(body, &receivedBody); err != nil {
+			t.Errorf("failed to unmarshal request body: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := &Client{
+		serverURL:  server.URL,
+		httpClient: &http.Client{},
+		retryConfig: &ClientRetryConfig{
+			MaxAttempts: 1,
+		},
+		logger: NewNoopLogger(),
+	}
+
+	ctx := context.Background()
+	if err := client.DeleteRun(ctx, "r1"); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	if receivedPath != "/ironflow.v1.IronflowService/DeleteRun" {
+		t.Errorf("expected path /ironflow.v1.IronflowService/DeleteRun, got %s", receivedPath)
+	}
+	if receivedBody["id"] != "r1" {
+		t.Errorf("expected id 'r1', got %v", receivedBody["id"])
+	}
+}
+
+func TestDeleteRuns(t *testing.T) {
+	var receivedPath string
+	var receivedBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("failed to read request body: %v", err)
+		}
+		if err := json.Unmarshal(body, &receivedBody); err != nil {
+			t.Errorf("failed to unmarshal request body: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"deleted":"3"}`))
+	}))
+	defer server.Close()
+
+	client := &Client{
+		serverURL:  server.URL,
+		httpClient: &http.Client{},
+		retryConfig: &ClientRetryConfig{
+			MaxAttempts: 1,
+		},
+		logger: NewNoopLogger(),
+	}
+
+	until := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+	deleted, err := client.DeleteRuns(ctx, RunDeleteFilter{
+		FunctionID: "fn",
+		Status:     RunStatusCompleted,
+		Until:      &until,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	if receivedPath != "/ironflow.v1.IronflowService/DeleteRuns" {
+		t.Errorf("expected path /ironflow.v1.IronflowService/DeleteRuns, got %s", receivedPath)
+	}
+	if receivedBody["functionId"] != "fn" {
+		t.Errorf("expected functionId 'fn', got %v", receivedBody["functionId"])
+	}
+	if receivedBody["status"] != "RUN_STATUS_COMPLETED" {
+		t.Errorf("expected status 'RUN_STATUS_COMPLETED', got %v", receivedBody["status"])
+	}
+	if receivedBody["until"] != "2025-01-01T00:00:00Z" {
+		t.Errorf("expected until '2025-01-01T00:00:00Z', got %v", receivedBody["until"])
+	}
+	if deleted != 3 {
+		t.Errorf("expected deleted 3, got %d", deleted)
+	}
+}
+
 // ============================================================================
 // AppendStreamEvent tests
 // ============================================================================
@@ -4137,5 +4232,80 @@ func TestWaitForEvent_ResolvesAndWaits(t *testing.T) {
 	}
 	if receivedBody["projection"] != "order-detail-view" {
 		t.Errorf("expected projection 'order-detail-view', got %v", receivedBody["projection"])
+	}
+}
+
+// TestRedactMethods pins each redaction RPC's wire path and its single-field
+// body. A wrong field name here fails silently at runtime: the server reads a
+// missing id and answers InvalidArgument, which reads like a caller bug.
+func TestRedactMethods(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		call      func(*Client, context.Context) error
+		wantPath  string
+		wantField string
+	}{
+		{"RedactEvent", func(c *Client, ctx context.Context) error { return c.RedactEvent(ctx, "e1") },
+			"/ironflow.v1.IronflowService/RedactEvent", "eventId"},
+		{"RedactStep", func(c *Client, ctx context.Context) error { return c.RedactStep(ctx, "e1") },
+			"/ironflow.v1.IronflowService/RedactStep", "stepId"},
+		{"RedactRun", func(c *Client, ctx context.Context) error { return c.RedactRun(ctx, "e1") },
+			"/ironflow.v1.IronflowService/RedactRun", "runId"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var receivedPath string
+			var receivedBody map[string]any
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				receivedPath = r.URL.Path
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("failed to read request body: %v", err)
+				}
+				if err := json.Unmarshal(body, &receivedBody); err != nil {
+					t.Errorf("failed to unmarshal request body: %v", err)
+				}
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{}`))
+			}))
+			defer server.Close()
+
+			client := &Client{
+				serverURL:   server.URL,
+				httpClient:  &http.Client{},
+				retryConfig: &ClientRetryConfig{MaxAttempts: 1},
+				logger:      NewNoopLogger(),
+			}
+			if err := tc.call(client, context.Background()); err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+			if receivedPath != tc.wantPath {
+				t.Errorf("path = %s, want %s", receivedPath, tc.wantPath)
+			}
+			if receivedBody[tc.wantField] != "e1" {
+				t.Errorf("body[%s] = %v, want e1 (body: %v)", tc.wantField, receivedBody[tc.wantField], receivedBody)
+			}
+		})
+	}
+}
+
+func TestIsRedacted(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{"placeholder", `{"$redacted":true,"sha256":"ab","redactedAt":"x"}`, true},
+		{"empty", ``, false},
+		{"real payload", `{"email":"a@b.c"}`, false},
+		{"marker false", `{"$redacted":false}`, false},
+		{"not an object", `[1,2]`, false},
+		{"malformed", `{`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsRedacted(json.RawMessage(tc.raw)); got != tc.want {
+				t.Errorf("IsRedacted(%s) = %v, want %v", tc.raw, got, tc.want)
+			}
+		})
 	}
 }

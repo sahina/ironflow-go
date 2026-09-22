@@ -612,6 +612,26 @@ run, err := client.ResumeRun(ctx, runID, "")
 
 // Patch a step's output (hot patching)
 err := client.PatchStep(ctx, stepID, map[string]any{"corrected": true}, "fix data")
+
+// Delete a terminal run (needs runs:delete; in-flight runs are refused)
+err = client.DeleteRun(ctx, runID)
+
+// Bulk-delete terminal runs by filter. At most 10,000 per call -- re-issue
+// until it returns 0. An empty filter is rejected.
+until := time.Now().AddDate(0, -1, 0)
+deleted, err := client.DeleteRuns(ctx, ironflow.RunDeleteFilter{
+    FunctionID: "process-order",
+    Status:     ironflow.RunStatusCompleted,
+    Until:      &until,
+})
+
+// Redact stored payloads in place (irreversible; needs events:redact). The row
+// keeps its id, ordering and version -- only the bytes are replaced by
+// {"$redacted": true, "sha256": ..., "redactedAt": ...}.
+err = client.RedactEvent(ctx, eventID)
+err = client.RedactStep(ctx, stepID) // step ROW id; run must be terminal
+err = client.RedactRun(ctx, runID)   // input + output; run must be terminal
+if ironflow.IsRedacted(event.RawData) { /* placeholder, not a payload */ }
 ```
 
 ### Scoped Injection
@@ -987,6 +1007,11 @@ fmt.Printf("Entity %s at version %d (%d events)\n", info.EntityID, info.Version,
 // Enumerate every stream in the environment, or one entity's unified history
 streams, err := client.ListStreams(ctx)
 history, err := client.GetEntityHistory(ctx, "order-123")
+
+// Delete a stream: appends a $stream.deleted tombstone and drops snapshots;
+// purge=true also deletes the event rows below it. Returns the tombstone
+// version. Irreversible; needs streams:delete.
+version, err := client.DeleteStream(ctx, "order-123", false)
 
 // Snapshots -- skip replaying a long stream from version 0
 snap, err := client.CreateSnapshot(ctx, "order-123", ironflow.CreateSnapshotInput{
@@ -1771,6 +1796,8 @@ errors.Is(err, ironflow.ErrConflict)   // HTTP 409 / Connect AlreadyExists — a
                                         // request is already in flight; wait, do not retry
 errors.Is(err, ironflow.ErrContended)  // HTTP 409 / Connect Aborted — a concurrent write won
                                         // and nothing was applied; re-read, then reissue
+errors.Is(err, ironflow.ErrInjectionUnverified) // Connect Aborted — the step DID change;
+                                        // read Output/OriginalOutput and decide, do not reissue
 ```
 
 ### Retryability
@@ -1888,8 +1915,8 @@ ironflow.RunStatusCompleted  // "completed"
 ironflow.RunStatusFailed     // "failed"
 ironflow.RunStatusCancelled  // "cancelled"
 ironflow.RunStatusPaused     // "paused"
-// The capacity lifecycle also produces the string statuses "waiting_for_capacity"
-// (queued, eligible for a dispatch slot) and "waiting" (queued, backing off) (#1222).
+ironflow.RunStatusWaitingForCapacity // "waiting_for_capacity" (queued, eligible for a dispatch slot) (#1222)
+ironflow.RunStatusWaiting    // "waiting" (queued, backing off)
 
 // Ack modes
 ironflow.AckModeAuto    // "auto"

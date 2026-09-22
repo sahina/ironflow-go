@@ -253,3 +253,81 @@ func TestServeHandler_WithUpcasters(t *testing.T) {
 		t.Errorf("expected orderId=123 in handler, got %v", m["orderId"])
 	}
 }
+
+// redactedPayload is what a redaction leaves in events.data. The hash is of
+// the original bytes; nothing recovers them from it.
+const redactedPayload = `{"$redacted":true,"sha256":"abababababababababababababababababababababababababababababababab","redactedAt":"2026-09-21T00:00:00Z"}`
+
+func TestUpcasterRegistry_SkipsRedactedPayload(t *testing.T) {
+	registry := NewUpcasterRegistry()
+	invoked := false
+	registry.Register("order.placed", 1, 2, func(data json.RawMessage) (json.RawMessage, error) {
+		invoked = true
+		// The shape a real upcaster takes: unmarshal into your own struct. On
+		// the placeholder this succeeds with every field zeroed and returns no
+		// error, so the marker is dropped silently — the reason the guard has
+		// to sit above the loop rather than inside any one upcaster.
+		var v struct {
+			Amount int `json:"amount"`
+		}
+		if err := json.Unmarshal(data, &v); err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{"amount": v.Amount, "currency": "USD"})
+	})
+
+	result, err := registry.Upcast("order.placed", json.RawMessage(redactedPayload), 1, 2)
+	if err != nil {
+		t.Fatalf("Upcast on a redacted payload returned an error: %v", err)
+	}
+	// The never-invoked flag is the assertion that matters: it is the one that
+	// fails if the guard is ever moved below the loop.
+	if invoked {
+		t.Error("upcaster ran on a redacted payload; the chain must be skipped entirely")
+	}
+	if string(result) != redactedPayload {
+		t.Errorf("placeholder was rewritten:\n got %s\nwant %s", result, redactedPayload)
+	}
+	if !IsRedacted(result) {
+		t.Error("IsRedacted is false after upcasting; the $redacted marker was lost")
+	}
+}
+
+func TestUpcasterRegistry_SkipsRedactedThroughUpcastToLatest(t *testing.T) {
+	// UpcastToLatest is what serve() and the job executor actually call.
+	registry := NewUpcasterRegistry()
+	var invoked []int
+	registry.Register("order.placed", 1, 2, func(d json.RawMessage) (json.RawMessage, error) {
+		invoked = append(invoked, 1)
+		return d, nil
+	})
+	registry.Register("order.placed", 2, 3, func(d json.RawMessage) (json.RawMessage, error) {
+		invoked = append(invoked, 2)
+		return d, nil
+	})
+
+	result, err := registry.UpcastToLatest("order.placed", json.RawMessage(redactedPayload), 1)
+	if err != nil {
+		t.Fatalf("UpcastToLatest on a redacted payload returned an error: %v", err)
+	}
+	if len(invoked) != 0 {
+		t.Errorf("chain ran on a redacted payload: steps %v", invoked)
+	}
+	if !IsRedacted(result) {
+		t.Error("IsRedacted is false after UpcastToLatest")
+	}
+}
+
+func TestUpcasterRegistry_RedactedPayloadIgnoresIncompleteChain(t *testing.T) {
+	// The placeholder needs no migration, so a gap in the chain is not a
+	// problem it can reach. A real payload still errors.
+	registry := NewUpcasterRegistry()
+	registry.Register("order.placed", 1, 2, func(d json.RawMessage) (json.RawMessage, error) { return d, nil })
+
+	if _, err := registry.Upcast("order.placed", json.RawMessage(redactedPayload), 1, 3); err != nil {
+		t.Errorf("redacted payload hit the incomplete-chain error: %v", err)
+	}
+	if _, err := registry.Upcast("order.placed", json.RawMessage(`{"id":"o1"}`), 1, 3); err == nil {
+		t.Error("a real payload no longer errors on an incomplete chain")
+	}
+}

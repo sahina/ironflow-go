@@ -85,6 +85,21 @@ const (
 	// IronflowServiceCancelRunProcedure is the fully-qualified name of the IronflowService's CancelRun
 	// RPC.
 	IronflowServiceCancelRunProcedure = "/ironflow.v1.IronflowService/CancelRun"
+	// IronflowServiceDeleteRunProcedure is the fully-qualified name of the IronflowService's DeleteRun
+	// RPC.
+	IronflowServiceDeleteRunProcedure = "/ironflow.v1.IronflowService/DeleteRun"
+	// IronflowServiceDeleteRunsProcedure is the fully-qualified name of the IronflowService's
+	// DeleteRuns RPC.
+	IronflowServiceDeleteRunsProcedure = "/ironflow.v1.IronflowService/DeleteRuns"
+	// IronflowServiceRedactEventProcedure is the fully-qualified name of the IronflowService's
+	// RedactEvent RPC.
+	IronflowServiceRedactEventProcedure = "/ironflow.v1.IronflowService/RedactEvent"
+	// IronflowServiceRedactStepProcedure is the fully-qualified name of the IronflowService's
+	// RedactStep RPC.
+	IronflowServiceRedactStepProcedure = "/ironflow.v1.IronflowService/RedactStep"
+	// IronflowServiceRedactRunProcedure is the fully-qualified name of the IronflowService's RedactRun
+	// RPC.
+	IronflowServiceRedactRunProcedure = "/ironflow.v1.IronflowService/RedactRun"
 	// IronflowServicePatchStepProcedure is the fully-qualified name of the IronflowService's PatchStep
 	// RPC.
 	IronflowServicePatchStepProcedure = "/ironflow.v1.IronflowService/PatchStep"
@@ -149,6 +164,33 @@ type IronflowServiceClient interface {
 	GetRunSteps(context.Context, *connect.Request[v1.GetRunStepsRequest]) (*connect.Response[v1.GetRunStepsResponse], error)
 	// Cancel a running workflow
 	CancelRun(context.Context, *connect.Request[v1.CancelRunRequest]) (*connect.Response[v1.Run], error)
+	// Delete one terminal run (completed, failed, cancelled) with its steps.
+	// FAILED_PRECONDITION for a non-terminal run. Emits system.run.{id}.deleted.
+	DeleteRun(context.Context, *connect.Request[v1.DeleteRunRequest]) (*connect.Response[emptypb.Empty], error)
+	// Delete terminal runs in the caller's environment matching the filter.
+	// At least one filter field is required (INVALID_ARGUMENT otherwise);
+	// status, when set, must be terminal. One call stops at 10,000 runs so a
+	// wide filter cannot become an unbounded sweep. Re-issue the same request
+	// until it answers 0 — it resumes where it stopped, because deleted rows
+	// no longer match. Do NOT stop on a count below the cap: a page comes back
+	// short whenever another transaction holds some matching rows.
+	DeleteRuns(context.Context, *connect.Request[v1.DeleteRunsRequest]) (*connect.Response[v1.DeleteRunsResponse], error)
+	// Irreversibly replace one event's data with a placeholder. The row, its
+	// sequence, its entity version and its name all survive, so replay ordering
+	// and optimistic concurrency are unaffected; reducers receive the
+	// placeholder, and the SDK upcaster chains skip it rather than migrate it so
+	// its marker survives. Snapshots of an entity stream whose state derives from
+	// the removed bytes are dropped. Idempotent. Requires events:redact.
+	RedactEvent(context.Context, *connect.Request[v1.RedactEventRequest]) (*connect.Response[emptypb.Empty], error)
+	// Irreversibly replace one step's output and original output, and the
+	// payload of every audit row for that step. FAILED_PRECONDITION while the
+	// run is non-terminal, because memoized resume reads the output.
+	// Idempotent. Requires events:redact.
+	RedactStep(context.Context, *connect.Request[v1.RedactStepRequest]) (*connect.Response[emptypb.Empty], error)
+	// Irreversibly replace one run's input and output, and the payload of every
+	// audit row for that run and its steps. FAILED_PRECONDITION while the run
+	// is non-terminal. Idempotent. Requires events:redact.
+	RedactRun(context.Context, *connect.Request[v1.RedactRunRequest]) (*connect.Response[emptypb.Empty], error)
 	// Patch a step's output
 	PatchStep(context.Context, *connect.Request[v1.PatchStepRequest]) (*connect.Response[v1.Step], error)
 	// Resume a paused/failed run
@@ -291,6 +333,36 @@ func NewIronflowServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			connect.WithSchema(ironflowServiceMethods.ByName("CancelRun")),
 			connect.WithClientOptions(opts...),
 		),
+		deleteRun: connect.NewClient[v1.DeleteRunRequest, emptypb.Empty](
+			httpClient,
+			baseURL+IronflowServiceDeleteRunProcedure,
+			connect.WithSchema(ironflowServiceMethods.ByName("DeleteRun")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteRuns: connect.NewClient[v1.DeleteRunsRequest, v1.DeleteRunsResponse](
+			httpClient,
+			baseURL+IronflowServiceDeleteRunsProcedure,
+			connect.WithSchema(ironflowServiceMethods.ByName("DeleteRuns")),
+			connect.WithClientOptions(opts...),
+		),
+		redactEvent: connect.NewClient[v1.RedactEventRequest, emptypb.Empty](
+			httpClient,
+			baseURL+IronflowServiceRedactEventProcedure,
+			connect.WithSchema(ironflowServiceMethods.ByName("RedactEvent")),
+			connect.WithClientOptions(opts...),
+		),
+		redactStep: connect.NewClient[v1.RedactStepRequest, emptypb.Empty](
+			httpClient,
+			baseURL+IronflowServiceRedactStepProcedure,
+			connect.WithSchema(ironflowServiceMethods.ByName("RedactStep")),
+			connect.WithClientOptions(opts...),
+		),
+		redactRun: connect.NewClient[v1.RedactRunRequest, emptypb.Empty](
+			httpClient,
+			baseURL+IronflowServiceRedactRunProcedure,
+			connect.WithSchema(ironflowServiceMethods.ByName("RedactRun")),
+			connect.WithClientOptions(opts...),
+		),
 		patchStep: connect.NewClient[v1.PatchStepRequest, v1.Step](
 			httpClient,
 			baseURL+IronflowServicePatchStepProcedure,
@@ -357,6 +429,11 @@ type ironflowServiceClient struct {
 	listRuns             *connect.Client[v1.ListRunsRequest, v1.ListRunsResponse]
 	getRunSteps          *connect.Client[v1.GetRunStepsRequest, v1.GetRunStepsResponse]
 	cancelRun            *connect.Client[v1.CancelRunRequest, v1.Run]
+	deleteRun            *connect.Client[v1.DeleteRunRequest, emptypb.Empty]
+	deleteRuns           *connect.Client[v1.DeleteRunsRequest, v1.DeleteRunsResponse]
+	redactEvent          *connect.Client[v1.RedactEventRequest, emptypb.Empty]
+	redactStep           *connect.Client[v1.RedactStepRequest, emptypb.Empty]
+	redactRun            *connect.Client[v1.RedactRunRequest, emptypb.Empty]
 	patchStep            *connect.Client[v1.PatchStepRequest, v1.Step]
 	resumeRun            *connect.Client[v1.ResumeRunRequest, v1.Run]
 	pauseRun             *connect.Client[v1.PauseRunRequest, v1.PauseRunResponse]
@@ -456,6 +533,31 @@ func (c *ironflowServiceClient) CancelRun(ctx context.Context, req *connect.Requ
 	return c.cancelRun.CallUnary(ctx, req)
 }
 
+// DeleteRun calls ironflow.v1.IronflowService.DeleteRun.
+func (c *ironflowServiceClient) DeleteRun(ctx context.Context, req *connect.Request[v1.DeleteRunRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.deleteRun.CallUnary(ctx, req)
+}
+
+// DeleteRuns calls ironflow.v1.IronflowService.DeleteRuns.
+func (c *ironflowServiceClient) DeleteRuns(ctx context.Context, req *connect.Request[v1.DeleteRunsRequest]) (*connect.Response[v1.DeleteRunsResponse], error) {
+	return c.deleteRuns.CallUnary(ctx, req)
+}
+
+// RedactEvent calls ironflow.v1.IronflowService.RedactEvent.
+func (c *ironflowServiceClient) RedactEvent(ctx context.Context, req *connect.Request[v1.RedactEventRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.redactEvent.CallUnary(ctx, req)
+}
+
+// RedactStep calls ironflow.v1.IronflowService.RedactStep.
+func (c *ironflowServiceClient) RedactStep(ctx context.Context, req *connect.Request[v1.RedactStepRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.redactStep.CallUnary(ctx, req)
+}
+
+// RedactRun calls ironflow.v1.IronflowService.RedactRun.
+func (c *ironflowServiceClient) RedactRun(ctx context.Context, req *connect.Request[v1.RedactRunRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.redactRun.CallUnary(ctx, req)
+}
+
 // PatchStep calls ironflow.v1.IronflowService.PatchStep.
 func (c *ironflowServiceClient) PatchStep(ctx context.Context, req *connect.Request[v1.PatchStepRequest]) (*connect.Response[v1.Step], error) {
 	return c.patchStep.CallUnary(ctx, req)
@@ -534,6 +636,33 @@ type IronflowServiceHandler interface {
 	GetRunSteps(context.Context, *connect.Request[v1.GetRunStepsRequest]) (*connect.Response[v1.GetRunStepsResponse], error)
 	// Cancel a running workflow
 	CancelRun(context.Context, *connect.Request[v1.CancelRunRequest]) (*connect.Response[v1.Run], error)
+	// Delete one terminal run (completed, failed, cancelled) with its steps.
+	// FAILED_PRECONDITION for a non-terminal run. Emits system.run.{id}.deleted.
+	DeleteRun(context.Context, *connect.Request[v1.DeleteRunRequest]) (*connect.Response[emptypb.Empty], error)
+	// Delete terminal runs in the caller's environment matching the filter.
+	// At least one filter field is required (INVALID_ARGUMENT otherwise);
+	// status, when set, must be terminal. One call stops at 10,000 runs so a
+	// wide filter cannot become an unbounded sweep. Re-issue the same request
+	// until it answers 0 — it resumes where it stopped, because deleted rows
+	// no longer match. Do NOT stop on a count below the cap: a page comes back
+	// short whenever another transaction holds some matching rows.
+	DeleteRuns(context.Context, *connect.Request[v1.DeleteRunsRequest]) (*connect.Response[v1.DeleteRunsResponse], error)
+	// Irreversibly replace one event's data with a placeholder. The row, its
+	// sequence, its entity version and its name all survive, so replay ordering
+	// and optimistic concurrency are unaffected; reducers receive the
+	// placeholder, and the SDK upcaster chains skip it rather than migrate it so
+	// its marker survives. Snapshots of an entity stream whose state derives from
+	// the removed bytes are dropped. Idempotent. Requires events:redact.
+	RedactEvent(context.Context, *connect.Request[v1.RedactEventRequest]) (*connect.Response[emptypb.Empty], error)
+	// Irreversibly replace one step's output and original output, and the
+	// payload of every audit row for that step. FAILED_PRECONDITION while the
+	// run is non-terminal, because memoized resume reads the output.
+	// Idempotent. Requires events:redact.
+	RedactStep(context.Context, *connect.Request[v1.RedactStepRequest]) (*connect.Response[emptypb.Empty], error)
+	// Irreversibly replace one run's input and output, and the payload of every
+	// audit row for that run and its steps. FAILED_PRECONDITION while the run
+	// is non-terminal. Idempotent. Requires events:redact.
+	RedactRun(context.Context, *connect.Request[v1.RedactRunRequest]) (*connect.Response[emptypb.Empty], error)
 	// Patch a step's output
 	PatchStep(context.Context, *connect.Request[v1.PatchStepRequest]) (*connect.Response[v1.Step], error)
 	// Resume a paused/failed run
@@ -672,6 +801,36 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 		connect.WithSchema(ironflowServiceMethods.ByName("CancelRun")),
 		connect.WithHandlerOptions(opts...),
 	)
+	ironflowServiceDeleteRunHandler := connect.NewUnaryHandler(
+		IronflowServiceDeleteRunProcedure,
+		svc.DeleteRun,
+		connect.WithSchema(ironflowServiceMethods.ByName("DeleteRun")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ironflowServiceDeleteRunsHandler := connect.NewUnaryHandler(
+		IronflowServiceDeleteRunsProcedure,
+		svc.DeleteRuns,
+		connect.WithSchema(ironflowServiceMethods.ByName("DeleteRuns")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ironflowServiceRedactEventHandler := connect.NewUnaryHandler(
+		IronflowServiceRedactEventProcedure,
+		svc.RedactEvent,
+		connect.WithSchema(ironflowServiceMethods.ByName("RedactEvent")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ironflowServiceRedactStepHandler := connect.NewUnaryHandler(
+		IronflowServiceRedactStepProcedure,
+		svc.RedactStep,
+		connect.WithSchema(ironflowServiceMethods.ByName("RedactStep")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ironflowServiceRedactRunHandler := connect.NewUnaryHandler(
+		IronflowServiceRedactRunProcedure,
+		svc.RedactRun,
+		connect.WithSchema(ironflowServiceMethods.ByName("RedactRun")),
+		connect.WithHandlerOptions(opts...),
+	)
 	ironflowServicePatchStepHandler := connect.NewUnaryHandler(
 		IronflowServicePatchStepProcedure,
 		svc.PatchStep,
@@ -753,6 +912,16 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 			ironflowServiceGetRunStepsHandler.ServeHTTP(w, r)
 		case IronflowServiceCancelRunProcedure:
 			ironflowServiceCancelRunHandler.ServeHTTP(w, r)
+		case IronflowServiceDeleteRunProcedure:
+			ironflowServiceDeleteRunHandler.ServeHTTP(w, r)
+		case IronflowServiceDeleteRunsProcedure:
+			ironflowServiceDeleteRunsHandler.ServeHTTP(w, r)
+		case IronflowServiceRedactEventProcedure:
+			ironflowServiceRedactEventHandler.ServeHTTP(w, r)
+		case IronflowServiceRedactStepProcedure:
+			ironflowServiceRedactStepHandler.ServeHTTP(w, r)
+		case IronflowServiceRedactRunProcedure:
+			ironflowServiceRedactRunHandler.ServeHTTP(w, r)
 		case IronflowServicePatchStepProcedure:
 			ironflowServicePatchStepHandler.ServeHTTP(w, r)
 		case IronflowServiceResumeRunProcedure:
@@ -846,6 +1015,26 @@ func (UnimplementedIronflowServiceHandler) GetRunSteps(context.Context, *connect
 
 func (UnimplementedIronflowServiceHandler) CancelRun(context.Context, *connect.Request[v1.CancelRunRequest]) (*connect.Response[v1.Run], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.CancelRun is not implemented"))
+}
+
+func (UnimplementedIronflowServiceHandler) DeleteRun(context.Context, *connect.Request[v1.DeleteRunRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.DeleteRun is not implemented"))
+}
+
+func (UnimplementedIronflowServiceHandler) DeleteRuns(context.Context, *connect.Request[v1.DeleteRunsRequest]) (*connect.Response[v1.DeleteRunsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.DeleteRuns is not implemented"))
+}
+
+func (UnimplementedIronflowServiceHandler) RedactEvent(context.Context, *connect.Request[v1.RedactEventRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.RedactEvent is not implemented"))
+}
+
+func (UnimplementedIronflowServiceHandler) RedactStep(context.Context, *connect.Request[v1.RedactStepRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.RedactStep is not implemented"))
+}
+
+func (UnimplementedIronflowServiceHandler) RedactRun(context.Context, *connect.Request[v1.RedactRunRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.RedactRun is not implemented"))
 }
 
 func (UnimplementedIronflowServiceHandler) PatchStep(context.Context, *connect.Request[v1.PatchStepRequest]) (*connect.Response[v1.Step], error) {

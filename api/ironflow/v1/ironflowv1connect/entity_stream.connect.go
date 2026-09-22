@@ -54,6 +54,9 @@ const (
 	// EntityStreamServiceGetSnapshotProcedure is the fully-qualified name of the EntityStreamService's
 	// GetSnapshot RPC.
 	EntityStreamServiceGetSnapshotProcedure = "/ironflow.v1.EntityStreamService/GetSnapshot"
+	// EntityStreamServiceDeleteStreamProcedure is the fully-qualified name of the EntityStreamService's
+	// DeleteStream RPC.
+	EntityStreamServiceDeleteStreamProcedure = "/ironflow.v1.EntityStreamService/DeleteStream"
 )
 
 // EntityStreamServiceClient is a client for the ironflow.v1.EntityStreamService service.
@@ -65,6 +68,11 @@ type EntityStreamServiceClient interface {
 	GetEntityHistory(context.Context, *connect.Request[v1.GetEntityHistoryRequest]) (*connect.Response[v1.GetEntityHistoryResponse], error)
 	CreateSnapshot(context.Context, *connect.Request[v1.CreateSnapshotRequest]) (*connect.Response[v1.CreateSnapshotResponse], error)
 	GetSnapshot(context.Context, *connect.Request[v1.GetSnapshotRequest]) (*connect.Response[v1.GetSnapshotResponse], error)
+	// Delete an entity stream: appends the `$stream.deleted` tombstone at
+	// version+1 under optimistic concurrency and drops the stream's snapshots.
+	// Later appends fail with FAILED_PRECONDITION. purge=true also deletes
+	// every event row below the tombstone. Requires streams:delete.
+	DeleteStream(context.Context, *connect.Request[v1.DeleteStreamRequest]) (*connect.Response[v1.DeleteStreamResponse], error)
 }
 
 // NewEntityStreamServiceClient constructs a client for the ironflow.v1.EntityStreamService service.
@@ -125,6 +133,12 @@ func NewEntityStreamServiceClient(httpClient connect.HTTPClient, baseURL string,
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		deleteStream: connect.NewClient[v1.DeleteStreamRequest, v1.DeleteStreamResponse](
+			httpClient,
+			baseURL+EntityStreamServiceDeleteStreamProcedure,
+			connect.WithSchema(entityStreamServiceMethods.ByName("DeleteStream")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -137,6 +151,7 @@ type entityStreamServiceClient struct {
 	getEntityHistory *connect.Client[v1.GetEntityHistoryRequest, v1.GetEntityHistoryResponse]
 	createSnapshot   *connect.Client[v1.CreateSnapshotRequest, v1.CreateSnapshotResponse]
 	getSnapshot      *connect.Client[v1.GetSnapshotRequest, v1.GetSnapshotResponse]
+	deleteStream     *connect.Client[v1.DeleteStreamRequest, v1.DeleteStreamResponse]
 }
 
 // AppendEvent calls ironflow.v1.EntityStreamService.AppendEvent.
@@ -174,6 +189,11 @@ func (c *entityStreamServiceClient) GetSnapshot(ctx context.Context, req *connec
 	return c.getSnapshot.CallUnary(ctx, req)
 }
 
+// DeleteStream calls ironflow.v1.EntityStreamService.DeleteStream.
+func (c *entityStreamServiceClient) DeleteStream(ctx context.Context, req *connect.Request[v1.DeleteStreamRequest]) (*connect.Response[v1.DeleteStreamResponse], error) {
+	return c.deleteStream.CallUnary(ctx, req)
+}
+
 // EntityStreamServiceHandler is an implementation of the ironflow.v1.EntityStreamService service.
 type EntityStreamServiceHandler interface {
 	AppendEvent(context.Context, *connect.Request[v1.AppendEventRequest]) (*connect.Response[v1.AppendEventResponse], error)
@@ -183,6 +203,11 @@ type EntityStreamServiceHandler interface {
 	GetEntityHistory(context.Context, *connect.Request[v1.GetEntityHistoryRequest]) (*connect.Response[v1.GetEntityHistoryResponse], error)
 	CreateSnapshot(context.Context, *connect.Request[v1.CreateSnapshotRequest]) (*connect.Response[v1.CreateSnapshotResponse], error)
 	GetSnapshot(context.Context, *connect.Request[v1.GetSnapshotRequest]) (*connect.Response[v1.GetSnapshotResponse], error)
+	// Delete an entity stream: appends the `$stream.deleted` tombstone at
+	// version+1 under optimistic concurrency and drops the stream's snapshots.
+	// Later appends fail with FAILED_PRECONDITION. purge=true also deletes
+	// every event row below the tombstone. Requires streams:delete.
+	DeleteStream(context.Context, *connect.Request[v1.DeleteStreamRequest]) (*connect.Response[v1.DeleteStreamResponse], error)
 }
 
 // NewEntityStreamServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -239,6 +264,12 @@ func NewEntityStreamServiceHandler(svc EntityStreamServiceHandler, opts ...conne
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	entityStreamServiceDeleteStreamHandler := connect.NewUnaryHandler(
+		EntityStreamServiceDeleteStreamProcedure,
+		svc.DeleteStream,
+		connect.WithSchema(entityStreamServiceMethods.ByName("DeleteStream")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/ironflow.v1.EntityStreamService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case EntityStreamServiceAppendEventProcedure:
@@ -255,6 +286,8 @@ func NewEntityStreamServiceHandler(svc EntityStreamServiceHandler, opts ...conne
 			entityStreamServiceCreateSnapshotHandler.ServeHTTP(w, r)
 		case EntityStreamServiceGetSnapshotProcedure:
 			entityStreamServiceGetSnapshotHandler.ServeHTTP(w, r)
+		case EntityStreamServiceDeleteStreamProcedure:
+			entityStreamServiceDeleteStreamHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -290,4 +323,8 @@ func (UnimplementedEntityStreamServiceHandler) CreateSnapshot(context.Context, *
 
 func (UnimplementedEntityStreamServiceHandler) GetSnapshot(context.Context, *connect.Request[v1.GetSnapshotRequest]) (*connect.Response[v1.GetSnapshotResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.EntityStreamService.GetSnapshot is not implemented"))
+}
+
+func (UnimplementedEntityStreamServiceHandler) DeleteStream(context.Context, *connect.Request[v1.DeleteStreamRequest]) (*connect.Response[v1.DeleteStreamResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.EntityStreamService.DeleteStream is not implemented"))
 }

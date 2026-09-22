@@ -98,7 +98,7 @@ var ReviewAgent = agent.Agent(agent.AgentConfig{
 | `Approve[T](ctx, name, opts)` | Wait for human approval | `ironflow.WaitForEvent` |
 | `Spawn[I, O](ctx, name, opts)` | Sub-agent invoke | `ironflow.Invoke` / `InvokeAsync` |
 | `Memory(ctx)` | Durable agent memory | `client.AppendStreamEvent` + projections |
-| `ExposeMcp(cfg)` | Register agent tools with Ironflow's MCP server | `AgentToolsService.RegisterTool` + HMAC callback |
+| `ExposeMcp(cfg)` | Register agent tools with Ironflow's MCP server; the returned handle's `Unregister()` removes them | `AgentToolsService.RegisterTool` + HMAC callback |
 | `DispatchHandler()` / `HandleAgentToolDispatch(w, r)` | Serve the server's signed tool-dispatch callbacks | `net/http` + HMAC verify |
 
 ### Mounting the dispatch callback
