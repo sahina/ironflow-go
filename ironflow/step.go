@@ -742,6 +742,30 @@ func SleepUntilWithBranch(b *BranchContext, name string, until time.Time) error 
 	return sleepUntilImpl(b, name, until)
 }
 
+func decodeWaitEvent(raw []byte) (Event, error) {
+	var event Event
+	if err := json.Unmarshal(raw, &event); err != nil {
+		return Event{}, err
+	}
+	if len(event.RawData) != 0 {
+		return event, nil
+	}
+	if event.ID != "" && event.Name != "" && !event.Timestamp.IsZero() {
+		var envelope struct {
+			Data json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(raw, &envelope); err != nil {
+			return Event{}, err
+		}
+		if len(envelope.Data) != 0 {
+			event.RawData = envelope.Data
+			return event, nil
+		}
+	}
+	event.RawData = raw
+	return event, nil
+}
+
 // sleepUntilImpl is the shared body. It takes its step ID from whichever scope
 // it was handed, so the same code is correct at the root and inside a branch.
 func sleepUntilImpl(sc StepContext, name string, until time.Time) error {
@@ -811,8 +835,8 @@ func WaitForEvent[T any](ctx Context, name string, filter EventFilter) (Event, e
 				return Event{}, NewStepError(fmt.Sprintf("failed to marshal resume event: %v", err), stepID, name, false, err)
 			}
 
-			var event Event
-			if err := json.Unmarshal(eventBytes, &event); err != nil {
+			event, err := decodeWaitEvent(eventBytes)
+			if err != nil {
 				return Event{}, NewStepError(fmt.Sprintf("failed to unmarshal resume event: %v", err), stepID, name, false, err)
 			}
 
@@ -827,8 +851,8 @@ func WaitForEvent[T any](ctx Context, name string, filter EventFilter) (Event, e
 			return Event{}, NewStepError(fmt.Sprintf("failed to marshal memoized event: %v", err), stepID, name, false, err)
 		}
 
-		var event Event
-		if err := json.Unmarshal(eventBytes, &event); err != nil {
+		event, err := decodeWaitEvent(eventBytes)
+		if err != nil {
 			return Event{}, NewStepError(fmt.Sprintf("failed to unmarshal memoized event: %v", err), stepID, name, false, err)
 		}
 

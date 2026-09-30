@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -212,9 +213,6 @@ func TestStreamingWorker_Defaults(t *testing.T) {
 	}
 	if w.executor == nil {
 		t.Error("expected executor to be set")
-	}
-	if w.executor.stepReporter == nil {
-		t.Error("expected executor to have streamStepReporter")
 	}
 }
 
@@ -1359,7 +1357,7 @@ func TestStreamingWorker_Reconnect(t *testing.T) {
 
 func TestStreamStepReporter_ReportStepStarted(t *testing.T) {
 	outCh := make(chan *ironflowv1.WorkerMessage, 10)
-	r := &streamStepReporter{outCh: outCh}
+	r := &streamStepReporter{outCh: outCh, jobID: "job-1", executionSeq: 7, leaseToken: "tok"}
 
 	r.ReportStepStarted("step-1", "my-step", "invoke")
 
@@ -1372,6 +1370,9 @@ func TestStreamStepReporter_ReportStepStarted(t *testing.T) {
 		if ss.StepStarted.GetStepId() != "step-1" {
 			t.Errorf("expected stepId=step-1, got %q", ss.StepStarted.GetStepId())
 		}
+		if ss.StepStarted.GetJobId() != "job-1" || ss.StepStarted.GetExecutionSeq() != 7 || ss.StepStarted.GetLeaseToken() != "tok" {
+			t.Errorf("job/fence not stamped: %v", ss.StepStarted)
+		}
 		if ss.StepStarted.GetName() != "my-step" {
 			t.Errorf("expected name=my-step, got %q", ss.StepStarted.GetName())
 		}
@@ -1382,7 +1383,7 @@ func TestStreamStepReporter_ReportStepStarted(t *testing.T) {
 
 func TestStreamStepReporter_ReportStepCompleted(t *testing.T) {
 	outCh := make(chan *ironflowv1.WorkerMessage, 10)
-	r := &streamStepReporter{outCh: outCh}
+	r := &streamStepReporter{outCh: outCh, jobID: "job-1", executionSeq: 7, leaseToken: "tok"}
 
 	r.ReportStepCompleted("step-2", "calc", "invoke", map[string]any{"x": 1}, 150)
 
@@ -1395,6 +1396,9 @@ func TestStreamStepReporter_ReportStepCompleted(t *testing.T) {
 		if sc.StepCompleted.GetStepId() != "step-2" {
 			t.Errorf("expected stepId=step-2, got %q", sc.StepCompleted.GetStepId())
 		}
+		if sc.StepCompleted.GetJobId() != "job-1" || sc.StepCompleted.GetExecutionSeq() != 7 || sc.StepCompleted.GetLeaseToken() != "tok" {
+			t.Errorf("job/fence not stamped: %v", sc.StepCompleted)
+		}
 		if sc.StepCompleted.GetDurationMs() != 150 {
 			t.Errorf("expected durationMs=150, got %d", sc.StepCompleted.GetDurationMs())
 		}
@@ -1405,7 +1409,7 @@ func TestStreamStepReporter_ReportStepCompleted(t *testing.T) {
 
 func TestStreamStepReporter_ReportStepFailed(t *testing.T) {
 	outCh := make(chan *ironflowv1.WorkerMessage, 10)
-	r := &streamStepReporter{outCh: outCh}
+	r := &streamStepReporter{outCh: outCh, jobID: "job-1", executionSeq: 7, leaseToken: "tok"}
 
 	r.ReportStepFailed("step-3", "bad-step", "invoke", "something broke", 42)
 
@@ -1417,6 +1421,9 @@ func TestStreamStepReporter_ReportStepFailed(t *testing.T) {
 		}
 		if sf.StepFailed.GetStepId() != "step-3" {
 			t.Errorf("expected stepId=step-3, got %q", sf.StepFailed.GetStepId())
+		}
+		if sf.StepFailed.GetJobId() != "job-1" || sf.StepFailed.GetExecutionSeq() != 7 || sf.StepFailed.GetLeaseToken() != "tok" {
+			t.Errorf("job/fence not stamped: %v", sf.StepFailed)
 		}
 		if sf.StepFailed.GetError().GetMessage() != "something broke" {
 			t.Errorf("expected error message 'something broke', got %q", sf.StepFailed.GetError().GetMessage())
@@ -1430,7 +1437,7 @@ func TestStreamJobReporter_ReportCompleted(t *testing.T) {
 	outCh := make(chan *ironflowv1.WorkerMessage, 10)
 	r := &streamJobReporter{outCh: outCh, logger: NewNoopLogger()}
 
-	err := r.ReportCompleted(context.Background(), "job-100", map[string]any{"ok": true}, nil)
+	err := r.ReportCompleted(context.Background(), "job-100", map[string]any{"ok": true}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1465,7 +1472,7 @@ func TestStreamJobReporter_ReportFailed(t *testing.T) {
 			Status: "failed",
 			Error:  &StepErrorInfo{Message: "inner error", Retryable: true},
 		},
-	})
+	}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1499,7 +1506,7 @@ func TestStreamJobReporter_ReportYielded_Sleep(t *testing.T) {
 		StepID: "s-sleep",
 		Type:   "sleep",
 		Until:  until,
-	})
+	}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1539,7 +1546,7 @@ func TestStreamJobReporter_ReportYielded_WaitEvent(t *testing.T) {
 			MatchValue: "order-123",
 			Timeout:    24 * time.Hour,
 		},
-	})
+	}, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1571,9 +1578,142 @@ func TestStreamJobReporter_ReportYielded_WaitEvent(t *testing.T) {
 	}
 }
 
+func TestStreamJobReporter_ReportYielded_InvokeFunction(t *testing.T) {
+	outCh := make(chan *ironflowv1.WorkerMessage, 10)
+	r := &streamJobReporter{outCh: outCh, logger: NewNoopLogger()}
+
+	err := r.ReportYielded(context.Background(), "job-500", &YieldInfo{
+		StepID: "s-inv", Type: "invoke_function",
+		FunctionID: "child", Input: "just-a-string", InvokeTimeoutMs: 5000,
+	}, nil, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	msg := <-outCh
+	sy, ok := msg.GetPayload().(*ironflowv1.WorkerMessage_StepYielded)
+	if !ok {
+		t.Fatalf("expected StepYielded, got %T", msg.GetPayload())
+	}
+	inv, ok := sy.StepYielded.GetYieldInfo().(*ironflowv1.StepYielded_InvokeFunction)
+	if !ok {
+		t.Fatalf("expected invoke_function yield, got %T", sy.StepYielded.GetYieldInfo())
+	}
+	if inv.InvokeFunction.GetFunctionId() != "child" || inv.InvokeFunction.GetInvokeTimeoutMs() != 5000 {
+		t.Errorf("invoke = %+v", inv.InvokeFunction)
+	}
+	if string(inv.InvokeFunction.GetInputJson()) != `"just-a-string"` {
+		t.Errorf("input_json = %s", inv.InvokeFunction.GetInputJson())
+	}
+}
+
+func TestStreamJobReporter_ReportYielded_InvokeFunctionAsyncNoInput(t *testing.T) {
+	outCh := make(chan *ironflowv1.WorkerMessage, 10)
+	r := &streamJobReporter{outCh: outCh, logger: NewNoopLogger()}
+
+	if err := r.ReportYielded(context.Background(), "job-501", &YieldInfo{
+		StepID: "s-async", Type: "invoke_function_async", FunctionID: "child",
+	}, nil, 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	msg := <-outCh
+	inv, ok := msg.GetStepYielded().GetYieldInfo().(*ironflowv1.StepYielded_InvokeFunctionAsync)
+	if !ok {
+		t.Fatalf("expected invoke_function_async yield, got %T", msg.GetStepYielded().GetYieldInfo())
+	}
+	if len(inv.InvokeFunctionAsync.GetInputJson()) != 0 {
+		t.Errorf("nil input must send empty input_json, got %s", inv.InvokeFunctionAsync.GetInputJson())
+	}
+}
+
+func TestStreamJobReporter_ReportYielded_UnknownTypeErrors(t *testing.T) {
+	outCh := make(chan *ironflowv1.WorkerMessage, 10)
+	r := &streamJobReporter{outCh: outCh, logger: NewNoopLogger()}
+	if err := r.ReportYielded(context.Background(), "job-502", &YieldInfo{StepID: "s", Type: "bogus"}, nil, 0); err == nil {
+		t.Fatal("want error for unknown yield type")
+	}
+
+	// An unsupported yield type must still fail the job over the stream —
+	// otherwise it stays leased until the engine reclaims it on lease expiry.
+	select {
+	case msg := <-outCh:
+		jf, ok := msg.GetPayload().(*ironflowv1.WorkerMessage_JobFailed)
+		if !ok {
+			t.Fatalf("expected JobFailed, got %T", msg.GetPayload())
+		}
+		if jf.JobFailed.GetJobId() != "job-502" {
+			t.Errorf("expected jobId=job-502, got %q", jf.JobFailed.GetJobId())
+		}
+		if jf.JobFailed.GetError().GetRetryable() {
+			t.Error("expected non-retryable error")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no message received")
+	}
+}
+
 // ============================================================================
 // Proto conversion tests
 // ============================================================================
+
+func TestStreamingAssignment_FailedInvokeRowReachesMemo(t *testing.T) {
+	pa := &ironflowv1.JobAssignment{
+		JobId: "j", RunId: "r", FunctionId: "fn",
+		CompletedSteps: []*ironflowv1.CompletedStep{{
+			StepId: "r:child:0", Name: "r:child:0",
+			Status: "failed", ErrorJson: []byte(`{"message":"invoke timed out"}`),
+		}},
+	}
+	job, err := protoToJobAssignment(pa)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := job.CompletedSteps[0]
+	if cs.Status != "failed" {
+		t.Fatalf("status = %q", cs.Status)
+	}
+	if m, ok := cs.Error.(map[string]any); !ok || m["message"] != "invoke timed out" {
+		t.Fatalf("error = %#v", cs.Error)
+	}
+}
+
+func TestStreamingAssignment_ScalarOutputValueReachesMemo(t *testing.T) {
+	pa := &ironflowv1.JobAssignment{
+		JobId: "j", RunId: "r", FunctionId: "fn",
+		CompletedSteps: []*ironflowv1.CompletedStep{{
+			StepId: "r:child:0", Name: "r:child:0", OutputValue: structpb.NewNumberValue(42),
+		}},
+	}
+	job, err := protoToJobAssignment(pa)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := job.CompletedSteps[0].Output; got != float64(42) {
+		t.Fatalf("output = %#v, want 42", got)
+	}
+}
+
+func TestStreamJobReporter_ReportYielded_UnencodableInvokeInputFailsJob(t *testing.T) {
+	outCh := make(chan *ironflowv1.WorkerMessage, 10)
+	r := &streamJobReporter{outCh: outCh, logger: NewNoopLogger()}
+	err := r.ReportYielded(context.Background(), "job-503", &YieldInfo{
+		StepID: "s", Type: "invoke_function", FunctionID: "child", Input: math.NaN(),
+	}, nil, 0)
+	if err == nil {
+		t.Fatal("want error for unencodable input")
+	}
+	select {
+	case msg := <-outCh:
+		jf, ok := msg.GetPayload().(*ironflowv1.WorkerMessage_JobFailed)
+		if !ok {
+			t.Fatalf("expected JobFailed, got %T", msg.GetPayload())
+		}
+		if jf.JobFailed.GetError().GetRetryable() || jf.JobFailed.GetJobId() != "job-503" {
+			t.Errorf("job failed = %+v", jf.JobFailed)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no message received")
+	}
+}
 
 func TestProtoToJobAssignment(t *testing.T) {
 	eventData, _ := structpb.NewStruct(map[string]any{
@@ -1819,5 +1959,38 @@ func TestSdkStepTypeToProto(t *testing.T) {
 				t.Errorf("sdkStepTypeToProto(%q) = %v, want %v", tt.input, got, tt.expected)
 			}
 		})
+	}
+}
+
+// The stream must carry the same auth header as the HTTP calls; without it
+// the server rejects the stream with 401.
+func TestStreamingWorker_ConnectSendsAPIKey(t *testing.T) {
+	got := make(chan string, 1)
+	handler := &mockWorkerHandler{
+		onConnect: func(ctx context.Context, stream *connect.BidiStream[ironflowv1.WorkerMessage, ironflowv1.EngineMessage]) error {
+			select {
+			case got <- stream.RequestHeader().Get("Authorization"):
+			default:
+			}
+			<-ctx.Done()
+			return nil
+		},
+	}
+	server := startMockServer(t, handler)
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL: server.URL, APIKey: "k1",
+		Functions:      []Function{testFn("my-func", func(ctx Context) (any, error) { return nil, nil })},
+		ReconnectDelay: 50 * time.Millisecond, Logger: NewNoopLogger(),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	go func() { _ = w.Run(ctx) }()
+	select {
+	case h := <-got:
+		if want := buildAuthHeaders("k1")["Authorization"]; h != want {
+			t.Fatalf("Authorization = %q, want %q", h, want)
+		}
+	case <-ctx.Done():
+		t.Fatal("stream never connected")
 	}
 }

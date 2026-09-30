@@ -1501,7 +1501,8 @@ type JoinConsumerGroupOptions struct {
 	// ConsumerID is the optional consumer identifier.
 	ConsumerID string
 
-	// Transport is the preferred transport (auto-detected if not set).
+	// Transport is "websocket" (the default) or "grpc". Only WebSocket can
+	// ack, nak or term events.
 	Transport string
 }
 
@@ -1522,8 +1523,10 @@ func WithJoinConsumerID(consumerID string) JoinConsumerGroupOption {
 	}
 }
 
-// WithJoinTransport sets the transport preference for JoinConsumerGroup.
-// Valid values: "websocket", "grpc". If not set, auto-detects.
+// WithJoinTransport sets the transport for JoinConsumerGroup.
+// Valid values: "websocket" (default), "grpc". The "grpc" HTTP-stream path
+// receives events but cannot ack, nak or term them; keep it only for
+// receive-only use.
 func WithJoinTransport(transport string) JoinConsumerGroupOption {
 	return func(o *JoinConsumerGroupOptions) {
 		o.Transport = transport
@@ -1532,8 +1535,8 @@ func WithJoinTransport(transport string) JoinConsumerGroupOption {
 
 // JoinConsumerGroup connects to a consumer group for load-balanced event delivery.
 //
-// Returns a subscription client appropriate for the server's capabilities.
-// Use the Events() channel to receive events and Ack/Nak/Term for acknowledgment.
+// Joins over WebSocket unless WithJoinTransport("grpc") says otherwise; only
+// WebSocket supports Ack/Nak/Term. Use the Events() channel to receive events.
 //
 // Example:
 //
@@ -1558,24 +1561,9 @@ func (c *Client) JoinConsumerGroup(ctx context.Context, groupName string, opts .
 		opt(options)
 	}
 
-	// Determine transport
-	transport := options.Transport
-	if transport == "" {
-		transport = "websocket" // Default to WebSocket for compatibility
-
-		// Try to auto-detect based on capabilities
-		caps, err := c.GetCapabilities(ctx)
-		if err == nil {
-			for _, t := range caps.Transports {
-				if t == "grpc-bidirectional" {
-					transport = "grpc"
-					break
-				}
-			}
-		}
-	}
-
-	if transport == "grpc" {
+	// No capabilities auto-detect: servers advertise grpc-bidirectional
+	// everywhere, and that path cannot ack, so it must be opt-in.
+	if options.Transport == "grpc" {
 		return c.joinConsumerGroupGrpc(ctx, groupName, options)
 	}
 

@@ -20,14 +20,16 @@ type recordingReporter struct {
 	failed *PushError
 }
 
-func (r *recordingReporter) ReportCompleted(context.Context, string, any, []*StepResult) error {
+func (r *recordingReporter) ReportCompleted(context.Context, string, any, []*StepResult, int) error {
 	return nil
 }
-func (r *recordingReporter) ReportFailed(_ context.Context, _ string, e *PushError, _ []*StepResult) error {
+func (r *recordingReporter) ReportFailed(_ context.Context, _ string, e *PushError, _ []*StepResult, _ int) error {
 	r.failed = e
 	return nil
 }
-func (r *recordingReporter) ReportYielded(context.Context, string, *YieldInfo) error { return nil }
+func (r *recordingReporter) ReportYielded(context.Context, string, *YieldInfo, []*StepResult, int) error {
+	return nil
+}
 
 // authEchoServer records the Authorization header of the first request.
 func authEchoServer(t *testing.T, got *string) *httptest.Server {

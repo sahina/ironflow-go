@@ -138,3 +138,77 @@ func TestJobAssignment_CarriesMaxAttempts(t *testing.T) {
 		t.Fatalf("MaxAttempts = %d from an engine without the field, want 0 so callers fall back", legacy.MaxAttempts)
 	}
 }
+
+// TestRegisterFunctions_SendsDebounce pins #2400: registerFunctions omitted
+// debounce from the RegisterFunction body, so Debounce did nothing on pull
+// workers. max_wait_ms is omitted when MaxWait is 0 (no cap).
+func TestRegisterFunctions_SendsDebounce(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		maxWait time.Duration
+	}{{"with max wait", 30 * time.Second}, {"no max wait", 0}} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got map[string]any
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				_ = json.Unmarshal(body, &got)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{}`))
+			}))
+			defer srv.Close()
+
+			fn := CreateFunction(FunctionConfig{
+				ID:       "fn_debounce_wire",
+				Name:     "Debounce Wire",
+				Triggers: []Trigger{{Event: "x.happened"}},
+				Debounce: &DebounceConfig{Period: 5 * time.Second, Key: "event.data.id", MaxWait: tc.maxWait},
+			}, func(ctx Context) (any, error) { return nil, nil })
+
+			if err := registerFunctions(context.Background(), srv.URL, nil,
+				map[string]Function{fn.Config.ID: fn}, srv.Client(), NewNoopLogger()); err != nil {
+				t.Fatalf("registerFunctions: %v", err)
+			}
+			dbn, ok := got["debounce"].(map[string]any)
+			if !ok {
+				t.Fatalf("no debounce object on the wire (#2400); body was %v", got)
+			}
+			if dbn["period_ms"] != float64(5000) || dbn["key"] != "event.data.id" {
+				t.Fatalf("debounce = %v", dbn)
+			}
+			maxWait, present := dbn["max_wait_ms"]
+			if tc.maxWait == 0 && present {
+				t.Fatalf("max_wait_ms should be omitted when 0: %v", dbn)
+			}
+			if tc.maxWait > 0 && maxWait != float64(tc.maxWait.Milliseconds()) {
+				t.Fatalf("max_wait_ms = %v, want %v", maxWait, tc.maxWait.Milliseconds())
+			}
+		})
+	}
+}
+
+// TestRegisterFunctions_AlwaysRegistersPull pins #2426: CreateFunction
+// defaults an unset Mode to push, so a worker registered its functions as
+// EXECUTION_MODE_PUSH with no endpoint. Until RegisterWorker flipped them to
+// pull, a trigger in that window failed with "no endpoint URL configured".
+// A worker can only execute pull, so that is what it must announce.
+func TestRegisterFunctions_AlwaysRegistersPull(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &got)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	fn := CreateFunction(FunctionConfig{ID: "fn_mode_wire", Triggers: []Trigger{{Event: "x.happened"}}},
+		func(ctx Context) (any, error) { return nil, nil })
+
+	if err := registerFunctions(context.Background(), srv.URL, nil,
+		map[string]Function{fn.Config.ID: fn}, srv.Client(), NewNoopLogger()); err != nil {
+		t.Fatalf("registerFunctions: %v", err)
+	}
+	if got["preferredMode"] != "EXECUTION_MODE_PULL" {
+		t.Fatalf("preferredMode = %v, want EXECUTION_MODE_PULL (#2426)", got["preferredMode"])
+	}
+}

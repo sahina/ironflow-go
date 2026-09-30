@@ -3,6 +3,7 @@ package ironflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -156,25 +157,132 @@ func TestCommandDedup_TryClaim_CorruptEntry_FailsClosed(t *testing.T) {
 	}
 }
 
-func TestCommandDedup_TryClaim_LoserMissingEntry(t *testing.T) {
-	client, cleanup := setupDedupServer(t, map[string]routeConfig{
-		"bucket": {201, bucketInfoJSON()},
-		"create": {412, errorJSON("key already exists")},
-		"get":    {404, errorJSON("key not found")},
+// claimRaceServer answers the create-only PUT with createStatus[n] (n = 0-based call count,
+// last entry repeats) and every GET with getStatus / getBody.
+func claimRaceServer(t *testing.T, createStatus []int, getStatus int, getBody []byte) (*Client, *atomic.Int32, func()) {
+	t.Helper()
+	var creates atomic.Int32
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/kv/buckets"):
+			w.WriteHeader(201)
+			w.Write(bucketInfoJSON())
+		case r.Method == http.MethodPut && r.Header.Get("If-None-Match") == "*":
+			n := int(creates.Add(1)) - 1
+			if n >= len(createStatus) {
+				n = len(createStatus) - 1
+			}
+			w.WriteHeader(createStatus[n])
+			w.Write([]byte(`{"revision":1}`))
+		case r.Method == http.MethodGet:
+			w.WriteHeader(getStatus)
+			w.Write(getBody)
+		default:
+			w.WriteHeader(500)
+		}
 	})
-	defer cleanup()
+	client, cleanup := setupMockKVServer(t, handler)
+	return client, &creates, cleanup
+}
 
+func newRaceDedup(t *testing.T, client *Client) *CommandDedup[dedupTestResult] {
+	t.Helper()
 	d, err := NewCommandDedup[dedupTestResult](context.Background(), client.KV(), "test-bucket", CommandDedupOptions{})
 	if err != nil {
 		t.Fatalf("NewCommandDedup: %v", err)
 	}
+	return d
+}
 
-	prior, err := d.TryClaim(context.Background(), "cmd-1", dedupTestResult{})
+func TestCommandDedup_TryClaim_LoserMissingEntry_ClaimsAgain(t *testing.T) {
+	// 412, the winner releases (GET 404), then the second create wins.
+	client, creates, cleanup := claimRaceServer(t, []int{412, 201}, 404, errorJSON("key not found"))
+	defer cleanup()
+
+	prior, err := newRaceDedup(t, client).TryClaim(context.Background(), "cmd-1", dedupTestResult{})
 	if err != nil {
 		t.Fatalf("TryClaim: %v", err)
 	}
 	if prior != nil {
-		t.Errorf("expected nil for missing entry, got %+v", prior)
+		t.Errorf("expected nil (winner), got %+v", prior)
+	}
+	if n := creates.Load(); n != 2 {
+		t.Errorf("expected 2 create writes, got %d", n)
+	}
+}
+
+func TestCommandDedup_TryClaim_LostRaceExhausted_Errors(t *testing.T) {
+	client, creates, cleanup := claimRaceServer(t, []int{412}, 404, errorJSON("key not found"))
+	defer cleanup()
+
+	prior, err := newRaceDedup(t, client).TryClaim(context.Background(), "cmd-1", dedupTestResult{})
+	if prior != nil {
+		t.Errorf("expected nil prior, got %+v", prior)
+	}
+	var ife *IronflowError
+	if !errors.As(err, &ife) || ife.Code != "COMMAND_DEDUP_RACE" {
+		t.Fatalf("expected COMMAND_DEDUP_RACE error, got %v", err)
+	}
+	if n := creates.Load(); n != 3 {
+		t.Errorf("expected exactly 3 create writes, got %d", n)
+	}
+}
+
+func TestCommandDedup_TryClaim_ReadBackErrorDoesNotLoop(t *testing.T) {
+	client, creates, cleanup := claimRaceServer(t, []int{412}, 403, errorJSON("forbidden"))
+	defer cleanup()
+
+	_, err := newRaceDedup(t, client).TryClaim(context.Background(), "cmd-1", dedupTestResult{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if n := creates.Load(); n != 1 {
+		t.Errorf("expected 1 create write, got %d", n)
+	}
+}
+
+func TestCommandDedup_TryClaim_IsOwner(t *testing.T) {
+	// Version carries the caller's attempt token; OrderID "claimed" vs "done" is the status.
+	owns := func(p dedupTestResult) bool { return p.Version == 7 && p.OrderID == "claimed" }
+	tests := []struct {
+		name      string
+		stored    dedupTestResult
+		wantPrior bool
+	}{
+		{"own orphan is reclaimed", dedupTestResult{OrderID: "claimed", Version: 7}, false},
+		{"other caller's claim is a duplicate", dedupTestResult{OrderID: "claimed", Version: 8}, true},
+		{"own finalized result is not replayed", dedupTestResult{OrderID: "done", Version: 7}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client, _, cleanup := claimRaceServer(t, []int{412}, 200, kvEntryJSON(t, "cmd-1", tc.stored))
+			defer cleanup()
+
+			prior, err := newRaceDedup(t, client).TryClaim(context.Background(), "cmd-1",
+				dedupTestResult{OrderID: "claimed", Version: 7}, TryClaimOptions[dedupTestResult]{IsOwner: owns})
+			if err != nil {
+				t.Fatalf("TryClaim: %v", err)
+			}
+			if (prior != nil) != tc.wantPrior {
+				t.Errorf("prior = %+v, wantPrior %v", prior, tc.wantPrior)
+			}
+		})
+	}
+}
+
+func TestCommandDedup_TryClaim_IsOwnerNotCalledOnWin(t *testing.T) {
+	client, _, cleanup := claimRaceServer(t, []int{201}, 200, nil)
+	defer cleanup()
+
+	boom := func(dedupTestResult) bool {
+		t.Error("IsOwner must not run on the winner path")
+		return false
+	}
+	prior, err := newRaceDedup(t, client).TryClaim(context.Background(), "cmd-1", dedupTestResult{},
+		TryClaimOptions[dedupTestResult]{IsOwner: boom})
+	if err != nil || prior != nil {
+		t.Fatalf("expected (nil, nil), got (%+v, %v)", prior, err)
 	}
 }
 

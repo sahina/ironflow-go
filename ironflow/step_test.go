@@ -3,6 +3,7 @@ package ironflow
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -433,6 +434,85 @@ func TestWaitForEvent(t *testing.T) {
 		}
 		if !ctx.exec.resumeHandled {
 			t.Error("expected resumeHandled to be true")
+		}
+	})
+
+	t.Run("resumed event payload is available through Data", func(t *testing.T) {
+		ctx := Context{exec: &executionContext{
+			runID:          "run_123",
+			stepCounters:   make(map[string]int),
+			completedSteps: make(map[string]*CompletedStep),
+			resumeContext: &ResumeContext{
+				StepID: "run_123:wait-approval:0",
+				Type:   "wait_for_event",
+				Data:   map[string]any{"id": "order-1", "data": map[string]any{"x": 1}},
+			},
+		}}
+
+		event, err := WaitForEvent[any](ctx, "wait-approval", EventFilter{Event: "order.approved"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var data map[string]any
+		if err := event.Data(&data); err != nil {
+			t.Fatalf("event data: %v", err)
+		}
+		if data["id"] != "order-1" || !reflect.DeepEqual(data["data"], map[string]any{"x": float64(1)}) {
+			t.Fatalf("event data = %#v, want id and nested data payload", data)
+		}
+	})
+
+	t.Run("resumed event envelope exposes only its data", func(t *testing.T) {
+		ctx := Context{exec: &executionContext{
+			runID:          "run_123",
+			stepCounters:   make(map[string]int),
+			completedSteps: make(map[string]*CompletedStep),
+			resumeContext: &ResumeContext{
+				StepID: "run_123:wait-approval:0",
+				Type:   "wait_for_event",
+				Data: map[string]any{
+					"id": "evt_789", "name": "order.approved", "data": map[string]any{"ok": true},
+					"timestamp": "2026-09-25T12:00:00Z",
+				},
+			},
+		}}
+
+		event, err := WaitForEvent[any](ctx, "wait-approval", EventFilter{Event: "order.approved"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var data map[string]any
+		if err := event.Data(&data); err != nil {
+			t.Fatalf("event data: %v", err)
+		}
+		if data["ok"] != true || event.ID != "evt_789" {
+			t.Fatalf("event = %+v, data = %#v, want id and ok=true", event, data)
+		}
+	})
+
+	t.Run("memoized event envelope exposes only its data", func(t *testing.T) {
+		ctx := Context{exec: &executionContext{
+			runID:        "run_123",
+			stepCounters: make(map[string]int),
+			completedSteps: map[string]*CompletedStep{"run_123:wait-approval:0": {
+				Status: "completed",
+				Output: map[string]any{
+					"id": "evt_789", "name": "order.approved", "data": map[string]any{"ok": true},
+					"timestamp": "2026-09-25T12:00:00Z",
+				},
+			}},
+		}}
+
+		event, err := WaitForEvent[any](ctx, "wait-approval", EventFilter{Event: "order.approved"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var data map[string]any
+		if err := event.Data(&data); err != nil {
+			t.Fatalf("event data: %v", err)
+		}
+		if data["ok"] != true || event.ID != "evt_789" {
+			t.Fatalf("event = %+v, data = %#v, want id and ok=true", event, data)
 		}
 	})
 

@@ -228,9 +228,10 @@ type AckableSubscription struct {
 //	}
 func (s *AckableSubscription) Ack(eventID string) error {
 	req := wsAckRequest{
-		Type:    "ack",
-		AckType: "ack",
-		EventID: eventID,
+		Type:           "ack",
+		AckType:        "ack",
+		EventID:        eventID,
+		SubscriptionID: s.CurrentID(),
 	}
 	return s.client.sendJSON(req)
 }
@@ -244,6 +245,7 @@ func (s *AckableSubscription) Nak(eventID string, delay time.Duration) error {
 		Type:           "ack",
 		AckType:        "nak",
 		EventID:        eventID,
+		SubscriptionID: s.CurrentID(),
 		RedeliverDelay: int(delay.Milliseconds()),
 	}
 	return s.client.sendJSON(req)
@@ -255,9 +257,10 @@ func (s *AckableSubscription) Nak(eventID string, delay time.Duration) error {
 // (e.g., permanently invalid data).
 func (s *AckableSubscription) Term(eventID string) error {
 	req := wsAckRequest{
-		Type:    "ack",
-		AckType: "term",
-		EventID: eventID,
+		Type:           "ack",
+		AckType:        "term",
+		EventID:        eventID,
+		SubscriptionID: s.CurrentID(),
 	}
 	return s.client.sendJSON(req)
 }
@@ -1410,6 +1413,7 @@ type wsAckRequest struct {
 	Type           string `json:"type"`                     // Always "ack"
 	AckType        string `json:"ackType"`                  // "ack", "nak", or "term"
 	EventID        string `json:"eventId"`                  // Event being acknowledged
+	SubscriptionID string `json:"subscriptionId,omitempty"` // Server subscription that received the event
 	RedeliverDelay int    `json:"redeliverDelay,omitempty"` // For nak: delay in ms before redelivery
 }
 

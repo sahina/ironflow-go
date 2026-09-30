@@ -41,6 +41,8 @@ const (
 	// PubSubServiceSubscribeBidirectionalProcedure is the fully-qualified name of the PubSubService's
 	// SubscribeBidirectional RPC.
 	PubSubServiceSubscribeBidirectionalProcedure = "/ironflow.v1.PubSubService/SubscribeBidirectional"
+	// PubSubServiceAckEventProcedure is the fully-qualified name of the PubSubService's AckEvent RPC.
+	PubSubServiceAckEventProcedure = "/ironflow.v1.PubSubService/AckEvent"
 	// PubSubServiceCreateConsumerGroupProcedure is the fully-qualified name of the PubSubService's
 	// CreateConsumerGroup RPC.
 	PubSubServiceCreateConsumerGroupProcedure = "/ironflow.v1.PubSubService/CreateConsumerGroup"
@@ -79,6 +81,11 @@ type PubSubServiceClient interface {
 	// SubscribeBidirectional provides bidirectional streaming for manual acks.
 	// Client sends ack messages, server sends events.
 	SubscribeBidirectional(context.Context) *connect.BidiStreamForClient[v1.SubscriptionAck, v1.SubscriptionEvent]
+	// AckEvent acknowledges, rejects for redelivery, or terminates one event that
+	// a MANUAL consumer group delivered. Only consumer groups hold events for
+	// acknowledgment. Acking an event that is not in flight succeeds, so a retry
+	// is safe.
+	AckEvent(context.Context, *connect.Request[v1.AckEventRequest]) (*connect.Response[v1.AckEventResponse], error)
 	// Consumer Group Management
 	CreateConsumerGroup(context.Context, *connect.Request[v1.CreateConsumerGroupRequest]) (*connect.Response[v1.ConsumerGroup], error)
 	GetConsumerGroup(context.Context, *connect.Request[v1.GetConsumerGroupRequest]) (*connect.Response[v1.ConsumerGroup], error)
@@ -123,6 +130,12 @@ func NewPubSubServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+PubSubServiceSubscribeBidirectionalProcedure,
 			connect.WithSchema(pubSubServiceMethods.ByName("SubscribeBidirectional")),
+			connect.WithClientOptions(opts...),
+		),
+		ackEvent: connect.NewClient[v1.AckEventRequest, v1.AckEventResponse](
+			httpClient,
+			baseURL+PubSubServiceAckEventProcedure,
+			connect.WithSchema(pubSubServiceMethods.ByName("AckEvent")),
 			connect.WithClientOptions(opts...),
 		),
 		createConsumerGroup: connect.NewClient[v1.CreateConsumerGroupRequest, v1.ConsumerGroup](
@@ -191,6 +204,7 @@ type pubSubServiceClient struct {
 	emit                   *connect.Client[v1.EmitRequest, v1.EmitResponse]
 	subscribe              *connect.Client[v1.SubscribeRequest, v1.SubscriptionEvent]
 	subscribeBidirectional *connect.Client[v1.SubscriptionAck, v1.SubscriptionEvent]
+	ackEvent               *connect.Client[v1.AckEventRequest, v1.AckEventResponse]
 	createConsumerGroup    *connect.Client[v1.CreateConsumerGroupRequest, v1.ConsumerGroup]
 	getConsumerGroup       *connect.Client[v1.GetConsumerGroupRequest, v1.ConsumerGroup]
 	listConsumerGroups     *connect.Client[v1.ListConsumerGroupsRequest, v1.ListConsumerGroupsResponse]
@@ -215,6 +229,11 @@ func (c *pubSubServiceClient) Subscribe(ctx context.Context, req *connect.Reques
 // SubscribeBidirectional calls ironflow.v1.PubSubService.SubscribeBidirectional.
 func (c *pubSubServiceClient) SubscribeBidirectional(ctx context.Context) *connect.BidiStreamForClient[v1.SubscriptionAck, v1.SubscriptionEvent] {
 	return c.subscribeBidirectional.CallBidiStream(ctx)
+}
+
+// AckEvent calls ironflow.v1.PubSubService.AckEvent.
+func (c *pubSubServiceClient) AckEvent(ctx context.Context, req *connect.Request[v1.AckEventRequest]) (*connect.Response[v1.AckEventResponse], error) {
+	return c.ackEvent.CallUnary(ctx, req)
 }
 
 // CreateConsumerGroup calls ironflow.v1.PubSubService.CreateConsumerGroup.
@@ -272,6 +291,11 @@ type PubSubServiceHandler interface {
 	// SubscribeBidirectional provides bidirectional streaming for manual acks.
 	// Client sends ack messages, server sends events.
 	SubscribeBidirectional(context.Context, *connect.BidiStream[v1.SubscriptionAck, v1.SubscriptionEvent]) error
+	// AckEvent acknowledges, rejects for redelivery, or terminates one event that
+	// a MANUAL consumer group delivered. Only consumer groups hold events for
+	// acknowledgment. Acking an event that is not in flight succeeds, so a retry
+	// is safe.
+	AckEvent(context.Context, *connect.Request[v1.AckEventRequest]) (*connect.Response[v1.AckEventResponse], error)
 	// Consumer Group Management
 	CreateConsumerGroup(context.Context, *connect.Request[v1.CreateConsumerGroupRequest]) (*connect.Response[v1.ConsumerGroup], error)
 	GetConsumerGroup(context.Context, *connect.Request[v1.GetConsumerGroupRequest]) (*connect.Response[v1.ConsumerGroup], error)
@@ -312,6 +336,12 @@ func NewPubSubServiceHandler(svc PubSubServiceHandler, opts ...connect.HandlerOp
 		PubSubServiceSubscribeBidirectionalProcedure,
 		svc.SubscribeBidirectional,
 		connect.WithSchema(pubSubServiceMethods.ByName("SubscribeBidirectional")),
+		connect.WithHandlerOptions(opts...),
+	)
+	pubSubServiceAckEventHandler := connect.NewUnaryHandler(
+		PubSubServiceAckEventProcedure,
+		svc.AckEvent,
+		connect.WithSchema(pubSubServiceMethods.ByName("AckEvent")),
 		connect.WithHandlerOptions(opts...),
 	)
 	pubSubServiceCreateConsumerGroupHandler := connect.NewUnaryHandler(
@@ -380,6 +410,8 @@ func NewPubSubServiceHandler(svc PubSubServiceHandler, opts ...connect.HandlerOp
 			pubSubServiceSubscribeHandler.ServeHTTP(w, r)
 		case PubSubServiceSubscribeBidirectionalProcedure:
 			pubSubServiceSubscribeBidirectionalHandler.ServeHTTP(w, r)
+		case PubSubServiceAckEventProcedure:
+			pubSubServiceAckEventHandler.ServeHTTP(w, r)
 		case PubSubServiceCreateConsumerGroupProcedure:
 			pubSubServiceCreateConsumerGroupHandler.ServeHTTP(w, r)
 		case PubSubServiceGetConsumerGroupProcedure:
@@ -417,6 +449,10 @@ func (UnimplementedPubSubServiceHandler) Subscribe(context.Context, *connect.Req
 
 func (UnimplementedPubSubServiceHandler) SubscribeBidirectional(context.Context, *connect.BidiStream[v1.SubscriptionAck, v1.SubscriptionEvent]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.PubSubService.SubscribeBidirectional is not implemented"))
+}
+
+func (UnimplementedPubSubServiceHandler) AckEvent(context.Context, *connect.Request[v1.AckEventRequest]) (*connect.Response[v1.AckEventResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.PubSubService.AckEvent is not implemented"))
 }
 
 func (UnimplementedPubSubServiceHandler) CreateConsumerGroup(context.Context, *connect.Request[v1.CreateConsumerGroupRequest]) (*connect.Response[v1.ConsumerGroup], error) {

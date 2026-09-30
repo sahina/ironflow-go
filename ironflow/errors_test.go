@@ -112,9 +112,11 @@ func TestIsRetryable(t *testing.T) {
 
 	t.Run("returns false for NonRetryableError via embedded IronflowError", func(t *testing.T) {
 		err := WrapNonRetryable(errors.New("error"))
-		// Access the embedded IronflowError directly
 		if err.Retryable {
 			t.Error("expected Retryable to be false")
+		}
+		if IsRetryable(err) {
+			t.Error("expected IsRetryable to unwrap NonRetryableError")
 		}
 	})
 

@@ -251,8 +251,7 @@ func Parallel[T any](ctx Context, name string, branches []func(*BranchContext) (
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	var firstErr error
-	var yieldSig *yieldSignal
+	yieldSigs := make([]*yieldSignal, branchCount)
 	cancelled := false
 
 	// Semaphore for concurrency control
@@ -281,18 +280,19 @@ func Parallel[T any](ctx Context, name string, branches []func(*BranchContext) (
 		go func(idx int) {
 			defer wg.Done()
 
-			// Check cancellation
-			mu.Lock()
-			if cancelled && options.OnError == "failFast" {
-				mu.Unlock()
-				return
-			}
-			mu.Unlock()
-
-			// Acquire semaphore
+			// Only a branch still queued behind the concurrency limit is skipped
+			// after a cancel. Without a limit every branch starts, as in Node:
+			// skipping on a raced flag made the reported yield depend on which
+			// goroutine the scheduler ran first (#2382).
 			if sem != nil {
 				sem <- struct{}{}
 				defer func() { <-sem }()
+				mu.Lock()
+				skip := cancelled && options.OnError == "failFast"
+				mu.Unlock()
+				if skip {
+					return
+				}
 			}
 
 			// Execute with panic recovery (for yield signals)
@@ -302,9 +302,7 @@ func Parallel[T any](ctx Context, name string, branches []func(*BranchContext) (
 						if signal, ok := r.(*yieldSignal); ok {
 							// Capture yield signal
 							mu.Lock()
-							if yieldSig == nil {
-								yieldSig = signal
-							}
+							yieldSigs[idx] = signal
 							cancelled = true
 							mu.Unlock()
 						} else {
@@ -318,8 +316,7 @@ func Parallel[T any](ctx Context, name string, branches []func(*BranchContext) (
 				if err != nil {
 					mu.Lock()
 					errors[idx] = err
-					if options.OnError == "failFast" && firstErr == nil {
-						firstErr = err
+					if options.OnError == "failFast" {
 						cancelled = true
 					}
 					mu.Unlock()
@@ -335,16 +332,13 @@ func Parallel[T any](ctx Context, name string, branches []func(*BranchContext) (
 	wg.Wait()
 
 	// Handle yield signal (re-panic to pause execution)
-	if yieldSig != nil {
-		panic(yieldSig)
+	for _, signal := range yieldSigs {
+		if signal != nil {
+			panic(signal)
+		}
 	}
 
-	// Handle errors
-	if firstErr != nil {
-		return nil, firstErr
-	}
-
-	// Check for any errors in results (for non-failFast modes)
+	// Errors are stored by branch index, so failFast selects deterministically.
 	if options.OnError != "allSettled" {
 		for _, err := range errors {
 			if err != nil {
@@ -488,7 +482,20 @@ func RunWithBranch[T any](b *BranchContext, name string, fn func() (T, error), o
 	// Execute the step
 	startedAt := time.Now()
 
-	result, err, timedOut := runWithTimeout(fn, timeout, stepID, name, startedAt, b.recordStep)
+	// Report to the stream like Run does (streaming worker only); without it a
+	// branch step leaves no row and reruns on resume (#2413).
+	reporter := b.parent.stepReporter
+	if reporter != nil {
+		reporter.ReportStepStarted(stepID, name, "invoke")
+	}
+	recordStep := func(step *StepResult) {
+		b.recordStep(step)
+		if reporter != nil && step.Status == "failed" && step.Error != nil {
+			reporter.ReportStepFailed(step.ID, step.Name, step.Type, step.Error.Message, int(step.Duration.Milliseconds()))
+		}
+	}
+
+	result, err, timedOut := runWithTimeout(fn, timeout, stepID, name, startedAt, recordStep)
 	if timedOut {
 		return zero, err
 	}
@@ -512,6 +519,9 @@ func RunWithBranch[T any](b *BranchContext, name string, fn func() (T, error), o
 			},
 		}
 		b.recordStep(stepResult)
+		if reporter != nil {
+			reporter.ReportStepFailed(stepID, name, "invoke", err.Error(), int(duration.Milliseconds()))
+		}
 
 		return zero, NewStepError(err.Error(), stepID, name, IsRetryable(err), err)
 	}
@@ -528,6 +538,9 @@ func RunWithBranch[T any](b *BranchContext, name string, fn func() (T, error), o
 		Output:    result,
 	}
 	b.recordStep(stepResult)
+	if reporter != nil {
+		reporter.ReportStepCompleted(stepID, name, "invoke", result, int(duration.Milliseconds()))
+	}
 
 	return result, nil
 }
@@ -656,8 +669,7 @@ func ParallelWithBranch[T any](b *BranchContext, name string, branches []func(*B
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	var firstErr error
-	var yieldSig *yieldSignal
+	yieldSigs := make([]*yieldSignal, branchCount)
 	cancelled := false
 
 	// Semaphore for concurrency control
@@ -686,18 +698,19 @@ func ParallelWithBranch[T any](b *BranchContext, name string, branches []func(*B
 		go func(idx int) {
 			defer wg.Done()
 
-			// Check cancellation
-			mu.Lock()
-			if cancelled && options.OnError == "failFast" {
-				mu.Unlock()
-				return
-			}
-			mu.Unlock()
-
-			// Acquire semaphore
+			// Only a branch still queued behind the concurrency limit is skipped
+			// after a cancel. Without a limit every branch starts, as in Node:
+			// skipping on a raced flag made the reported yield depend on which
+			// goroutine the scheduler ran first (#2382).
 			if sem != nil {
 				sem <- struct{}{}
 				defer func() { <-sem }()
+				mu.Lock()
+				skip := cancelled && options.OnError == "failFast"
+				mu.Unlock()
+				if skip {
+					return
+				}
 			}
 
 			// Execute with panic recovery
@@ -706,9 +719,7 @@ func ParallelWithBranch[T any](b *BranchContext, name string, branches []func(*B
 					if r := recover(); r != nil {
 						if signal, ok := r.(*yieldSignal); ok {
 							mu.Lock()
-							if yieldSig == nil {
-								yieldSig = signal
-							}
+							yieldSigs[idx] = signal
 							cancelled = true
 							mu.Unlock()
 						} else {
@@ -721,8 +732,7 @@ func ParallelWithBranch[T any](b *BranchContext, name string, branches []func(*B
 				if err != nil {
 					mu.Lock()
 					errors[idx] = err
-					if options.OnError == "failFast" && firstErr == nil {
-						firstErr = err
+					if options.OnError == "failFast" {
 						cancelled = true
 					}
 					mu.Unlock()
@@ -738,13 +748,10 @@ func ParallelWithBranch[T any](b *BranchContext, name string, branches []func(*B
 	wg.Wait()
 
 	// Handle yield signal
-	if yieldSig != nil {
-		panic(yieldSig)
-	}
-
-	// Handle errors
-	if firstErr != nil {
-		return nil, firstErr
+	for _, signal := range yieldSigs {
+		if signal != nil {
+			panic(signal)
+		}
 	}
 
 	if options.OnError != "allSettled" {

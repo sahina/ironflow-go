@@ -38,16 +38,15 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 			}
 		}
 
-		modeStr := "EXECUTION_MODE_PULL"
-		if fn.Config.Mode == PushMode {
-			modeStr = "EXECUTION_MODE_PUSH"
-		}
-
+		// Always pull: a worker can only execute pull, and CreateFunction defaults
+		// Mode to push, so honoring it here registered push functions with no
+		// endpoint. A trigger before RegisterWorker flipped them to pull then
+		// failed with "no endpoint URL configured" (#2426).
 		body := map[string]any{
 			"id":            fn.Config.ID,
 			"name":          fn.Config.Name,
 			"triggers":      triggers,
-			"preferredMode": modeStr,
+			"preferredMode": "EXECUTION_MODE_PULL",
 		}
 
 		if fn.Config.Retry != nil {
@@ -70,6 +69,16 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 				"limit": fn.Config.Concurrency.Limit,
 				"key":   fn.Config.Concurrency.Key,
 			}
+		}
+		if fn.Config.Debounce != nil {
+			dbn := map[string]any{
+				"period_ms": fn.Config.Debounce.Period.Milliseconds(),
+				"key":       fn.Config.Debounce.Key,
+			}
+			if fn.Config.Debounce.MaxWait > 0 {
+				dbn["max_wait_ms"] = fn.Config.Debounce.MaxWait.Milliseconds()
+			}
+			body["debounce"] = dbn
 		}
 		if fn.Config.ActorKey != "" {
 			body["actorKey"] = fn.Config.ActorKey

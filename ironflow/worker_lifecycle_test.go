@@ -275,6 +275,26 @@ func TestWorker_Drain_AlreadyStopped(t *testing.T) {
 	w.Drain()
 }
 
+func TestWorker_Drain_DeadlineCancelsActiveJobs(t *testing.T) {
+	originalDrainTimeout := workerDrainTimeout
+	workerDrainTimeout = 10 * time.Millisecond
+	t.Cleanup(func() { workerDrainTimeout = originalDrainTimeout })
+	w := NewWorker(WorkerConfig{ServerURL: "http://example.com", Logger: NewNoopLogger()})
+	ctx, cancel := context.WithCancel(context.Background())
+	var cancelled atomic.Bool
+	w.activeJobs.Store("job-1", &activeJob{cancel: func() { cancelled.Store(true); cancel() }})
+	w.jobCount.Store(1)
+
+	w.Drain()
+
+	if w.state.Load() != int32(stateStopped) {
+		t.Fatalf("state = %d, want stopped", w.state.Load())
+	}
+	if !cancelled.Load() || ctx.Err() == nil {
+		t.Fatal("deadline did not cancel the active job")
+	}
+}
+
 // ============================================================================
 // Worker registration
 // ============================================================================
@@ -999,6 +1019,81 @@ func TestWorker_Run_BlocksUntilCancelled(t *testing.T) {
 	}
 }
 
+func TestWorker_RunCancellationDrainsActiveJob(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var completed atomic.Bool
+	fn := CreateFunction(FunctionConfig{ID: "slow-fn", Triggers: []Trigger{{Event: "slow.event"}}}, func(Context) (any, error) {
+		close(started)
+		<-release
+		return "done", nil
+	})
+	var polls, heartbeats atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/RegisterFunction"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"created": true})
+		case strings.HasSuffix(r.URL.Path, "/heartbeat"):
+			heartbeats.Add(1)
+			w.WriteHeader(http.StatusOK)
+		case strings.HasSuffix(r.URL.Path, "/register"):
+			w.WriteHeader(http.StatusOK)
+		case strings.HasSuffix(r.URL.Path, "/jobs") && r.Method == http.MethodGet:
+			if polls.Add(1) > 1 {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(jobAssignment{
+				JobID: "job-1", RunID: "run-1", FunctionID: "slow-fn", Attempt: 1,
+				Event: jobEvent{ID: "event-1", Name: "slow.event", Data: json.RawMessage(`{}`), Timestamp: time.Now().UTC().Format(time.RFC3339)},
+			})
+		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/jobs/"):
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			completed.Store(body["status"] == "completed")
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	w := NewWorker(WorkerConfig{ServerURL: server.URL, Functions: []Function{fn}, MaxConcurrentJobs: 1, HeartbeatInterval: 10 * time.Millisecond, Logger: NewNoopLogger()})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("job did not start")
+	}
+	cancel()
+	time.Sleep(20 * time.Millisecond) // let an in-flight tick settle
+	beforeDrain := heartbeats.Load()
+	select {
+	case err := <-done:
+		t.Fatalf("Run returned before active job drained: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if heartbeats.Load() <= beforeDrain {
+		t.Fatal("worker stopped heartbeating during drain")
+	}
+	close(release)
+	select {
+	case err := <-done:
+		if err != context.Canceled {
+			t.Fatalf("Run error = %v, want context.Canceled", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not return after active job completed")
+	}
+	if !completed.Load() {
+		t.Fatal("active job did not report completion during drain")
+	}
+}
+
 // ============================================================================
 // Run returns error if already running
 // ============================================================================
@@ -1302,7 +1397,7 @@ func TestWorker_SendJobCompleted(t *testing.T) {
 	output := map[string]string{"result": "success"}
 
 	reporter := &httpJobReporter{worker: worker}
-	err := reporter.ReportCompleted(context.Background(), "job-abc", output, steps)
+	err := reporter.ReportCompleted(context.Background(), "job-abc", output, steps, 0)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1371,7 +1466,7 @@ func TestWorker_SendJobFailed(t *testing.T) {
 	}
 
 	reporter := &httpJobReporter{worker: worker}
-	err := reporter.ReportFailed(context.Background(), "job-xyz", pushErr, nil)
+	err := reporter.ReportFailed(context.Background(), "job-xyz", pushErr, nil, 0)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1429,7 +1524,7 @@ func TestWorker_SendJobYielded(t *testing.T) {
 	}
 
 	reporter := &httpJobReporter{worker: worker}
-	err := reporter.ReportYielded(context.Background(), "job-yield-1", yieldInfo)
+	err := reporter.ReportYielded(context.Background(), "job-yield-1", yieldInfo, nil, 0)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}

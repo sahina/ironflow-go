@@ -6,7 +6,7 @@ Durable agent primitives for Ironflow on Go. Mirrors `@ironflow/node/agent` so c
 
 Ironflow already gives you durable step execution, event-sourced memory, scoped injection, MCP server, single-binary deploy. The `agent` package wraps those primitives behind agent-shaped helpers so reasoning frameworks (LangGraph, the Claude Agent SDK, CrewAI) sit on top cleanly.
 
-```
+```text
    handler logic
         │
    ┌────▼────────────────────────────────────────┐

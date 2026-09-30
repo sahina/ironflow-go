@@ -2,6 +2,7 @@ package ironflow
 
 import (
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -128,6 +129,94 @@ func TestBranchContext(t *testing.T) {
 }
 
 func TestParallel(t *testing.T) {
+	t.Run("selects the lowest-index fail-fast error after active branches finish", func(t *testing.T) {
+		ctx := Context{exec: &executionContext{
+			runID: "run_123", stepCounters: make(map[string]int),
+			completedSteps: make(map[string]*CompletedStep), executedSteps: make([]*StepResult, 0),
+		}}
+		branch0Started := make(chan struct{})
+		_, err := Parallel(ctx, "ordered-errors", []func(*BranchContext) (int, error){
+			func(*BranchContext) (int, error) {
+				close(branch0Started)
+				time.Sleep(20 * time.Millisecond)
+				return 0, errors.New("branch 0")
+			},
+			func(*BranchContext) (int, error) {
+				<-branch0Started
+				return 0, errors.New("branch 1")
+			},
+		})
+		if err == nil || err.Error() != "branch 0" {
+			t.Fatalf("expected lowest-index error 'branch 0', got %v", err)
+		}
+	})
+
+	t.Run("selects the lowest-index yield after active branches finish", func(t *testing.T) {
+		ctx := Context{exec: &executionContext{
+			runID: "run_123", stepCounters: make(map[string]int),
+			completedSteps: make(map[string]*CompletedStep), executedSteps: make([]*StepResult, 0),
+		}}
+		branch0Started := make(chan struct{})
+		branch1Yielded := make(chan struct{})
+		defer func() {
+			r := recover()
+			signal, ok := r.(*yieldSignal)
+			if !ok {
+				t.Fatalf("expected yieldSignal, got %T", r)
+			}
+			if signal.info.StepID != "run_123:ordered-yields:0:wait:0" {
+				t.Fatalf("expected branch 0 yield ID, got %q", signal.info.StepID)
+			}
+		}()
+		_, _ = Parallel(ctx, "ordered-yields", []func(*BranchContext) (int, error){
+			func(b *BranchContext) (int, error) {
+				close(branch0Started)
+				<-branch1Yielded
+				time.Sleep(20 * time.Millisecond)
+				SleepWithBranch(b, "wait", time.Hour)
+				return 0, nil
+			},
+			func(b *BranchContext) (int, error) {
+				<-branch0Started
+				defer close(branch1Yielded)
+				SleepWithBranch(b, "wait", time.Hour)
+				return 0, nil
+			},
+		})
+		t.Fatal("expected yield")
+	})
+
+	t.Run("keeps branch step IDs tied to indexes when completion order changes", func(t *testing.T) {
+		exec := &executionContext{
+			runID: "run_123", stepCounters: make(map[string]int),
+			completedSteps: make(map[string]*CompletedStep), executedSteps: make([]*StepResult, 0),
+		}
+		_, err := Parallel(Context{exec: exec}, "stable-ids", []func(*BranchContext) (int, error){
+			func(b *BranchContext) (int, error) {
+				time.Sleep(20 * time.Millisecond)
+				return RunWithBranch(b, "work", func() (int, error) { return 0, nil })
+			},
+			func(b *BranchContext) (int, error) {
+				return RunWithBranch(b, "work", func() (int, error) { return 1, nil })
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		got := map[string]bool{}
+		for _, step := range exec.executedSteps {
+			got[step.ID] = true
+		}
+		for _, id := range []string{
+			"run_123:stable-ids:0:work:0",
+			"run_123:stable-ids:1:work:0",
+		} {
+			if !got[id] {
+				t.Errorf("expected branch step ID %q, got %v", id, exec.executedSteps)
+			}
+		}
+	})
+
 	t.Run("executes all branches and returns results in order", func(t *testing.T) {
 		ctx := Context{
 			exec: &executionContext{
@@ -917,7 +1006,82 @@ func TestSleepWithBranch(t *testing.T) {
 	})
 }
 
+// firstYield runs fanOut and returns the step ID it yields. Every branch yields
+// with no coordination, so the lowest-index branch must be the one reported
+// however the scheduler orders the goroutines (#2382).
+func firstYield(t *testing.T, fanOut func()) (id string) {
+	t.Helper()
+	defer func() {
+		signal, ok := recover().(*yieldSignal)
+		if !ok {
+			t.Fatal("expected yieldSignal")
+		}
+		id = signal.info.StepID
+	}()
+	fanOut()
+	return ""
+}
+
+func TestParallelYieldDoesNotDependOnGoroutineStartOrder(t *testing.T) {
+	// With one P the newest goroutine runs first, so the last branch yields and
+	// sets cancelled before branch 0 has checked it.
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	branches := []func(*BranchContext) (int, error){
+		func(b *BranchContext) (int, error) { return 0, SleepWithBranch(b, "wait", time.Hour) },
+		func(b *BranchContext) (int, error) { return 0, SleepWithBranch(b, "wait", time.Hour) },
+	}
+	for i := 0; i < 50; i++ {
+		exec := &executionContext{
+			runID: "run_123", stepCounters: make(map[string]int),
+			completedSteps: make(map[string]*CompletedStep), executedSteps: make([]*StepResult, 0),
+		}
+		if got := firstYield(t, func() { _, _ = Parallel(Context{exec: exec}, "fan", branches) }); got != "run_123:fan:0:wait:0" {
+			t.Fatalf("Parallel iteration %d: first yield %q, want branch 0", i, got)
+		}
+		outer := exec.createBranchContext("outer", 0)
+		if got := firstYield(t, func() { _, _ = ParallelWithBranch(outer, "fan", branches) }); got != "run_123:outer:0:fan:0:wait:0" {
+			t.Fatalf("ParallelWithBranch iteration %d: first yield %q, want branch 0", i, got)
+		}
+	}
+}
+
 func TestParallelWithBranch(t *testing.T) {
+	t.Run("selects the lowest-index yield when nested branches finish out of order", func(t *testing.T) {
+		exec := &executionContext{
+			runID: "run_123", stepCounters: make(map[string]int),
+			completedSteps: make(map[string]*CompletedStep), executedSteps: make([]*StepResult, 0),
+		}
+		branch0Started := make(chan struct{})
+		branch1Yielded := make(chan struct{})
+		defer func() {
+			r := recover()
+			signal, ok := r.(*yieldSignal)
+			if !ok {
+				t.Fatalf("expected yieldSignal, got %T", r)
+			}
+			if signal.info.StepID != "run_123:outer:0:inner:0:wait:0" {
+				t.Fatalf("expected nested branch 0 yield ID, got %q", signal.info.StepID)
+			}
+		}()
+		outer := exec.createBranchContext("outer", 0)
+		_, _ = ParallelWithBranch(outer, "inner", []func(*BranchContext) (int, error){
+			func(b *BranchContext) (int, error) {
+				close(branch0Started)
+				<-branch1Yielded
+				time.Sleep(20 * time.Millisecond)
+				SleepWithBranch(b, "wait", time.Hour)
+				return 0, nil
+			},
+			func(b *BranchContext) (int, error) {
+				<-branch0Started
+				defer close(branch1Yielded)
+				SleepWithBranch(b, "wait", time.Hour)
+				return 0, nil
+			},
+		})
+		t.Fatal("expected yield")
+	})
+
 	t.Run("supports nested parallel execution", func(t *testing.T) {
 		exec := &executionContext{
 			runID:          "run_123",

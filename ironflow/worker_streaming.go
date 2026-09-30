@@ -113,9 +113,6 @@ func NewStreamingWorker(config WorkerConfig) *StreamingWorker {
 		apiKey:    config.APIKey,
 		logger:    logger,
 		onError:   config.OnError,
-		stepReporter: &streamStepReporter{
-			outCh: w.outCh,
-		},
 	}
 
 	return w
@@ -224,6 +221,9 @@ func (w *StreamingWorker) connectStream(ctx context.Context) error {
 
 	// Open bidirectional stream
 	stream := client.Connect(ctx)
+	for k, v := range headers {
+		stream.RequestHeader().Set(k, v)
+	}
 
 	// Send Register message
 	functionIDs := make([]string, 0, len(w.functions))
@@ -584,7 +584,7 @@ type streamJobReporter struct {
 	leaseToken   string
 }
 
-func (r *streamJobReporter) ReportCompleted(_ context.Context, jobID string, output any, _ []*StepResult) error {
+func (r *streamJobReporter) ReportCompleted(_ context.Context, jobID string, output any, _ []*StepResult, _ int) error {
 	outputStruct, outputValue, err := anyToPayload(output)
 	if err != nil {
 		r.logger.Warn("Failed to convert output to struct", "jobId", jobID, "error", err)
@@ -602,7 +602,7 @@ func (r *streamJobReporter) ReportCompleted(_ context.Context, jobID string, out
 	return nil
 }
 
-func (r *streamJobReporter) ReportFailed(_ context.Context, jobID string, pushErr *PushError, steps []*StepResult) error {
+func (r *streamJobReporter) ReportFailed(_ context.Context, jobID string, pushErr *PushError, steps []*StepResult, _ int) error {
 	protoSteps := make([]*ironflowv1.ExecutedStep, 0, len(steps))
 	for _, s := range steps {
 		ps := &ironflowv1.ExecutedStep{
@@ -643,7 +643,20 @@ func (r *streamJobReporter) ReportFailed(_ context.Context, jobID string, pushEr
 	return nil
 }
 
-func (r *streamJobReporter) ReportYielded(_ context.Context, jobID string, yield *YieldInfo) error {
+// sendTerminalFailure sends a non-retryable JobFailed for a yield that cannot
+// be sent, so the job is not left leased until the engine's lease expiry.
+func (r *streamJobReporter) sendTerminalFailure(jobID, code string, err error) {
+	r.send(&ironflowv1.WorkerMessage{
+		Payload: &ironflowv1.WorkerMessage_JobFailed{
+			JobFailed: &ironflowv1.JobFailed{
+				JobId: jobID,
+				Error: &ironflowv1.Error{Message: err.Error(), Code: code, Retryable: false},
+			},
+		},
+	})
+}
+
+func (r *streamJobReporter) ReportYielded(_ context.Context, jobID string, yield *YieldInfo, _ []*StepResult, _ int) error {
 	// For yields, we send a JobFailed with a special status code so the engine
 	// recognizes it as a yield. However, the proto defines step-level yield.
 	// We need to send the yield info at the step level, then a completed job
@@ -721,19 +734,34 @@ func (r *streamJobReporter) ReportYielded(_ context.Context, jobID string, yield
 			},
 		})
 
+	case "invoke_function", "invoke_function_async":
+		var inputJSON []byte
+		if yield.Input != nil {
+			var err error
+			if inputJSON, err = json.Marshal(yield.Input); err != nil {
+				err = fmt.Errorf("marshal invoke input: %w", err)
+				r.sendTerminalFailure(jobID, "SERIALIZATION_ERROR", err)
+				return err
+			}
+		}
+		sy := &ironflowv1.StepYielded{JobId: jobID, StepId: yield.StepID}
+		if yield.Type == "invoke_function" {
+			sy.YieldInfo = &ironflowv1.StepYielded_InvokeFunction{InvokeFunction: &ironflowv1.InvokeFunctionYield{
+				FunctionId: yield.FunctionID, InputJson: inputJSON, InvokeTimeoutMs: int64(yield.InvokeTimeoutMs),
+			}}
+		} else {
+			sy.YieldInfo = &ironflowv1.StepYielded_InvokeFunctionAsync{InvokeFunctionAsync: &ironflowv1.InvokeFunctionAsyncYield{
+				FunctionId: yield.FunctionID, InputJson: inputJSON,
+			}}
+		}
+		r.send(&ironflowv1.WorkerMessage{Payload: &ironflowv1.WorkerMessage_StepYielded{StepYielded: sy}})
+
 	default:
-		// invoke_function / invoke_function_async — send as job failed with code
-		r.send(&ironflowv1.WorkerMessage{
-			Payload: &ironflowv1.WorkerMessage_JobFailed{
-				JobFailed: &ironflowv1.JobFailed{
-					JobId: jobID,
-					Error: &ironflowv1.Error{
-						Message: fmt.Sprintf("yield (%s)", yield.Type),
-						Code:    "YIELD_" + strings.ToUpper(yield.Type),
-					},
-				},
-			},
-		})
+		// Send a JobFailed so the job isn't left leased and stranded: without a
+		// terminal message the engine only recovers it on lease expiry.
+		err := fmt.Errorf("unsupported yield type %q", yield.Type)
+		r.sendTerminalFailure(jobID, "UNSUPPORTED_YIELD_TYPE", err)
+		return err
 	}
 
 	return nil
@@ -778,16 +806,20 @@ func (r *streamJobReporter) stampFence(msg *ironflowv1.WorkerMessage) {
 // streamStepReporter implements stepLifecycleReporter for the streaming worker.
 // ---------------------------------------------------------------------------
 
-// GO-LIVE COUPLING (#1206, ADR 0037): this reporter is a per-worker singleton
-// with no per-job binding, so its Step* messages carry an empty JobId and no
-// execution fence — the engine's ingress guard treats them as "unknown job" and
-// passes them UNFENCED today. Per-job step attribution must land before pull
-// capacity is armed, and it MUST add the fence in the same change: the instant a
-// real JobId is stamped on a capacity job's Step*, an absent lease token flips
-// the engine verdict to fenceDisconnect (stream kill) on every step. Give this
-// reporter per-job fence binding (like streamJobReporter) at that time.
+// One reporter per job: the engine reads Step*.JobId as the run ID (an empty one
+// fails the step-row FK), and a capacity job's Step* must echo the execution
+// fence like every other mutating message or the engine kills the stream
+// (#1206, ADR 0037).
 type streamStepReporter struct {
-	outCh chan<- *ironflowv1.WorkerMessage
+	outCh        chan<- *ironflowv1.WorkerMessage
+	jobID        string
+	executionSeq int64
+	leaseToken   string
+}
+
+// stepReporter binds a step reporter to this job and its fence.
+func (r *streamJobReporter) stepReporter(jobID string) stepLifecycleReporter {
+	return &streamStepReporter{outCh: r.outCh, jobID: jobID, executionSeq: r.executionSeq, leaseToken: r.leaseToken}
 }
 
 func (r *streamStepReporter) ReportStepStarted(stepID, name, stepType string) {
@@ -795,9 +827,12 @@ func (r *streamStepReporter) ReportStepStarted(stepID, name, stepType string) {
 	case r.outCh <- &ironflowv1.WorkerMessage{
 		Payload: &ironflowv1.WorkerMessage_StepStarted{
 			StepStarted: &ironflowv1.StepStarted{
-				StepId:   stepID,
-				Name:     name,
-				StepType: sdkStepTypeToProto(stepType),
+				JobId:        r.jobID,
+				StepId:       stepID,
+				Name:         name,
+				StepType:     sdkStepTypeToProto(stepType),
+				ExecutionSeq: r.executionSeq,
+				LeaseToken:   r.leaseToken,
 			},
 		},
 	}:
@@ -811,10 +846,13 @@ func (r *streamStepReporter) ReportStepCompleted(stepID, name, stepType string, 
 	case r.outCh <- &ironflowv1.WorkerMessage{
 		Payload: &ironflowv1.WorkerMessage_StepCompleted{
 			StepCompleted: &ironflowv1.StepCompleted{
-				StepId:      stepID,
-				Output:      outputStruct,
-				OutputValue: outputValue,
-				DurationMs:  int32(durationMs),
+				JobId:        r.jobID,
+				StepId:       stepID,
+				Output:       outputStruct,
+				OutputValue:  outputValue,
+				DurationMs:   int32(durationMs),
+				ExecutionSeq: r.executionSeq,
+				LeaseToken:   r.leaseToken,
 			},
 		},
 	}:
@@ -827,11 +865,14 @@ func (r *streamStepReporter) ReportStepFailed(stepID, name, stepType string, err
 	case r.outCh <- &ironflowv1.WorkerMessage{
 		Payload: &ironflowv1.WorkerMessage_StepFailed{
 			StepFailed: &ironflowv1.StepFailed{
+				JobId:  r.jobID,
 				StepId: stepID,
 				Error: &ironflowv1.Error{
 					Message: errMsg,
 				},
-				DurationMs: int32(durationMs),
+				DurationMs:   int32(durationMs),
+				ExecutionSeq: r.executionSeq,
+				LeaseToken:   r.leaseToken,
 			},
 		},
 	}:
@@ -867,13 +908,22 @@ func protoToJobAssignment(pa *ironflowv1.JobAssignment) (*jobAssignment, error) 
 	completedSteps := make([]completedStep, 0, len(pa.GetCompletedSteps()))
 	for _, cs := range pa.GetCompletedSteps() {
 		var output any
-		if cs.GetOutput() != nil {
+		// A non-object output arrives only in output_value (#1963).
+		if cs.GetOutput() != nil || cs.GetOutputValue() != nil {
 			output = payloadAny(cs.GetOutput(), cs.GetOutputValue())
+		}
+		var stepErr any
+		if len(cs.GetErrorJson()) > 0 {
+			if err := json.Unmarshal(cs.GetErrorJson(), &stepErr); err != nil {
+				stepErr = string(cs.GetErrorJson())
+			}
 		}
 		completedSteps = append(completedSteps, completedStep{
 			StepID: cs.GetStepId(),
 			Name:   cs.GetName(),
 			Output: output,
+			Status: cs.GetStatus(),
+			Error:  stepErr,
 		})
 	}
 

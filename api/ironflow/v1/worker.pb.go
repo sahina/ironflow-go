@@ -899,6 +899,8 @@ type StepYielded struct {
 	//
 	//	*StepYielded_Sleep
 	//	*StepYielded_WaitEvent
+	//	*StepYielded_InvokeFunction
+	//	*StepYielded_InvokeFunctionAsync
 	YieldInfo     isStepYielded_YieldInfo `protobuf_oneof:"yield_info"`
 	ExecutionSeq  int64                   `protobuf:"varint,5,opt,name=execution_seq,json=executionSeq,proto3" json:"execution_seq,omitempty"`
 	LeaseToken    string                  `protobuf:"bytes,6,opt,name=lease_token,json=leaseToken,proto3" json:"lease_token,omitempty"`
@@ -975,6 +977,24 @@ func (x *StepYielded) GetWaitEvent() *WaitEventYield {
 	return nil
 }
 
+func (x *StepYielded) GetInvokeFunction() *InvokeFunctionYield {
+	if x != nil {
+		if x, ok := x.YieldInfo.(*StepYielded_InvokeFunction); ok {
+			return x.InvokeFunction
+		}
+	}
+	return nil
+}
+
+func (x *StepYielded) GetInvokeFunctionAsync() *InvokeFunctionAsyncYield {
+	if x != nil {
+		if x, ok := x.YieldInfo.(*StepYielded_InvokeFunctionAsync); ok {
+			return x.InvokeFunctionAsync
+		}
+	}
+	return nil
+}
+
 func (x *StepYielded) GetExecutionSeq() int64 {
 	if x != nil {
 		return x.ExecutionSeq
@@ -1001,9 +1021,21 @@ type StepYielded_WaitEvent struct {
 	WaitEvent *WaitEventYield `protobuf:"bytes,4,opt,name=wait_event,json=waitEvent,proto3,oneof"`
 }
 
+type StepYielded_InvokeFunction struct {
+	InvokeFunction *InvokeFunctionYield `protobuf:"bytes,7,opt,name=invoke_function,json=invokeFunction,proto3,oneof"`
+}
+
+type StepYielded_InvokeFunctionAsync struct {
+	InvokeFunctionAsync *InvokeFunctionAsyncYield `protobuf:"bytes,8,opt,name=invoke_function_async,json=invokeFunctionAsync,proto3,oneof"`
+}
+
 func (*StepYielded_Sleep) isStepYielded_YieldInfo() {}
 
 func (*StepYielded_WaitEvent) isStepYielded_YieldInfo() {}
+
+func (*StepYielded_InvokeFunction) isStepYielded_YieldInfo() {}
+
+func (*StepYielded_InvokeFunctionAsync) isStepYielded_YieldInfo() {}
 
 type SleepYield struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1126,6 +1158,125 @@ func (x *WaitEventYield) GetPayloadJson() []byte {
 	return nil
 }
 
+// InvokeFunctionYield starts a child run and pauses the parent until the
+// child ends or invoke_timeout_ms passes (#2402).
+type InvokeFunctionYield struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	FunctionId string                 `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	// Child input as JSON. Any JSON value; empty means no input.
+	InputJson []byte `protobuf:"bytes,2,opt,name=input_json,json=inputJson,proto3" json:"input_json,omitempty"`
+	// Zero or negative uses the engine default (30s).
+	InvokeTimeoutMs int64 `protobuf:"varint,3,opt,name=invoke_timeout_ms,json=invokeTimeoutMs,proto3" json:"invoke_timeout_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *InvokeFunctionYield) Reset() {
+	*x = InvokeFunctionYield{}
+	mi := &file_ironflow_v1_worker_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvokeFunctionYield) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvokeFunctionYield) ProtoMessage() {}
+
+func (x *InvokeFunctionYield) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_worker_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvokeFunctionYield.ProtoReflect.Descriptor instead.
+func (*InvokeFunctionYield) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *InvokeFunctionYield) GetFunctionId() string {
+	if x != nil {
+		return x.FunctionId
+	}
+	return ""
+}
+
+func (x *InvokeFunctionYield) GetInputJson() []byte {
+	if x != nil {
+		return x.InputJson
+	}
+	return nil
+}
+
+func (x *InvokeFunctionYield) GetInvokeTimeoutMs() int64 {
+	if x != nil {
+		return x.InvokeTimeoutMs
+	}
+	return 0
+}
+
+// InvokeFunctionAsyncYield starts a child run and resumes the parent at once
+// with the child's run ID (#2402).
+type InvokeFunctionAsyncYield struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	FunctionId string                 `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	// Child input as JSON. Any JSON value; empty means no input.
+	InputJson     []byte `protobuf:"bytes,2,opt,name=input_json,json=inputJson,proto3" json:"input_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InvokeFunctionAsyncYield) Reset() {
+	*x = InvokeFunctionAsyncYield{}
+	mi := &file_ironflow_v1_worker_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InvokeFunctionAsyncYield) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InvokeFunctionAsyncYield) ProtoMessage() {}
+
+func (x *InvokeFunctionAsyncYield) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_worker_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InvokeFunctionAsyncYield.ProtoReflect.Descriptor instead.
+func (*InvokeFunctionAsyncYield) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *InvokeFunctionAsyncYield) GetFunctionId() string {
+	if x != nil {
+		return x.FunctionId
+	}
+	return ""
+}
+
+func (x *InvokeFunctionAsyncYield) GetInputJson() []byte {
+	if x != nil {
+		return x.InputJson
+	}
+	return nil
+}
+
 type JobCompleted struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	JobId  string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
@@ -1144,7 +1295,7 @@ type JobCompleted struct {
 
 func (x *JobCompleted) Reset() {
 	*x = JobCompleted{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[12]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1156,7 +1307,7 @@ func (x *JobCompleted) String() string {
 func (*JobCompleted) ProtoMessage() {}
 
 func (x *JobCompleted) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[12]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1169,7 +1320,7 @@ func (x *JobCompleted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobCompleted.ProtoReflect.Descriptor instead.
 func (*JobCompleted) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{12}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *JobCompleted) GetJobId() string {
@@ -1230,7 +1381,7 @@ type JobFailed struct {
 
 func (x *JobFailed) Reset() {
 	*x = JobFailed{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[13]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1242,7 +1393,7 @@ func (x *JobFailed) String() string {
 func (*JobFailed) ProtoMessage() {}
 
 func (x *JobFailed) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[13]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1255,7 +1406,7 @@ func (x *JobFailed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobFailed.ProtoReflect.Descriptor instead.
 func (*JobFailed) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{13}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *JobFailed) GetJobId() string {
@@ -1326,7 +1477,7 @@ type ExecutedStep struct {
 
 func (x *ExecutedStep) Reset() {
 	*x = ExecutedStep{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[14]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1338,7 +1489,7 @@ func (x *ExecutedStep) String() string {
 func (*ExecutedStep) ProtoMessage() {}
 
 func (x *ExecutedStep) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[14]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1351,7 +1502,7 @@ func (x *ExecutedStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutedStep.ProtoReflect.Descriptor instead.
 func (*ExecutedStep) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{14}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ExecutedStep) GetId() string {
@@ -1432,7 +1583,7 @@ type JobAck struct {
 
 func (x *JobAck) Reset() {
 	*x = JobAck{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[15]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1444,7 +1595,7 @@ func (x *JobAck) String() string {
 func (*JobAck) ProtoMessage() {}
 
 func (x *JobAck) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[15]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1457,7 +1608,7 @@ func (x *JobAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobAck.ProtoReflect.Descriptor instead.
 func (*JobAck) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{15}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *JobAck) GetJobId() string {
@@ -1506,7 +1657,7 @@ type EngineMessage struct {
 
 func (x *EngineMessage) Reset() {
 	*x = EngineMessage{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[16]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1518,7 +1669,7 @@ func (x *EngineMessage) String() string {
 func (*EngineMessage) ProtoMessage() {}
 
 func (x *EngineMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[16]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1531,7 +1682,7 @@ func (x *EngineMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EngineMessage.ProtoReflect.Descriptor instead.
 func (*EngineMessage) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{16}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *EngineMessage) GetPayload() isEngineMessage_Payload {
@@ -1663,7 +1814,7 @@ type LeaseRefreshResult struct {
 
 func (x *LeaseRefreshResult) Reset() {
 	*x = LeaseRefreshResult{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[17]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1675,7 +1826,7 @@ func (x *LeaseRefreshResult) String() string {
 func (*LeaseRefreshResult) ProtoMessage() {}
 
 func (x *LeaseRefreshResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[17]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1688,7 +1839,7 @@ func (x *LeaseRefreshResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseRefreshResult.ProtoReflect.Descriptor instead.
 func (*LeaseRefreshResult) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{17}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *LeaseRefreshResult) GetSegments() []*SegmentLeaseStatus {
@@ -1709,7 +1860,7 @@ type SegmentLeaseStatus struct {
 
 func (x *SegmentLeaseStatus) Reset() {
 	*x = SegmentLeaseStatus{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[18]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1721,7 +1872,7 @@ func (x *SegmentLeaseStatus) String() string {
 func (*SegmentLeaseStatus) ProtoMessage() {}
 
 func (x *SegmentLeaseStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[18]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1734,7 +1885,7 @@ func (x *SegmentLeaseStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SegmentLeaseStatus.ProtoReflect.Descriptor instead.
 func (*SegmentLeaseStatus) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{18}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *SegmentLeaseStatus) GetRunId() string {
@@ -1769,7 +1920,7 @@ type WorkerRegistered struct {
 
 func (x *WorkerRegistered) Reset() {
 	*x = WorkerRegistered{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[19]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1781,7 +1932,7 @@ func (x *WorkerRegistered) String() string {
 func (*WorkerRegistered) ProtoMessage() {}
 
 func (x *WorkerRegistered) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[19]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1794,7 +1945,7 @@ func (x *WorkerRegistered) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerRegistered.ProtoReflect.Descriptor instead.
 func (*WorkerRegistered) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{19}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *WorkerRegistered) GetWorkerId() string {
@@ -1841,7 +1992,7 @@ type JobAssignment struct {
 
 func (x *JobAssignment) Reset() {
 	*x = JobAssignment{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[20]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1853,7 +2004,7 @@ func (x *JobAssignment) String() string {
 func (*JobAssignment) ProtoMessage() {}
 
 func (x *JobAssignment) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[20]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1866,7 +2017,7 @@ func (x *JobAssignment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobAssignment.ProtoReflect.Descriptor instead.
 func (*JobAssignment) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{20}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *JobAssignment) GetJobId() string {
@@ -1962,14 +2113,20 @@ type CompletedStep struct {
 	// represent (#1963). Readers take this when present and fall back to
 	// output, so an object costs no extra bytes and old clients are
 	// unaffected.
-	OutputValue   *structpb.Value `protobuf:"bytes,4,opt,name=output_value,json=outputValue,proto3" json:"output_value,omitempty"`
+	OutputValue *structpb.Value `protobuf:"bytes,4,opt,name=output_value,json=outputValue,proto3" json:"output_value,omitempty"`
+	// Set ONLY on a failed invoke_function row, so a resumed worker raises the
+	// child's error instead of starting a second child (#2385, #2402). Empty on
+	// completed rows.
+	Status string `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	// The step's stored error JSON. Set only when status is "failed".
+	ErrorJson     []byte `protobuf:"bytes,6,opt,name=error_json,json=errorJson,proto3" json:"error_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CompletedStep) Reset() {
 	*x = CompletedStep{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[21]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1981,7 +2138,7 @@ func (x *CompletedStep) String() string {
 func (*CompletedStep) ProtoMessage() {}
 
 func (x *CompletedStep) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[21]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1994,7 +2151,7 @@ func (x *CompletedStep) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompletedStep.ProtoReflect.Descriptor instead.
 func (*CompletedStep) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{21}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *CompletedStep) GetStepId() string {
@@ -2025,6 +2182,20 @@ func (x *CompletedStep) GetOutputValue() *structpb.Value {
 	return nil
 }
 
+func (x *CompletedStep) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *CompletedStep) GetErrorJson() []byte {
+	if x != nil {
+		return x.ErrorJson
+	}
+	return nil
+}
+
 type JobContext struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
@@ -2036,7 +2207,7 @@ type JobContext struct {
 
 func (x *JobContext) Reset() {
 	*x = JobContext{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[22]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2048,7 +2219,7 @@ func (x *JobContext) String() string {
 func (*JobContext) ProtoMessage() {}
 
 func (x *JobContext) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[22]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2061,7 +2232,7 @@ func (x *JobContext) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobContext.ProtoReflect.Descriptor instead.
 func (*JobContext) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{22}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *JobContext) GetTraceId() string {
@@ -2096,7 +2267,7 @@ type StepAck struct {
 
 func (x *StepAck) Reset() {
 	*x = StepAck{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[23]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2108,7 +2279,7 @@ func (x *StepAck) String() string {
 func (*StepAck) ProtoMessage() {}
 
 func (x *StepAck) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[23]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2121,7 +2292,7 @@ func (x *StepAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StepAck.ProtoReflect.Descriptor instead.
 func (*StepAck) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{23}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *StepAck) GetStepId() string {
@@ -2164,7 +2335,7 @@ type ResumeJob struct {
 
 func (x *ResumeJob) Reset() {
 	*x = ResumeJob{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[24]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2176,7 +2347,7 @@ func (x *ResumeJob) String() string {
 func (*ResumeJob) ProtoMessage() {}
 
 func (x *ResumeJob) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[24]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2189,7 +2360,7 @@ func (x *ResumeJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeJob.ProtoReflect.Descriptor instead.
 func (*ResumeJob) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{24}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ResumeJob) GetJobId() string {
@@ -2237,7 +2408,7 @@ type CancelJob struct {
 
 func (x *CancelJob) Reset() {
 	*x = CancelJob{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[25]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2249,7 +2420,7 @@ func (x *CancelJob) String() string {
 func (*CancelJob) ProtoMessage() {}
 
 func (x *CancelJob) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[25]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2262,7 +2433,7 @@ func (x *CancelJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelJob.ProtoReflect.Descriptor instead.
 func (*CancelJob) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{25}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CancelJob) GetJobId() string {
@@ -2290,7 +2461,7 @@ type Shutdown struct {
 
 func (x *Shutdown) Reset() {
 	*x = Shutdown{}
-	mi := &file_ironflow_v1_worker_proto_msgTypes[26]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2302,7 +2473,7 @@ func (x *Shutdown) String() string {
 func (*Shutdown) ProtoMessage() {}
 
 func (x *Shutdown) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_worker_proto_msgTypes[26]
+	mi := &file_ironflow_v1_worker_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2315,7 +2486,7 @@ func (x *Shutdown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Shutdown.ProtoReflect.Descriptor instead.
 func (*Shutdown) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{26}
+	return file_ironflow_v1_worker_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *Shutdown) GetReason() string {
@@ -2411,13 +2582,15 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	"durationMs\x12#\n" +
 	"\rexecution_seq\x18\x05 \x01(\x03R\fexecutionSeq\x12\x1f\n" +
 	"\vlease_token\x18\x06 \x01(\tR\n" +
-	"leaseToken\"\x80\x02\n" +
+	"leaseToken\"\xaa\x03\n" +
 	"\vStepYielded\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x17\n" +
 	"\astep_id\x18\x02 \x01(\tR\x06stepId\x12/\n" +
 	"\x05sleep\x18\x03 \x01(\v2\x17.ironflow.v1.SleepYieldH\x00R\x05sleep\x12<\n" +
 	"\n" +
-	"wait_event\x18\x04 \x01(\v2\x1b.ironflow.v1.WaitEventYieldH\x00R\twaitEvent\x12#\n" +
+	"wait_event\x18\x04 \x01(\v2\x1b.ironflow.v1.WaitEventYieldH\x00R\twaitEvent\x12K\n" +
+	"\x0finvoke_function\x18\a \x01(\v2 .ironflow.v1.InvokeFunctionYieldH\x00R\x0einvokeFunction\x12[\n" +
+	"\x15invoke_function_async\x18\b \x01(\v2%.ironflow.v1.InvokeFunctionAsyncYieldH\x00R\x13invokeFunctionAsync\x12#\n" +
 	"\rexecution_seq\x18\x05 \x01(\x03R\fexecutionSeq\x12\x1f\n" +
 	"\vlease_token\x18\x06 \x01(\tR\n" +
 	"leaseTokenB\f\n" +
@@ -2433,7 +2606,18 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	"\vmatch_value\x18\x03 \x01(\tR\n" +
 	"matchValue\x124\n" +
 	"\atimeout\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\atimeout\x12!\n" +
-	"\fpayload_json\x18\x05 \x01(\fR\vpayloadJson\"\xf8\x01\n" +
+	"\fpayload_json\x18\x05 \x01(\fR\vpayloadJson\"\x81\x01\n" +
+	"\x13InvokeFunctionYield\x12\x1f\n" +
+	"\vfunction_id\x18\x01 \x01(\tR\n" +
+	"functionId\x12\x1d\n" +
+	"\n" +
+	"input_json\x18\x02 \x01(\fR\tinputJson\x12*\n" +
+	"\x11invoke_timeout_ms\x18\x03 \x01(\x03R\x0finvokeTimeoutMs\"Z\n" +
+	"\x18InvokeFunctionAsyncYield\x12\x1f\n" +
+	"\vfunction_id\x18\x01 \x01(\tR\n" +
+	"functionId\x12\x1d\n" +
+	"\n" +
+	"input_json\x18\x02 \x01(\fR\tinputJson\"\xf8\x01\n" +
 	"\fJobCompleted\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12/\n" +
 	"\x06output\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06output\x129\n" +
@@ -2504,12 +2688,15 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	" \x01(\tR\n" +
 	"leaseToken\x12D\n" +
 	"\x10lease_expires_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\x12!\n" +
-	"\fmax_attempts\x18\f \x01(\x05R\vmaxAttempts\"\xa8\x01\n" +
+	"\fmax_attempts\x18\f \x01(\x05R\vmaxAttempts\"\xdf\x01\n" +
 	"\rCompletedStep\x12\x17\n" +
 	"\astep_id\x18\x01 \x01(\tR\x06stepId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12/\n" +
 	"\x06output\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x06output\x129\n" +
-	"\foutput_value\x18\x04 \x01(\v2\x16.google.protobuf.ValueR\voutputValue\"\xa3\x02\n" +
+	"\foutput_value\x18\x04 \x01(\v2\x16.google.protobuf.ValueR\voutputValue\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x12\x1d\n" +
+	"\n" +
+	"error_json\x18\x06 \x01(\fR\terrorJson\"\xa3\x02\n" +
 	"\n" +
 	"JobContext\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12A\n" +
@@ -2561,45 +2748,47 @@ func file_ironflow_v1_worker_proto_rawDescGZIP() []byte {
 }
 
 var file_ironflow_v1_worker_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_ironflow_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_ironflow_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_ironflow_v1_worker_proto_goTypes = []any{
-	(LeaseState)(0),               // 0: ironflow.v1.LeaseState
-	(*WorkerMessage)(nil),         // 1: ironflow.v1.WorkerMessage
-	(*WorkerRegister)(nil),        // 2: ironflow.v1.WorkerRegister
-	(*WorkerVersion)(nil),         // 3: ironflow.v1.WorkerVersion
-	(*WorkerHeartbeat)(nil),       // 4: ironflow.v1.WorkerHeartbeat
-	(*ActiveJob)(nil),             // 5: ironflow.v1.ActiveJob
-	(*WorkerMetrics)(nil),         // 6: ironflow.v1.WorkerMetrics
-	(*StepStarted)(nil),           // 7: ironflow.v1.StepStarted
-	(*StepCompleted)(nil),         // 8: ironflow.v1.StepCompleted
-	(*StepFailed)(nil),            // 9: ironflow.v1.StepFailed
-	(*StepYielded)(nil),           // 10: ironflow.v1.StepYielded
-	(*SleepYield)(nil),            // 11: ironflow.v1.SleepYield
-	(*WaitEventYield)(nil),        // 12: ironflow.v1.WaitEventYield
-	(*JobCompleted)(nil),          // 13: ironflow.v1.JobCompleted
-	(*JobFailed)(nil),             // 14: ironflow.v1.JobFailed
-	(*ExecutedStep)(nil),          // 15: ironflow.v1.ExecutedStep
-	(*JobAck)(nil),                // 16: ironflow.v1.JobAck
-	(*EngineMessage)(nil),         // 17: ironflow.v1.EngineMessage
-	(*LeaseRefreshResult)(nil),    // 18: ironflow.v1.LeaseRefreshResult
-	(*SegmentLeaseStatus)(nil),    // 19: ironflow.v1.SegmentLeaseStatus
-	(*WorkerRegistered)(nil),      // 20: ironflow.v1.WorkerRegistered
-	(*JobAssignment)(nil),         // 21: ironflow.v1.JobAssignment
-	(*CompletedStep)(nil),         // 22: ironflow.v1.CompletedStep
-	(*JobContext)(nil),            // 23: ironflow.v1.JobContext
-	(*StepAck)(nil),               // 24: ironflow.v1.StepAck
-	(*ResumeJob)(nil),             // 25: ironflow.v1.ResumeJob
-	(*CancelJob)(nil),             // 26: ironflow.v1.CancelJob
-	(*Shutdown)(nil),              // 27: ironflow.v1.Shutdown
-	nil,                           // 28: ironflow.v1.WorkerRegister.LabelsEntry
-	nil,                           // 29: ironflow.v1.JobContext.MetadataEntry
-	nil,                           // 30: ironflow.v1.JobContext.SecretsEntry
-	(*timestamppb.Timestamp)(nil), // 31: google.protobuf.Timestamp
-	(StepType)(0),                 // 32: ironflow.v1.StepType
-	(*structpb.Struct)(nil),       // 33: google.protobuf.Struct
-	(*structpb.Value)(nil),        // 34: google.protobuf.Value
-	(*Error)(nil),                 // 35: ironflow.v1.Error
-	(*Event)(nil),                 // 36: ironflow.v1.Event
+	(LeaseState)(0),                  // 0: ironflow.v1.LeaseState
+	(*WorkerMessage)(nil),            // 1: ironflow.v1.WorkerMessage
+	(*WorkerRegister)(nil),           // 2: ironflow.v1.WorkerRegister
+	(*WorkerVersion)(nil),            // 3: ironflow.v1.WorkerVersion
+	(*WorkerHeartbeat)(nil),          // 4: ironflow.v1.WorkerHeartbeat
+	(*ActiveJob)(nil),                // 5: ironflow.v1.ActiveJob
+	(*WorkerMetrics)(nil),            // 6: ironflow.v1.WorkerMetrics
+	(*StepStarted)(nil),              // 7: ironflow.v1.StepStarted
+	(*StepCompleted)(nil),            // 8: ironflow.v1.StepCompleted
+	(*StepFailed)(nil),               // 9: ironflow.v1.StepFailed
+	(*StepYielded)(nil),              // 10: ironflow.v1.StepYielded
+	(*SleepYield)(nil),               // 11: ironflow.v1.SleepYield
+	(*WaitEventYield)(nil),           // 12: ironflow.v1.WaitEventYield
+	(*InvokeFunctionYield)(nil),      // 13: ironflow.v1.InvokeFunctionYield
+	(*InvokeFunctionAsyncYield)(nil), // 14: ironflow.v1.InvokeFunctionAsyncYield
+	(*JobCompleted)(nil),             // 15: ironflow.v1.JobCompleted
+	(*JobFailed)(nil),                // 16: ironflow.v1.JobFailed
+	(*ExecutedStep)(nil),             // 17: ironflow.v1.ExecutedStep
+	(*JobAck)(nil),                   // 18: ironflow.v1.JobAck
+	(*EngineMessage)(nil),            // 19: ironflow.v1.EngineMessage
+	(*LeaseRefreshResult)(nil),       // 20: ironflow.v1.LeaseRefreshResult
+	(*SegmentLeaseStatus)(nil),       // 21: ironflow.v1.SegmentLeaseStatus
+	(*WorkerRegistered)(nil),         // 22: ironflow.v1.WorkerRegistered
+	(*JobAssignment)(nil),            // 23: ironflow.v1.JobAssignment
+	(*CompletedStep)(nil),            // 24: ironflow.v1.CompletedStep
+	(*JobContext)(nil),               // 25: ironflow.v1.JobContext
+	(*StepAck)(nil),                  // 26: ironflow.v1.StepAck
+	(*ResumeJob)(nil),                // 27: ironflow.v1.ResumeJob
+	(*CancelJob)(nil),                // 28: ironflow.v1.CancelJob
+	(*Shutdown)(nil),                 // 29: ironflow.v1.Shutdown
+	nil,                              // 30: ironflow.v1.WorkerRegister.LabelsEntry
+	nil,                              // 31: ironflow.v1.JobContext.MetadataEntry
+	nil,                              // 32: ironflow.v1.JobContext.SecretsEntry
+	(*timestamppb.Timestamp)(nil),    // 33: google.protobuf.Timestamp
+	(StepType)(0),                    // 34: ironflow.v1.StepType
+	(*structpb.Struct)(nil),          // 35: google.protobuf.Struct
+	(*structpb.Value)(nil),           // 36: google.protobuf.Value
+	(*Error)(nil),                    // 37: ironflow.v1.Error
+	(*Event)(nil),                    // 38: ironflow.v1.Event
 }
 var file_ironflow_v1_worker_proto_depIdxs = []int32{
 	2,  // 0: ironflow.v1.WorkerMessage.register:type_name -> ironflow.v1.WorkerRegister
@@ -2608,55 +2797,57 @@ var file_ironflow_v1_worker_proto_depIdxs = []int32{
 	8,  // 3: ironflow.v1.WorkerMessage.step_completed:type_name -> ironflow.v1.StepCompleted
 	9,  // 4: ironflow.v1.WorkerMessage.step_failed:type_name -> ironflow.v1.StepFailed
 	10, // 5: ironflow.v1.WorkerMessage.step_yielded:type_name -> ironflow.v1.StepYielded
-	13, // 6: ironflow.v1.WorkerMessage.job_completed:type_name -> ironflow.v1.JobCompleted
-	14, // 7: ironflow.v1.WorkerMessage.job_failed:type_name -> ironflow.v1.JobFailed
-	16, // 8: ironflow.v1.WorkerMessage.job_ack:type_name -> ironflow.v1.JobAck
-	28, // 9: ironflow.v1.WorkerRegister.labels:type_name -> ironflow.v1.WorkerRegister.LabelsEntry
+	15, // 6: ironflow.v1.WorkerMessage.job_completed:type_name -> ironflow.v1.JobCompleted
+	16, // 7: ironflow.v1.WorkerMessage.job_failed:type_name -> ironflow.v1.JobFailed
+	18, // 8: ironflow.v1.WorkerMessage.job_ack:type_name -> ironflow.v1.JobAck
+	30, // 9: ironflow.v1.WorkerRegister.labels:type_name -> ironflow.v1.WorkerRegister.LabelsEntry
 	3,  // 10: ironflow.v1.WorkerRegister.version:type_name -> ironflow.v1.WorkerVersion
 	5,  // 11: ironflow.v1.WorkerHeartbeat.jobs:type_name -> ironflow.v1.ActiveJob
 	6,  // 12: ironflow.v1.WorkerHeartbeat.metrics:type_name -> ironflow.v1.WorkerMetrics
-	31, // 13: ironflow.v1.ActiveJob.started_at:type_name -> google.protobuf.Timestamp
-	32, // 14: ironflow.v1.StepStarted.step_type:type_name -> ironflow.v1.StepType
-	33, // 15: ironflow.v1.StepCompleted.output:type_name -> google.protobuf.Struct
-	34, // 16: ironflow.v1.StepCompleted.output_value:type_name -> google.protobuf.Value
-	35, // 17: ironflow.v1.StepFailed.error:type_name -> ironflow.v1.Error
+	33, // 13: ironflow.v1.ActiveJob.started_at:type_name -> google.protobuf.Timestamp
+	34, // 14: ironflow.v1.StepStarted.step_type:type_name -> ironflow.v1.StepType
+	35, // 15: ironflow.v1.StepCompleted.output:type_name -> google.protobuf.Struct
+	36, // 16: ironflow.v1.StepCompleted.output_value:type_name -> google.protobuf.Value
+	37, // 17: ironflow.v1.StepFailed.error:type_name -> ironflow.v1.Error
 	11, // 18: ironflow.v1.StepYielded.sleep:type_name -> ironflow.v1.SleepYield
 	12, // 19: ironflow.v1.StepYielded.wait_event:type_name -> ironflow.v1.WaitEventYield
-	31, // 20: ironflow.v1.SleepYield.until:type_name -> google.protobuf.Timestamp
-	31, // 21: ironflow.v1.WaitEventYield.timeout:type_name -> google.protobuf.Timestamp
-	33, // 22: ironflow.v1.JobCompleted.output:type_name -> google.protobuf.Struct
-	34, // 23: ironflow.v1.JobCompleted.output_value:type_name -> google.protobuf.Value
-	35, // 24: ironflow.v1.JobFailed.error:type_name -> ironflow.v1.Error
-	15, // 25: ironflow.v1.JobFailed.steps:type_name -> ironflow.v1.ExecutedStep
-	33, // 26: ironflow.v1.ExecutedStep.output:type_name -> google.protobuf.Struct
-	34, // 27: ironflow.v1.ExecutedStep.output_value:type_name -> google.protobuf.Value
-	35, // 28: ironflow.v1.ExecutedStep.error:type_name -> ironflow.v1.Error
-	20, // 29: ironflow.v1.EngineMessage.registered:type_name -> ironflow.v1.WorkerRegistered
-	21, // 30: ironflow.v1.EngineMessage.job:type_name -> ironflow.v1.JobAssignment
-	24, // 31: ironflow.v1.EngineMessage.step_ack:type_name -> ironflow.v1.StepAck
-	25, // 32: ironflow.v1.EngineMessage.resume:type_name -> ironflow.v1.ResumeJob
-	26, // 33: ironflow.v1.EngineMessage.cancel:type_name -> ironflow.v1.CancelJob
-	27, // 34: ironflow.v1.EngineMessage.shutdown:type_name -> ironflow.v1.Shutdown
-	18, // 35: ironflow.v1.EngineMessage.lease_refresh:type_name -> ironflow.v1.LeaseRefreshResult
-	19, // 36: ironflow.v1.LeaseRefreshResult.segments:type_name -> ironflow.v1.SegmentLeaseStatus
-	0,  // 37: ironflow.v1.SegmentLeaseStatus.state:type_name -> ironflow.v1.LeaseState
-	36, // 38: ironflow.v1.JobAssignment.event:type_name -> ironflow.v1.Event
-	22, // 39: ironflow.v1.JobAssignment.completed_steps:type_name -> ironflow.v1.CompletedStep
-	23, // 40: ironflow.v1.JobAssignment.context:type_name -> ironflow.v1.JobContext
-	31, // 41: ironflow.v1.JobAssignment.lease_expires_at:type_name -> google.protobuf.Timestamp
-	33, // 42: ironflow.v1.CompletedStep.output:type_name -> google.protobuf.Struct
-	34, // 43: ironflow.v1.CompletedStep.output_value:type_name -> google.protobuf.Value
-	29, // 44: ironflow.v1.JobContext.metadata:type_name -> ironflow.v1.JobContext.MetadataEntry
-	30, // 45: ironflow.v1.JobContext.secrets:type_name -> ironflow.v1.JobContext.SecretsEntry
-	33, // 46: ironflow.v1.ResumeJob.resume_data:type_name -> google.protobuf.Struct
-	34, // 47: ironflow.v1.ResumeJob.resume_data_value:type_name -> google.protobuf.Value
-	1,  // 48: ironflow.v1.WorkerService.Connect:input_type -> ironflow.v1.WorkerMessage
-	17, // 49: ironflow.v1.WorkerService.Connect:output_type -> ironflow.v1.EngineMessage
-	49, // [49:50] is the sub-list for method output_type
-	48, // [48:49] is the sub-list for method input_type
-	48, // [48:48] is the sub-list for extension type_name
-	48, // [48:48] is the sub-list for extension extendee
-	0,  // [0:48] is the sub-list for field type_name
+	13, // 20: ironflow.v1.StepYielded.invoke_function:type_name -> ironflow.v1.InvokeFunctionYield
+	14, // 21: ironflow.v1.StepYielded.invoke_function_async:type_name -> ironflow.v1.InvokeFunctionAsyncYield
+	33, // 22: ironflow.v1.SleepYield.until:type_name -> google.protobuf.Timestamp
+	33, // 23: ironflow.v1.WaitEventYield.timeout:type_name -> google.protobuf.Timestamp
+	35, // 24: ironflow.v1.JobCompleted.output:type_name -> google.protobuf.Struct
+	36, // 25: ironflow.v1.JobCompleted.output_value:type_name -> google.protobuf.Value
+	37, // 26: ironflow.v1.JobFailed.error:type_name -> ironflow.v1.Error
+	17, // 27: ironflow.v1.JobFailed.steps:type_name -> ironflow.v1.ExecutedStep
+	35, // 28: ironflow.v1.ExecutedStep.output:type_name -> google.protobuf.Struct
+	36, // 29: ironflow.v1.ExecutedStep.output_value:type_name -> google.protobuf.Value
+	37, // 30: ironflow.v1.ExecutedStep.error:type_name -> ironflow.v1.Error
+	22, // 31: ironflow.v1.EngineMessage.registered:type_name -> ironflow.v1.WorkerRegistered
+	23, // 32: ironflow.v1.EngineMessage.job:type_name -> ironflow.v1.JobAssignment
+	26, // 33: ironflow.v1.EngineMessage.step_ack:type_name -> ironflow.v1.StepAck
+	27, // 34: ironflow.v1.EngineMessage.resume:type_name -> ironflow.v1.ResumeJob
+	28, // 35: ironflow.v1.EngineMessage.cancel:type_name -> ironflow.v1.CancelJob
+	29, // 36: ironflow.v1.EngineMessage.shutdown:type_name -> ironflow.v1.Shutdown
+	20, // 37: ironflow.v1.EngineMessage.lease_refresh:type_name -> ironflow.v1.LeaseRefreshResult
+	21, // 38: ironflow.v1.LeaseRefreshResult.segments:type_name -> ironflow.v1.SegmentLeaseStatus
+	0,  // 39: ironflow.v1.SegmentLeaseStatus.state:type_name -> ironflow.v1.LeaseState
+	38, // 40: ironflow.v1.JobAssignment.event:type_name -> ironflow.v1.Event
+	24, // 41: ironflow.v1.JobAssignment.completed_steps:type_name -> ironflow.v1.CompletedStep
+	25, // 42: ironflow.v1.JobAssignment.context:type_name -> ironflow.v1.JobContext
+	33, // 43: ironflow.v1.JobAssignment.lease_expires_at:type_name -> google.protobuf.Timestamp
+	35, // 44: ironflow.v1.CompletedStep.output:type_name -> google.protobuf.Struct
+	36, // 45: ironflow.v1.CompletedStep.output_value:type_name -> google.protobuf.Value
+	31, // 46: ironflow.v1.JobContext.metadata:type_name -> ironflow.v1.JobContext.MetadataEntry
+	32, // 47: ironflow.v1.JobContext.secrets:type_name -> ironflow.v1.JobContext.SecretsEntry
+	35, // 48: ironflow.v1.ResumeJob.resume_data:type_name -> google.protobuf.Struct
+	36, // 49: ironflow.v1.ResumeJob.resume_data_value:type_name -> google.protobuf.Value
+	1,  // 50: ironflow.v1.WorkerService.Connect:input_type -> ironflow.v1.WorkerMessage
+	19, // 51: ironflow.v1.WorkerService.Connect:output_type -> ironflow.v1.EngineMessage
+	51, // [51:52] is the sub-list for method output_type
+	50, // [50:51] is the sub-list for method input_type
+	50, // [50:50] is the sub-list for extension type_name
+	50, // [50:50] is the sub-list for extension extendee
+	0,  // [0:50] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_worker_proto_init() }
@@ -2679,8 +2870,10 @@ func file_ironflow_v1_worker_proto_init() {
 	file_ironflow_v1_worker_proto_msgTypes[9].OneofWrappers = []any{
 		(*StepYielded_Sleep)(nil),
 		(*StepYielded_WaitEvent)(nil),
+		(*StepYielded_InvokeFunction)(nil),
+		(*StepYielded_InvokeFunctionAsync)(nil),
 	}
-	file_ironflow_v1_worker_proto_msgTypes[16].OneofWrappers = []any{
+	file_ironflow_v1_worker_proto_msgTypes[18].OneofWrappers = []any{
 		(*EngineMessage_Registered)(nil),
 		(*EngineMessage_Job)(nil),
 		(*EngineMessage_StepAck)(nil),
@@ -2695,7 +2888,7 @@ func file_ironflow_v1_worker_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ironflow_v1_worker_proto_rawDesc), len(file_ironflow_v1_worker_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   30,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

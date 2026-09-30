@@ -2160,6 +2160,10 @@ func TestSubscribeAckable_Ack(t *testing.T) {
 	if ackMsg.RedeliverDelay != 0 {
 		t.Errorf("expected redeliverDelay 0, got %d", ackMsg.RedeliverDelay)
 	}
+
+	if ackMsg.SubscriptionID != "sub_ack_4" {
+		t.Errorf("expected subscriptionId %q, got %q", "sub_ack_4", ackMsg.SubscriptionID)
+	}
 }
 
 func TestSubscribeAckable_Nak(t *testing.T) {
@@ -2228,6 +2232,10 @@ func TestSubscribeAckable_Nak(t *testing.T) {
 
 	if nakMsg.RedeliverDelay != 5000 {
 		t.Errorf("expected redeliverDelay 5000, got %d", nakMsg.RedeliverDelay)
+	}
+
+	if nakMsg.SubscriptionID != "sub_ack_5" {
+		t.Errorf("expected subscriptionId %q, got %q", "sub_ack_5", nakMsg.SubscriptionID)
 	}
 }
 
@@ -2358,6 +2366,10 @@ func TestSubscribeAckable_Term(t *testing.T) {
 
 	if termMsg.RedeliverDelay != 0 {
 		t.Errorf("expected redeliverDelay 0, got %d", termMsg.RedeliverDelay)
+	}
+
+	if termMsg.SubscriptionID != "sub_ack_6" {
+		t.Errorf("expected subscriptionId %q, got %q", "sub_ack_6", termMsg.SubscriptionID)
 	}
 }
 
@@ -2715,4 +2727,58 @@ func TestSubscriptionClient_SubscribeEntityStream(t *testing.T) {
 			t.Errorf("expected no replay option, got %d", sentMsg.Subscription.Options.Replay)
 		}
 	})
+}
+
+// A server that advertises grpc-bidirectional (every normal one does) must not
+// pull JoinConsumerGroup off WebSocket: the HTTP-stream path cannot ack.
+func TestJoinConsumerGroup_DefaultsToWebSocketAndAcks(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	ws := server.server.Config.Handler
+	server.server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/capabilities":
+			_ = json.NewEncoder(w).Encode(map[string]any{"transports": []string{"websocket", "grpc-bidirectional"}})
+		case "/ironflow.v1.PubSubService/GetConsumerGroup":
+			_ = json.NewEncoder(w).Encode(map[string]any{"name": "g", "namespace": "default", "pattern": "topic:orders"})
+		default:
+			ws.ServeHTTP(w, r)
+		}
+	})
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if err := json.Unmarshal(data, &msg); err == nil && msg.Type == "subscribe" {
+			_ = server.SendMessage(map[string]any{
+				"type": "subscription_result",
+				"results": []map[string]any{
+					{"pattern": msg.Subscription.Pattern, "status": "ok", "subscriptionId": "sub_join_1"},
+				},
+			})
+		}
+	}
+
+	client := NewClient(ClientConfig{ServerURL: server.server.URL})
+	sub, err := client.JoinConsumerGroup(context.Background(), "g")
+	if err != nil {
+		t.Fatalf("JoinConsumerGroup failed: %v", err)
+	}
+	defer sub.Unsubscribe()
+
+	if err := sub.Nak("evt_join", time.Second); err != nil {
+		t.Fatalf("Nak failed: %v", err)
+	}
+
+	messages := waitForMessages(t, server, 2, 2*time.Second)
+	var subscribeMsg wsSubscribeRequest
+	if err := json.Unmarshal(messages[0], &subscribeMsg); err != nil || subscribeMsg.Type != "subscribe" {
+		t.Fatalf("expected a WebSocket subscribe frame first, got %s", messages[0])
+	}
+	var nakMsg wsAckRequest
+	if err := json.Unmarshal(messages[1], &nakMsg); err != nil {
+		t.Fatalf("failed to unmarshal nak message: %v", err)
+	}
+	if nakMsg.AckType != "nak" || nakMsg.EventID != "evt_join" || nakMsg.SubscriptionID != "sub_join_1" {
+		t.Errorf("unexpected ack frame: %+v", nakMsg)
+	}
 }

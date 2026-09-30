@@ -64,9 +64,13 @@ type Worker struct {
 	executor   *jobExecutor
 
 	state             atomic.Int32 // workerState
-	activeJobs        sync.Map     // map[string]*activeJob
+	stopOnce          sync.Once
+	jobsMu            sync.Mutex
+	activeJobs        sync.Map // map[string]*activeJob
 	jobCount          atomic.Int32
 	stopCh            chan struct{}
+	runMu             sync.Mutex
+	cancelRun         context.CancelFunc
 	heartbeatWg       sync.WaitGroup
 	projMu            sync.Mutex
 	projectionRunners []*ProjectionRunner
@@ -82,14 +86,25 @@ const (
 	stateStopped
 )
 
-// storeStateUnlessStopped moves the worker to next unless Stop() already marked
-// it stopped. Stop() is terminal: without this, a connect path that stores
-// stateConnecting/stateConnected after a concurrent Stop() resurrects a stopped
-// worker (last write wins on an atomic).
+var workerDrainTimeout = 30 * time.Second
+
+// storeStateUnlessStopped does not let a connect resurrect a stopped worker.
 func storeStateUnlessStopped(state *atomic.Int32, next workerState) {
 	for {
 		cur := state.Load()
 		if cur == int32(stateStopped) {
+			return
+		}
+		if state.CompareAndSwap(cur, int32(next)) {
+			return
+		}
+	}
+}
+
+func storeStateUnlessDraining(state *atomic.Int32, next workerState) {
+	for {
+		cur := state.Load()
+		if cur == int32(stateStopped) || cur == int32(stateDraining) {
 			return
 		}
 		if state.CompareAndSwap(cur, int32(next)) {
@@ -177,23 +192,52 @@ func (w *Worker) Run(ctx context.Context) error {
 	if !w.state.CompareAndSwap(int32(stateIdle), int32(stateConnecting)) {
 		return NewError("worker is already running", "WORKER_ALREADY_RUNNING", false)
 	}
+	runCtx, cancelRun := context.WithCancel(ctx)
+	w.runMu.Lock()
+	w.cancelRun = cancelRun
+	w.runMu.Unlock()
+	defer func() {
+		w.runMu.Lock()
+		w.cancelRun = nil
+		w.runMu.Unlock()
+		cancelRun()
+	}()
 
 	w.logger.Info("Starting worker", "workerId", w.workerID, "functions", len(w.functions))
 
 	// Connect loop with auto-reconnect
 	for {
 		select {
-		case <-ctx.Done():
-			w.state.Store(int32(stateStopped))
-			return ctx.Err()
+		case <-runCtx.Done():
+			switch w.state.Load() {
+			case int32(stateStopped):
+				return nil
+			case int32(stateDraining):
+				<-w.stopCh
+				return nil
+			}
+			w.Drain()
+			return runCtx.Err()
 		case <-w.stopCh:
 			return nil
 		default:
 		}
+		if w.state.Load() == int32(stateDraining) {
+			<-w.stopCh
+			return nil
+		}
 
-		if err := w.connect(ctx); err != nil {
+		if err := w.connect(runCtx); err != nil {
 			if w.state.Load() == int32(stateStopped) {
 				return nil
+			}
+			if w.state.Load() == int32(stateDraining) {
+				<-w.stopCh
+				return nil
+			}
+			if runCtx.Err() != nil {
+				w.Drain()
+				return runCtx.Err()
 			}
 
 			// An auth failure will not fix itself on the reconnect cadence
@@ -208,8 +252,16 @@ func (w *Worker) Run(ctx context.Context) error {
 			w.logger.Info("Reconnecting", "delay", w.config.ReconnectDelay)
 
 			select {
-			case <-ctx.Done():
-				return ctx.Err()
+			case <-runCtx.Done():
+				switch w.state.Load() {
+				case int32(stateStopped):
+					return nil
+				case int32(stateDraining):
+					<-w.stopCh
+					return nil
+				}
+				w.Drain()
+				return runCtx.Err()
 			case <-time.After(w.config.ReconnectDelay):
 				continue
 			}
@@ -217,19 +269,33 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 }
 
-// Drain gracefully drains and stops the worker.
+// Drain stops polling, waits up to 30 seconds for active jobs, then cancels
+// remaining jobs so their leases can expire and be reclaimed by the server.
 func (w *Worker) Drain() {
+	w.jobsMu.Lock()
 	if w.state.Load() == int32(stateStopped) {
+		w.jobsMu.Unlock()
 		return
 	}
 
 	w.logger.Info("Draining worker...")
-	w.state.Store(int32(stateDraining))
+	storeStateUnlessDraining(&w.state, stateDraining)
+	w.jobsMu.Unlock()
+	w.cancelRunContext()
 
-	// Wait for active jobs to complete
+	deadline := time.NewTimer(workerDrainTimeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 	for w.jobCount.Load() > 0 {
-		w.logger.Info("Waiting for jobs to complete", "jobs", w.jobCount.Load())
-		time.Sleep(time.Second)
+		select {
+		case <-deadline.C:
+			w.logger.Warn("Drain deadline reached; cancelling active jobs", "jobs", w.jobCount.Load())
+			w.Stop()
+			return
+		case <-ticker.C:
+			w.logger.Info("Waiting for jobs to complete", "jobs", w.jobCount.Load())
+		}
 	}
 
 	w.Stop()
@@ -237,29 +303,38 @@ func (w *Worker) Drain() {
 
 // Stop immediately stops the worker.
 func (w *Worker) Stop() {
+	w.jobsMu.Lock()
 	w.state.Store(int32(stateStopped))
-	select {
-	case <-w.stopCh:
-		// Already stopped
-	default:
+	w.jobsMu.Unlock()
+	w.cancelRunContext()
+	w.stopOnce.Do(func() {
 		close(w.stopCh)
-	}
 
-	// Stop projection runners
-	w.stopProjectionRunners()
+		// Stop projection runners
+		w.stopProjectionRunners()
 
-	// Cancel all active jobs
-	w.activeJobs.Range(func(key, value any) bool {
-		if job, ok := value.(*activeJob); ok {
-			job.cancel()
-		}
-		return true
+		// Cancel all active jobs
+		w.activeJobs.Range(func(key, value any) bool {
+			if job, ok := value.(*activeJob); ok {
+				job.cancel()
+			}
+			return true
+		})
 	})
+}
+
+func (w *Worker) cancelRunContext() {
+	w.runMu.Lock()
+	cancel := w.cancelRun
+	w.runMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // connect establishes a connection to the server.
 func (w *Worker) connect(ctx context.Context) error {
-	storeStateUnlessStopped(&w.state, stateConnecting)
+	storeStateUnlessDraining(&w.state, stateConnecting)
 
 	// Register functions so the event router can find them
 	if err := registerFunctions(ctx, w.config.ServerURL, w.getHeaders(), w.functions, w.httpClient, w.logger); err != nil {
@@ -271,7 +346,10 @@ func (w *Worker) connect(ctx context.Context) error {
 		return err
 	}
 
-	storeStateUnlessStopped(&w.state, stateConnected)
+	storeStateUnlessDraining(&w.state, stateConnected)
+	if w.state.Load() != int32(stateConnected) {
+		return nil
+	}
 	w.logger.Info("Connected to server")
 
 	// Stop any existing projection runners before starting new ones (prevents leak on reconnect)
@@ -355,18 +433,19 @@ func (w *Worker) startHeartbeat(ctx context.Context) {
 		ticker := time.NewTicker(w.config.HeartbeatInterval)
 		defer ticker.Stop()
 
+		// Drain cancels ctx but jobs keep running until Stop, so heartbeat
+		// through the drain window and exit on stopCh or a reconnect.
+		hbCtx := context.WithoutCancel(ctx)
 		for {
 			select {
-			case <-ctx.Done():
-				return
 			case <-w.stopCh:
 				return
 			case <-ticker.C:
-				if w.state.Load() != int32(stateConnected) {
+				if s := w.state.Load(); s != int32(stateConnected) && s != int32(stateDraining) {
 					return
 				}
 
-				w.sendHeartbeat(ctx)
+				w.sendHeartbeat(hbCtx)
 			}
 		}
 	}()
@@ -421,7 +500,9 @@ func (w *Worker) pollForJobs(ctx context.Context) error {
 		// ignores the param and returns at most one. <= 0 means full — back off.
 		free := w.config.MaxConcurrentJobs - int(w.jobCount.Load())
 		if free <= 0 {
-			time.Sleep(time.Second)
+			if err := w.wait(ctx, time.Second); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -433,19 +514,41 @@ func (w *Worker) pollForJobs(ctx context.Context) error {
 				return err
 			}
 			w.logger.Warn("Job request error", "error", err)
-			time.Sleep(5 * time.Second)
+			if waitErr := w.wait(ctx, 5*time.Second); waitErr != nil {
+				return waitErr
+			}
 			continue
 		}
 
 		if len(jobs) == 0 {
 			// No jobs available
-			time.Sleep(time.Second)
+			if err := w.wait(ctx, time.Second); err != nil {
+				return err
+			}
 			continue
 		}
 
 		for _, job := range jobs {
+			// Unstarted assignments are dropped; their leases expire and the
+			// server reclaims them, delaying those runs by one lease timeout.
+			if w.state.Load() != int32(stateConnected) {
+				break
+			}
 			w.processJob(ctx, job)
 		}
+	}
+}
+
+func (w *Worker) wait(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-w.stopCh:
+		return nil
+	case <-timer.C:
+		return nil
 	}
 }
 
@@ -504,7 +607,14 @@ func (w *Worker) requestJobs(ctx context.Context, available int) ([]*jobAssignme
 
 // processJob processes a job asynchronously.
 func (w *Worker) processJob(ctx context.Context, job *jobAssignment) {
-	jobCtx, cancel := context.WithCancel(ctx)
+	// Caller cancellation initiates a graceful drain; Stop cancels each active job.
+	jobCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	w.jobsMu.Lock()
+	if state := w.state.Load(); state == int32(stateDraining) || state == int32(stateStopped) {
+		w.jobsMu.Unlock()
+		cancel()
+		return
+	}
 
 	aj := &activeJob{
 		jobID:     job.JobID,
@@ -515,6 +625,7 @@ func (w *Worker) processJob(ctx context.Context, job *jobAssignment) {
 
 	w.activeJobs.Store(job.JobID, aj)
 	w.jobCount.Add(1)
+	w.jobsMu.Unlock()
 
 	// Per-job reporter carrying the execution fence (#1206, T9), so every
 	// terminal/yield it emits echoes the fence. Captured here from the assignment
@@ -578,33 +689,61 @@ func (r *httpJobReporter) stampFence(body map[string]any) {
 	body["lease_token"] = r.leaseToken
 }
 
-func (r *httpJobReporter) ReportCompleted(ctx context.Context, jobID string, output any, steps []*StepResult) error {
-	body := map[string]any{
-		"status": "completed",
-		"output": output,
-		"steps":  steps,
-	}
-	r.stampFence(body)
-	return r.worker.httpPut(ctx, fmt.Sprintf("/api/v1/workers/%s/jobs/%s", r.worker.workerID, jobID), body, nil)
+func (r *httpJobReporter) ReportCompleted(ctx context.Context, jobID string, output any, steps []*StepResult, stepOffset int) error {
+	return r.ReportCompletedAt(ctx, jobID, output, steps, stepOffset)
 }
 
-func (r *httpJobReporter) ReportFailed(ctx context.Context, jobID string, err *PushError, steps []*StepResult) error {
+func (r *httpJobReporter) ReportCompletedAt(ctx context.Context, jobID string, output any, steps []*StepResult, offset int) error {
 	body := map[string]any{
-		"status": "failed",
-		"error":  err,
+		"status":      "completed",
+		"output":      output,
+		"steps":       steps,
+		"step_offset": offset,
+	}
+	return r.putUpdate(ctx, jobID, body)
+}
+
+func (r *httpJobReporter) ReportFailed(ctx context.Context, jobID string, err *PushError, steps []*StepResult, stepOffset int) error {
+	return r.ReportFailedAt(ctx, jobID, err, steps, stepOffset)
+}
+
+func (r *httpJobReporter) ReportFailedAt(ctx context.Context, jobID string, err *PushError, steps []*StepResult, offset int) error {
+	body := map[string]any{
+		"status":      "failed",
+		"error":       err,
+		"step_offset": offset,
 	}
 	if len(steps) > 0 {
 		body["steps"] = steps
 	}
-	r.stampFence(body)
-	return r.worker.httpPut(ctx, fmt.Sprintf("/api/v1/workers/%s/jobs/%s", r.worker.workerID, jobID), body, nil)
+	return r.putUpdate(ctx, jobID, body)
 }
 
-func (r *httpJobReporter) ReportYielded(ctx context.Context, jobID string, yield *YieldInfo) error {
+func (r *httpJobReporter) ReportYielded(ctx context.Context, jobID string, yield *YieldInfo, steps []*StepResult, stepOffset int) error {
+	return r.ReportYieldedAt(ctx, jobID, yield, steps, stepOffset)
+}
+
+func (r *httpJobReporter) ReportYieldedAt(ctx context.Context, jobID string, yield *YieldInfo, steps []*StepResult, offset int) error {
 	body := map[string]any{
-		"status": "yielded",
-		"yield":  yield,
+		"status":      "yielded",
+		"yield":       yield,
+		"step_offset": offset,
 	}
+	if len(steps) > 0 {
+		body["steps"] = steps
+	}
+	return r.putUpdate(ctx, jobID, body)
+}
+
+func (r *httpJobReporter) ReportProgress(ctx context.Context, jobID string, steps []*StepResult, offset int) error {
+	if len(steps) == 0 {
+		return nil
+	}
+	body := map[string]any{"status": "progress", "steps": steps, "step_offset": offset}
+	return r.putUpdate(ctx, jobID, body)
+}
+
+func (r *httpJobReporter) putUpdate(ctx context.Context, jobID string, body map[string]any) error {
 	r.stampFence(body)
 	return r.worker.httpPut(ctx, fmt.Sprintf("/api/v1/workers/%s/jobs/%s", r.worker.workerID, jobID), body, nil)
 }

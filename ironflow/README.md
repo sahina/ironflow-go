@@ -121,14 +121,14 @@ Use `CreateFunction` to define a workflow function. It panics if the config is i
 ```go
 var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
     // Required: ID
-    ID:       "my-function",                                // alphanumeric, hyphens, underscores
+    ID:       "my-function",                                // no whitespace, "*", ">" or empty "." segment; dots allowed
     Triggers: []ironflow.Trigger{{Event: "order.placed"}},  // optional — functions without triggers can be called via Invoke/InvokeAsync
 
     // Optional
     Name:     "My Function",          // display name (defaults to ID)
     Timeout:  5 * time.Minute,        // function timeout (default: 10m)
     StepTimeout: 30 * time.Second,    // default timeout for all steps (overridable per-step)
-    Mode:     ironflow.PullMode,      // "push" or "pull" (default: "push")
+    Mode:     ironflow.PullMode,      // "push" or "pull" (default: "push"); a Worker registers every function as pull regardless
 
     Retry: &ironflow.RetryConfig{
         MaxAttempts:   5,             // default: 3
@@ -139,7 +139,7 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
 
     Concurrency: &ironflow.ConcurrencyConfig{
         Limit: 10,                    // max concurrent executions
-        Key:   "event.data.customerId", // grouping key (JSON path)
+        Key:   "customerId",            // grouping key, a path into the event data payload
     },
 
     ActorKey: "event.data.userId",    // sticky routing JSON path
@@ -148,7 +148,7 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
     RecordingRetention: "30d",        // metadata only; global retention applies
 }, func(ctx ironflow.Context) (any, error) {
     // ctx.Event  -- triggering event
-    // ctx.Run    -- run metadata (ID, FunctionID, Attempt, StartedAt)
+    // ctx.Run    -- run metadata (ID, FunctionID, Attempt, MaxAttempts, StartedAt)
     // ctx.Secrets -- resolved secrets
     return nil, nil
 })
@@ -171,7 +171,7 @@ The `Context` passed to handlers provides:
 | Field         | Type            | Description                          |
 |---------------|-----------------|--------------------------------------|
 | `ctx.Event`   | `Event`         | Triggering event (ID, Name, Version, RawData, Timestamp, Source, Metadata) |
-| `ctx.Run`     | `RunInfo`       | Run metadata (ID, FunctionID, Attempt, StartedAt) |
+| `ctx.Run`     | `RunInfo`       | Run metadata (ID, FunctionID, Attempt, MaxAttempts, StartedAt) |
 | `ctx.Secrets` | `SecretsReader` | Resolved secrets (see [Secrets](#secrets)) |
 
 Use `ctx.Event.Data(&target)` to unmarshal the event payload into a typed struct.
@@ -474,15 +474,15 @@ if err := worker.Run(ctx); err != nil {
 }
 ```
 
-- `Run(ctx)` -- starts the worker, blocks until stopped. Auto-reconnects on connection loss.
-- `Drain()` -- gracefully stops: finishes active jobs, then stops. Blocks until drained.
+- `Run(ctx)` -- starts the pull worker, auto-reconnects, and drains for up to 30 seconds when `ctx` is cancelled.
+- `Drain()` -- stops polling, waits up to 30 seconds for active jobs, then cancels the remainder so the server can reclaim their leases.
 - `Stop()` -- immediately stops: cancels active jobs and projection runners.
 
 ### Streaming Worker
 
-`NewStreamingWorker` takes the same `WorkerConfig` and exposes the same
-`Run` / `Drain` / `Stop` lifecycle, but receives jobs over a ConnectRPC
-bidirectional stream instead of HTTP polling.
+`NewStreamingWorker` takes the same `WorkerConfig` and exposes `Run` / `Drain` /
+`Stop`, but receives jobs over a ConnectRPC bidirectional stream instead of HTTP
+polling. The 30-second drain deadline above applies to the polling worker.
 
 ```go
 worker := ironflow.NewStreamingWorker(ironflow.WorkerConfig{
@@ -745,8 +745,10 @@ group, err := client.CreateConsumerGroup(ctx, ironflow.ConsumerGroupConfig{
     RedeliverDelayMs: 5000,
 })
 
-// Join a consumer group (auto-detects transport). Options:
-// WithJoinNamespace, WithJoinConsumerID, WithJoinTransport ("grpc" | "websocket").
+// Join a consumer group over WebSocket, the default. Only WebSocket can ack,
+// nak or term. Options: WithJoinNamespace, WithJoinConsumerID (accepted but not
+// sent today -- the server mints the ack identity), WithJoinTransport ("websocket" | "grpc";
+// a grpc join receives events but cannot acknowledge them).
 sub, err := client.JoinConsumerGroup(ctx, "order-processors")
 defer sub.Unsubscribe()
 
@@ -952,13 +954,10 @@ for event := range ackSub.Events() {
 }
 ```
 
-**gRPC:**
-
-```go
-ackSub, err := grpcClient.SubscribeAckable(ctx, "events:order.*", &ironflow.SubscribeOptions{
-    ConsumerGroup: "order-processors",
-})
-```
+The gRPC transport cannot acknowledge. `grpcClient.SubscribeAckable` delivers
+events, but its `Ack`, `Nak` and `Term` post to `PubSubService/Ack`, which the
+server does not serve. Use the WebSocket client above, or `client.JoinConsumerGroup`
+(WebSocket by default), for manual acknowledgment.
 
 ---
 
@@ -1232,6 +1231,15 @@ return result, dedup.Finalize(ctx, commandID, result)
 
 Never call `Release` after `Finalize` — it deletes the finalized result and lets
 the command replay. `CommandDedupOptions.TTL` of `0` means no expiry.
+
+`TryClaim` retries the claim up to 3 times when the winner releases between your write and
+your read, then returns an `*IronflowError` with `Code == "COMMAND_DEDUP_RACE"`. A create that
+fails with any other error leaves the claim state unknown, and the helper does not retry it.
+To let a retry recognize its own orphaned claim, put a token that stays the same across
+retries in the claim and pass `ironflow.TryClaimOptions[T]{IsOwner: func(p T) bool {...}}`.
+`IsOwner` runs only on a prior entry. It must return false for a finalized result, or a
+finished command replays. Run one retry lineage at a time: two concurrent callers with the
+same token both win.
 
 ---
 

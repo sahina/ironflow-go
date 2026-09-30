@@ -213,6 +213,8 @@ type NonRetryableError struct {
 	*IronflowError
 }
 
+func (e *NonRetryableError) Unwrap() error { return e.IronflowError }
+
 // NewNonRetryableError creates a new non-retryable error.
 func NewNonRetryableError(message string) *NonRetryableError {
 	return &NonRetryableError{

@@ -122,7 +122,7 @@ func TestWorker_ReportCompleted_EchoesFenceWhenCapacity(t *testing.T) {
 
 	w := newTestWorker(server.URL)
 	rep := &httpJobReporter{worker: w, executionSeq: 11, leaseToken: "tok-c"}
-	if err := rep.ReportCompleted(context.Background(), "job-1", map[string]string{"ok": "1"}, nil); err != nil {
+	if err := rep.ReportCompleted(context.Background(), "job-1", map[string]string{"ok": "1"}, nil, 0); err != nil {
 		t.Fatalf("ReportCompleted: %v", err)
 	}
 	if gotBody["status"] != "completed" {
@@ -146,7 +146,7 @@ func TestWorker_ReportCompleted_NoFenceForLegacy(t *testing.T) {
 
 	w := newTestWorker(server.URL)
 	rep := &httpJobReporter{worker: w} // no fence (legacy)
-	if err := rep.ReportCompleted(context.Background(), "job-1", nil, nil); err != nil {
+	if err := rep.ReportCompleted(context.Background(), "job-1", nil, nil, 0); err != nil {
 		t.Fatalf("ReportCompleted: %v", err)
 	}
 	if _, ok := gotBody["lease_token"]; ok {

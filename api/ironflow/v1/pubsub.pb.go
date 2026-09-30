@@ -569,7 +569,9 @@ func (x *SubscribeOptions) GetStartAfterSequence() uint64 {
 
 type SubscriptionEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Subscription ID (if applicable)
+	// For consumer-group events (JoinConsumerGroup, and Subscribe with a consumer
+	// group), the consumer ID of the receiving member. A client sends it back as
+	// AckEventRequest.consumer_id.
 	SubscriptionId string `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
 	// Event ID
 	EventId string `protobuf:"bytes,2,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
@@ -813,6 +815,134 @@ func (x *SubscriptionAck) GetRedeliverDelayMs() int32 {
 	return 0
 }
 
+type AckEventRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Namespace (default: "default"). Accepted for symmetry with
+	// JoinConsumerGroupRequest; the engine ignores it.
+	Namespace string `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	// Consumer group name.
+	GroupName string `protobuf:"bytes,2,opt,name=group_name,json=groupName,proto3" json:"group_name,omitempty"`
+	// The subscription_id of the event being acknowledged. The server minted it
+	// for the member that received the event; no other value settles the event.
+	ConsumerId string `protobuf:"bytes,3,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
+	// Event ID being acknowledged.
+	EventId string `protobuf:"bytes,4,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	// Type of acknowledgment. ACK_TYPE_UNSPECIFIED is rejected.
+	AckType AckType `protobuf:"varint,5,opt,name=ack_type,json=ackType,proto3,enum=ironflow.v1.AckType" json:"ack_type,omitempty"`
+	// Delay before redelivery, in milliseconds. NAK only.
+	RedeliverDelayMs int32 `protobuf:"varint,6,opt,name=redeliver_delay_ms,json=redeliverDelayMs,proto3" json:"redeliver_delay_ms,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *AckEventRequest) Reset() {
+	*x = AckEventRequest{}
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AckEventRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AckEventRequest) ProtoMessage() {}
+
+func (x *AckEventRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AckEventRequest.ProtoReflect.Descriptor instead.
+func (*AckEventRequest) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *AckEventRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *AckEventRequest) GetGroupName() string {
+	if x != nil {
+		return x.GroupName
+	}
+	return ""
+}
+
+func (x *AckEventRequest) GetConsumerId() string {
+	if x != nil {
+		return x.ConsumerId
+	}
+	return ""
+}
+
+func (x *AckEventRequest) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *AckEventRequest) GetAckType() AckType {
+	if x != nil {
+		return x.AckType
+	}
+	return AckType_ACK_TYPE_UNSPECIFIED
+}
+
+func (x *AckEventRequest) GetRedeliverDelayMs() int32 {
+	if x != nil {
+		return x.RedeliverDelayMs
+	}
+	return 0
+}
+
+type AckEventResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AckEventResponse) Reset() {
+	*x = AckEventResponse{}
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AckEventResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AckEventResponse) ProtoMessage() {}
+
+func (x *AckEventResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AckEventResponse.ProtoReflect.Descriptor instead.
+func (*AckEventResponse) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{8}
+}
+
 type ConsumerGroup struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Consumer group ID
@@ -851,7 +981,7 @@ type ConsumerGroup struct {
 
 func (x *ConsumerGroup) Reset() {
 	*x = ConsumerGroup{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[7]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -863,7 +993,7 @@ func (x *ConsumerGroup) String() string {
 func (*ConsumerGroup) ProtoMessage() {}
 
 func (x *ConsumerGroup) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[7]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -876,7 +1006,7 @@ func (x *ConsumerGroup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsumerGroup.ProtoReflect.Descriptor instead.
 func (*ConsumerGroup) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{7}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ConsumerGroup) GetId() string {
@@ -1012,7 +1142,7 @@ type CreateConsumerGroupRequest struct {
 
 func (x *CreateConsumerGroupRequest) Reset() {
 	*x = CreateConsumerGroupRequest{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[8]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1024,7 +1154,7 @@ func (x *CreateConsumerGroupRequest) String() string {
 func (*CreateConsumerGroupRequest) ProtoMessage() {}
 
 func (x *CreateConsumerGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[8]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1037,7 +1167,7 @@ func (x *CreateConsumerGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateConsumerGroupRequest.ProtoReflect.Descriptor instead.
 func (*CreateConsumerGroupRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{8}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CreateConsumerGroupRequest) GetNamespace() string {
@@ -1122,7 +1252,7 @@ type GetConsumerGroupRequest struct {
 
 func (x *GetConsumerGroupRequest) Reset() {
 	*x = GetConsumerGroupRequest{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[9]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1134,7 +1264,7 @@ func (x *GetConsumerGroupRequest) String() string {
 func (*GetConsumerGroupRequest) ProtoMessage() {}
 
 func (x *GetConsumerGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[9]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1147,7 +1277,7 @@ func (x *GetConsumerGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConsumerGroupRequest.ProtoReflect.Descriptor instead.
 func (*GetConsumerGroupRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{9}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetConsumerGroupRequest) GetNamespace() string {
@@ -1180,7 +1310,7 @@ type ListConsumerGroupsRequest struct {
 
 func (x *ListConsumerGroupsRequest) Reset() {
 	*x = ListConsumerGroupsRequest{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[10]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1192,7 +1322,7 @@ func (x *ListConsumerGroupsRequest) String() string {
 func (*ListConsumerGroupsRequest) ProtoMessage() {}
 
 func (x *ListConsumerGroupsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[10]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1205,7 +1335,7 @@ func (x *ListConsumerGroupsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConsumerGroupsRequest.ProtoReflect.Descriptor instead.
 func (*ListConsumerGroupsRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{10}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListConsumerGroupsRequest) GetNamespace() string {
@@ -1250,7 +1380,7 @@ type ListConsumerGroupsResponse struct {
 
 func (x *ListConsumerGroupsResponse) Reset() {
 	*x = ListConsumerGroupsResponse{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[11]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1262,7 +1392,7 @@ func (x *ListConsumerGroupsResponse) String() string {
 func (*ListConsumerGroupsResponse) ProtoMessage() {}
 
 func (x *ListConsumerGroupsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[11]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1275,7 +1405,7 @@ func (x *ListConsumerGroupsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConsumerGroupsResponse.ProtoReflect.Descriptor instead.
 func (*ListConsumerGroupsResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{11}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListConsumerGroupsResponse) GetGroups() []*ConsumerGroup {
@@ -1314,7 +1444,7 @@ type UpdateConsumerGroupRequest struct {
 
 func (x *UpdateConsumerGroupRequest) Reset() {
 	*x = UpdateConsumerGroupRequest{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[12]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1326,7 +1456,7 @@ func (x *UpdateConsumerGroupRequest) String() string {
 func (*UpdateConsumerGroupRequest) ProtoMessage() {}
 
 func (x *UpdateConsumerGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[12]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1339,7 +1469,7 @@ func (x *UpdateConsumerGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateConsumerGroupRequest.ProtoReflect.Descriptor instead.
 func (*UpdateConsumerGroupRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{12}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UpdateConsumerGroupRequest) GetGroup() *ConsumerGroup {
@@ -1368,7 +1498,7 @@ type DeleteConsumerGroupRequest struct {
 
 func (x *DeleteConsumerGroupRequest) Reset() {
 	*x = DeleteConsumerGroupRequest{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[13]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1380,7 +1510,7 @@ func (x *DeleteConsumerGroupRequest) String() string {
 func (*DeleteConsumerGroupRequest) ProtoMessage() {}
 
 func (x *DeleteConsumerGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[13]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1393,7 +1523,7 @@ func (x *DeleteConsumerGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteConsumerGroupRequest.ProtoReflect.Descriptor instead.
 func (*DeleteConsumerGroupRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{13}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DeleteConsumerGroupRequest) GetNamespace() string {
@@ -1416,7 +1546,9 @@ type JoinConsumerGroupRequest struct {
 	Namespace string `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	// Consumer group name
 	GroupName string `protobuf:"bytes,2,opt,name=group_name,json=groupName,proto3" json:"group_name,omitempty"`
-	// Optional consumer ID (auto-generated if empty)
+	// Optional label for the member, recorded as its client ID when client_id
+	// is empty. It is not the ack identity: the server mints that and reports
+	// it as subscription_id on every event.
 	ConsumerId string `protobuf:"bytes,3,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
 	// Optional client ID for tracking
 	ClientId      string `protobuf:"bytes,4,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
@@ -1426,7 +1558,7 @@ type JoinConsumerGroupRequest struct {
 
 func (x *JoinConsumerGroupRequest) Reset() {
 	*x = JoinConsumerGroupRequest{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[14]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1438,7 +1570,7 @@ func (x *JoinConsumerGroupRequest) String() string {
 func (*JoinConsumerGroupRequest) ProtoMessage() {}
 
 func (x *JoinConsumerGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[14]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1451,7 +1583,7 @@ func (x *JoinConsumerGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinConsumerGroupRequest.ProtoReflect.Descriptor instead.
 func (*JoinConsumerGroupRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{14}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *JoinConsumerGroupRequest) GetNamespace() string {
@@ -1496,7 +1628,7 @@ type ServerCapabilities struct {
 
 func (x *ServerCapabilities) Reset() {
 	*x = ServerCapabilities{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[15]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1508,7 +1640,7 @@ func (x *ServerCapabilities) String() string {
 func (*ServerCapabilities) ProtoMessage() {}
 
 func (x *ServerCapabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[15]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1521,7 +1653,7 @@ func (x *ServerCapabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerCapabilities.ProtoReflect.Descriptor instead.
 func (*ServerCapabilities) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{15}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ServerCapabilities) GetTransports() []string {
@@ -1564,7 +1696,7 @@ type PublishRequest struct {
 
 func (x *PublishRequest) Reset() {
 	*x = PublishRequest{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[16]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1576,7 +1708,7 @@ func (x *PublishRequest) String() string {
 func (*PublishRequest) ProtoMessage() {}
 
 func (x *PublishRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[16]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1589,7 +1721,7 @@ func (x *PublishRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishRequest.ProtoReflect.Descriptor instead.
 func (*PublishRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{16}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *PublishRequest) GetTopic() string {
@@ -1632,7 +1764,7 @@ type PublishResponse struct {
 
 func (x *PublishResponse) Reset() {
 	*x = PublishResponse{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[17]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1644,7 +1776,7 @@ func (x *PublishResponse) String() string {
 func (*PublishResponse) ProtoMessage() {}
 
 func (x *PublishResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[17]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1657,7 +1789,7 @@ func (x *PublishResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublishResponse.ProtoReflect.Descriptor instead.
 func (*PublishResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{17}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PublishResponse) GetEventId() string {
@@ -1682,7 +1814,7 @@ type ListTopicsRequest struct {
 
 func (x *ListTopicsRequest) Reset() {
 	*x = ListTopicsRequest{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[18]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1694,7 +1826,7 @@ func (x *ListTopicsRequest) String() string {
 func (*ListTopicsRequest) ProtoMessage() {}
 
 func (x *ListTopicsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[18]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1707,7 +1839,7 @@ func (x *ListTopicsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTopicsRequest.ProtoReflect.Descriptor instead.
 func (*ListTopicsRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{18}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{20}
 }
 
 type ListTopicsResponse struct {
@@ -1719,7 +1851,7 @@ type ListTopicsResponse struct {
 
 func (x *ListTopicsResponse) Reset() {
 	*x = ListTopicsResponse{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[19]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1731,7 +1863,7 @@ func (x *ListTopicsResponse) String() string {
 func (*ListTopicsResponse) ProtoMessage() {}
 
 func (x *ListTopicsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[19]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1744,7 +1876,7 @@ func (x *ListTopicsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTopicsResponse.ProtoReflect.Descriptor instead.
 func (*ListTopicsResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{19}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListTopicsResponse) GetTopics() []*TopicInfo {
@@ -1772,7 +1904,7 @@ type TopicInfo struct {
 
 func (x *TopicInfo) Reset() {
 	*x = TopicInfo{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[20]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1784,7 +1916,7 @@ func (x *TopicInfo) String() string {
 func (*TopicInfo) ProtoMessage() {}
 
 func (x *TopicInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[20]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1797,7 +1929,7 @@ func (x *TopicInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TopicInfo.ProtoReflect.Descriptor instead.
 func (*TopicInfo) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{20}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *TopicInfo) GetName() string {
@@ -1845,7 +1977,7 @@ type GetTopicStatsRequest struct {
 
 func (x *GetTopicStatsRequest) Reset() {
 	*x = GetTopicStatsRequest{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[21]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1857,7 +1989,7 @@ func (x *GetTopicStatsRequest) String() string {
 func (*GetTopicStatsRequest) ProtoMessage() {}
 
 func (x *GetTopicStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[21]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1870,7 +2002,7 @@ func (x *GetTopicStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTopicStatsRequest.ProtoReflect.Descriptor instead.
 func (*GetTopicStatsRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{21}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *GetTopicStatsRequest) GetTopic() string {
@@ -1900,7 +2032,7 @@ type GetTopicStatsResponse struct {
 
 func (x *GetTopicStatsResponse) Reset() {
 	*x = GetTopicStatsResponse{}
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[22]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1912,7 +2044,7 @@ func (x *GetTopicStatsResponse) String() string {
 func (*GetTopicStatsResponse) ProtoMessage() {}
 
 func (x *GetTopicStatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_pubsub_proto_msgTypes[22]
+	mi := &file_ironflow_v1_pubsub_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1925,7 +2057,7 @@ func (x *GetTopicStatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTopicStatsResponse.ProtoReflect.Descriptor instead.
 func (*GetTopicStatsResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{22}
+	return file_ironflow_v1_pubsub_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetTopicStatsResponse) GetName() string {
@@ -2018,7 +2150,17 @@ const file_ironflow_v1_pubsub_proto_rawDesc = "" +
 	"\x0fSubscriptionAck\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12/\n" +
 	"\back_type\x18\x02 \x01(\x0e2\x14.ironflow.v1.AckTypeR\aackType\x12,\n" +
-	"\x12redeliver_delay_ms\x18\x03 \x01(\x05R\x10redeliverDelayMs\"\x84\x05\n" +
+	"\x12redeliver_delay_ms\x18\x03 \x01(\x05R\x10redeliverDelayMs\"\xe9\x01\n" +
+	"\x0fAckEventRequest\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x1d\n" +
+	"\n" +
+	"group_name\x18\x02 \x01(\tR\tgroupName\x12\x1f\n" +
+	"\vconsumer_id\x18\x03 \x01(\tR\n" +
+	"consumerId\x12\x19\n" +
+	"\bevent_id\x18\x04 \x01(\tR\aeventId\x12/\n" +
+	"\back_type\x18\x05 \x01(\x0e2\x14.ironflow.v1.AckTypeR\aackType\x12,\n" +
+	"\x12redeliver_delay_ms\x18\x06 \x01(\x05R\x10redeliverDelayMs\"\x12\n" +
+	"\x10AckEventResponse\"\x84\x05\n" +
 	"\rConsumerGroup\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x12\n" +
@@ -2131,11 +2273,12 @@ const file_ironflow_v1_pubsub_proto_rawDesc = "" +
 	"\x14ACK_TYPE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fACK_TYPE_ACK\x10\x01\x12\x10\n" +
 	"\fACK_TYPE_NAK\x10\x02\x12\x11\n" +
-	"\rACK_TYPE_TERM\x10\x032\xa2\b\n" +
+	"\rACK_TYPE_TERM\x10\x032\xeb\b\n" +
 	"\rPubSubService\x12;\n" +
 	"\x04Emit\x12\x18.ironflow.v1.EmitRequest\x1a\x19.ironflow.v1.EmitResponse\x12L\n" +
 	"\tSubscribe\x12\x1d.ironflow.v1.SubscribeRequest\x1a\x1e.ironflow.v1.SubscriptionEvent0\x01\x12Z\n" +
-	"\x16SubscribeBidirectional\x12\x1c.ironflow.v1.SubscriptionAck\x1a\x1e.ironflow.v1.SubscriptionEvent(\x010\x01\x12Z\n" +
+	"\x16SubscribeBidirectional\x12\x1c.ironflow.v1.SubscriptionAck\x1a\x1e.ironflow.v1.SubscriptionEvent(\x010\x01\x12G\n" +
+	"\bAckEvent\x12\x1c.ironflow.v1.AckEventRequest\x1a\x1d.ironflow.v1.AckEventResponse\x12Z\n" +
 	"\x13CreateConsumerGroup\x12'.ironflow.v1.CreateConsumerGroupRequest\x1a\x1a.ironflow.v1.ConsumerGroup\x12Y\n" +
 	"\x10GetConsumerGroup\x12$.ironflow.v1.GetConsumerGroupRequest\x1a\x1a.ironflow.v1.ConsumerGroup\"\x03\x90\x02\x01\x12j\n" +
 	"\x12ListConsumerGroups\x12&.ironflow.v1.ListConsumerGroupsRequest\x1a'.ironflow.v1.ListConsumerGroupsResponse\"\x03\x90\x02\x01\x12Z\n" +
@@ -2160,7 +2303,7 @@ func file_ironflow_v1_pubsub_proto_rawDescGZIP() []byte {
 }
 
 var file_ironflow_v1_pubsub_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_ironflow_v1_pubsub_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_ironflow_v1_pubsub_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_ironflow_v1_pubsub_proto_goTypes = []any{
 	(AckMode)(0),                       // 0: ironflow.v1.AckMode
 	(BackpressureMode)(0),              // 1: ironflow.v1.BackpressureMode
@@ -2173,88 +2316,93 @@ var file_ironflow_v1_pubsub_proto_goTypes = []any{
 	(*SubscriptionEvent)(nil),          // 8: ironflow.v1.SubscriptionEvent
 	(*EventMetadata)(nil),              // 9: ironflow.v1.EventMetadata
 	(*SubscriptionAck)(nil),            // 10: ironflow.v1.SubscriptionAck
-	(*ConsumerGroup)(nil),              // 11: ironflow.v1.ConsumerGroup
-	(*CreateConsumerGroupRequest)(nil), // 12: ironflow.v1.CreateConsumerGroupRequest
-	(*GetConsumerGroupRequest)(nil),    // 13: ironflow.v1.GetConsumerGroupRequest
-	(*ListConsumerGroupsRequest)(nil),  // 14: ironflow.v1.ListConsumerGroupsRequest
-	(*ListConsumerGroupsResponse)(nil), // 15: ironflow.v1.ListConsumerGroupsResponse
-	(*UpdateConsumerGroupRequest)(nil), // 16: ironflow.v1.UpdateConsumerGroupRequest
-	(*DeleteConsumerGroupRequest)(nil), // 17: ironflow.v1.DeleteConsumerGroupRequest
-	(*JoinConsumerGroupRequest)(nil),   // 18: ironflow.v1.JoinConsumerGroupRequest
-	(*ServerCapabilities)(nil),         // 19: ironflow.v1.ServerCapabilities
-	(*PublishRequest)(nil),             // 20: ironflow.v1.PublishRequest
-	(*PublishResponse)(nil),            // 21: ironflow.v1.PublishResponse
-	(*ListTopicsRequest)(nil),          // 22: ironflow.v1.ListTopicsRequest
-	(*ListTopicsResponse)(nil),         // 23: ironflow.v1.ListTopicsResponse
-	(*TopicInfo)(nil),                  // 24: ironflow.v1.TopicInfo
-	(*GetTopicStatsRequest)(nil),       // 25: ironflow.v1.GetTopicStatsRequest
-	(*GetTopicStatsResponse)(nil),      // 26: ironflow.v1.GetTopicStatsResponse
-	(*structpb.Struct)(nil),            // 27: google.protobuf.Struct
-	(*structpb.Value)(nil),             // 28: google.protobuf.Value
-	(*timestamppb.Timestamp)(nil),      // 29: google.protobuf.Timestamp
-	(*fieldmaskpb.FieldMask)(nil),      // 30: google.protobuf.FieldMask
-	(*emptypb.Empty)(nil),              // 31: google.protobuf.Empty
+	(*AckEventRequest)(nil),            // 11: ironflow.v1.AckEventRequest
+	(*AckEventResponse)(nil),           // 12: ironflow.v1.AckEventResponse
+	(*ConsumerGroup)(nil),              // 13: ironflow.v1.ConsumerGroup
+	(*CreateConsumerGroupRequest)(nil), // 14: ironflow.v1.CreateConsumerGroupRequest
+	(*GetConsumerGroupRequest)(nil),    // 15: ironflow.v1.GetConsumerGroupRequest
+	(*ListConsumerGroupsRequest)(nil),  // 16: ironflow.v1.ListConsumerGroupsRequest
+	(*ListConsumerGroupsResponse)(nil), // 17: ironflow.v1.ListConsumerGroupsResponse
+	(*UpdateConsumerGroupRequest)(nil), // 18: ironflow.v1.UpdateConsumerGroupRequest
+	(*DeleteConsumerGroupRequest)(nil), // 19: ironflow.v1.DeleteConsumerGroupRequest
+	(*JoinConsumerGroupRequest)(nil),   // 20: ironflow.v1.JoinConsumerGroupRequest
+	(*ServerCapabilities)(nil),         // 21: ironflow.v1.ServerCapabilities
+	(*PublishRequest)(nil),             // 22: ironflow.v1.PublishRequest
+	(*PublishResponse)(nil),            // 23: ironflow.v1.PublishResponse
+	(*ListTopicsRequest)(nil),          // 24: ironflow.v1.ListTopicsRequest
+	(*ListTopicsResponse)(nil),         // 25: ironflow.v1.ListTopicsResponse
+	(*TopicInfo)(nil),                  // 26: ironflow.v1.TopicInfo
+	(*GetTopicStatsRequest)(nil),       // 27: ironflow.v1.GetTopicStatsRequest
+	(*GetTopicStatsResponse)(nil),      // 28: ironflow.v1.GetTopicStatsResponse
+	(*structpb.Struct)(nil),            // 29: google.protobuf.Struct
+	(*structpb.Value)(nil),             // 30: google.protobuf.Value
+	(*timestamppb.Timestamp)(nil),      // 31: google.protobuf.Timestamp
+	(*fieldmaskpb.FieldMask)(nil),      // 32: google.protobuf.FieldMask
+	(*emptypb.Empty)(nil),              // 33: google.protobuf.Empty
 }
 var file_ironflow_v1_pubsub_proto_depIdxs = []int32{
-	27, // 0: ironflow.v1.EmitRequest.data:type_name -> google.protobuf.Struct
-	28, // 1: ironflow.v1.EmitRequest.data_value:type_name -> google.protobuf.Value
-	27, // 2: ironflow.v1.EmitRequest.metadata:type_name -> google.protobuf.Struct
+	29, // 0: ironflow.v1.EmitRequest.data:type_name -> google.protobuf.Struct
+	30, // 1: ironflow.v1.EmitRequest.data_value:type_name -> google.protobuf.Value
+	29, // 2: ironflow.v1.EmitRequest.metadata:type_name -> google.protobuf.Struct
 	7,  // 3: ironflow.v1.SubscribeRequest.options:type_name -> ironflow.v1.SubscribeOptions
 	0,  // 4: ironflow.v1.SubscribeOptions.ack_mode:type_name -> ironflow.v1.AckMode
 	1,  // 5: ironflow.v1.SubscribeOptions.backpressure:type_name -> ironflow.v1.BackpressureMode
-	27, // 6: ironflow.v1.SubscriptionEvent.data:type_name -> google.protobuf.Struct
-	28, // 7: ironflow.v1.SubscriptionEvent.data_value:type_name -> google.protobuf.Value
+	29, // 6: ironflow.v1.SubscriptionEvent.data:type_name -> google.protobuf.Struct
+	30, // 7: ironflow.v1.SubscriptionEvent.data_value:type_name -> google.protobuf.Value
 	9,  // 8: ironflow.v1.SubscriptionEvent.metadata:type_name -> ironflow.v1.EventMetadata
-	29, // 9: ironflow.v1.EventMetadata.timestamp:type_name -> google.protobuf.Timestamp
-	27, // 10: ironflow.v1.EventMetadata.custom:type_name -> google.protobuf.Struct
+	31, // 9: ironflow.v1.EventMetadata.timestamp:type_name -> google.protobuf.Timestamp
+	29, // 10: ironflow.v1.EventMetadata.custom:type_name -> google.protobuf.Struct
 	3,  // 11: ironflow.v1.SubscriptionAck.ack_type:type_name -> ironflow.v1.AckType
-	0,  // 12: ironflow.v1.ConsumerGroup.ack_mode:type_name -> ironflow.v1.AckMode
-	1,  // 13: ironflow.v1.ConsumerGroup.backpressure:type_name -> ironflow.v1.BackpressureMode
-	27, // 14: ironflow.v1.ConsumerGroup.metadata:type_name -> google.protobuf.Struct
-	2,  // 15: ironflow.v1.ConsumerGroup.status:type_name -> ironflow.v1.ConsumerGroupStatus
-	29, // 16: ironflow.v1.ConsumerGroup.created_at:type_name -> google.protobuf.Timestamp
-	29, // 17: ironflow.v1.ConsumerGroup.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 18: ironflow.v1.CreateConsumerGroupRequest.ack_mode:type_name -> ironflow.v1.AckMode
-	1,  // 19: ironflow.v1.CreateConsumerGroupRequest.backpressure:type_name -> ironflow.v1.BackpressureMode
-	27, // 20: ironflow.v1.CreateConsumerGroupRequest.metadata:type_name -> google.protobuf.Struct
-	2,  // 21: ironflow.v1.ListConsumerGroupsRequest.status:type_name -> ironflow.v1.ConsumerGroupStatus
-	11, // 22: ironflow.v1.ListConsumerGroupsResponse.groups:type_name -> ironflow.v1.ConsumerGroup
-	11, // 23: ironflow.v1.UpdateConsumerGroupRequest.group:type_name -> ironflow.v1.ConsumerGroup
-	30, // 24: ironflow.v1.UpdateConsumerGroupRequest.update_mask:type_name -> google.protobuf.FieldMask
-	27, // 25: ironflow.v1.PublishRequest.data:type_name -> google.protobuf.Struct
-	28, // 26: ironflow.v1.PublishRequest.data_value:type_name -> google.protobuf.Value
-	24, // 27: ironflow.v1.ListTopicsResponse.topics:type_name -> ironflow.v1.TopicInfo
-	29, // 28: ironflow.v1.TopicInfo.first_message_at:type_name -> google.protobuf.Timestamp
-	29, // 29: ironflow.v1.TopicInfo.last_message_at:type_name -> google.protobuf.Timestamp
-	4,  // 30: ironflow.v1.PubSubService.Emit:input_type -> ironflow.v1.EmitRequest
-	6,  // 31: ironflow.v1.PubSubService.Subscribe:input_type -> ironflow.v1.SubscribeRequest
-	10, // 32: ironflow.v1.PubSubService.SubscribeBidirectional:input_type -> ironflow.v1.SubscriptionAck
-	12, // 33: ironflow.v1.PubSubService.CreateConsumerGroup:input_type -> ironflow.v1.CreateConsumerGroupRequest
-	13, // 34: ironflow.v1.PubSubService.GetConsumerGroup:input_type -> ironflow.v1.GetConsumerGroupRequest
-	14, // 35: ironflow.v1.PubSubService.ListConsumerGroups:input_type -> ironflow.v1.ListConsumerGroupsRequest
-	16, // 36: ironflow.v1.PubSubService.UpdateConsumerGroup:input_type -> ironflow.v1.UpdateConsumerGroupRequest
-	17, // 37: ironflow.v1.PubSubService.DeleteConsumerGroup:input_type -> ironflow.v1.DeleteConsumerGroupRequest
-	18, // 38: ironflow.v1.PubSubService.JoinConsumerGroup:input_type -> ironflow.v1.JoinConsumerGroupRequest
-	20, // 39: ironflow.v1.PubSubService.Publish:input_type -> ironflow.v1.PublishRequest
-	22, // 40: ironflow.v1.PubSubService.ListTopics:input_type -> ironflow.v1.ListTopicsRequest
-	25, // 41: ironflow.v1.PubSubService.GetTopicStats:input_type -> ironflow.v1.GetTopicStatsRequest
-	5,  // 42: ironflow.v1.PubSubService.Emit:output_type -> ironflow.v1.EmitResponse
-	8,  // 43: ironflow.v1.PubSubService.Subscribe:output_type -> ironflow.v1.SubscriptionEvent
-	8,  // 44: ironflow.v1.PubSubService.SubscribeBidirectional:output_type -> ironflow.v1.SubscriptionEvent
-	11, // 45: ironflow.v1.PubSubService.CreateConsumerGroup:output_type -> ironflow.v1.ConsumerGroup
-	11, // 46: ironflow.v1.PubSubService.GetConsumerGroup:output_type -> ironflow.v1.ConsumerGroup
-	15, // 47: ironflow.v1.PubSubService.ListConsumerGroups:output_type -> ironflow.v1.ListConsumerGroupsResponse
-	11, // 48: ironflow.v1.PubSubService.UpdateConsumerGroup:output_type -> ironflow.v1.ConsumerGroup
-	31, // 49: ironflow.v1.PubSubService.DeleteConsumerGroup:output_type -> google.protobuf.Empty
-	8,  // 50: ironflow.v1.PubSubService.JoinConsumerGroup:output_type -> ironflow.v1.SubscriptionEvent
-	21, // 51: ironflow.v1.PubSubService.Publish:output_type -> ironflow.v1.PublishResponse
-	23, // 52: ironflow.v1.PubSubService.ListTopics:output_type -> ironflow.v1.ListTopicsResponse
-	26, // 53: ironflow.v1.PubSubService.GetTopicStats:output_type -> ironflow.v1.GetTopicStatsResponse
-	42, // [42:54] is the sub-list for method output_type
-	30, // [30:42] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	3,  // 12: ironflow.v1.AckEventRequest.ack_type:type_name -> ironflow.v1.AckType
+	0,  // 13: ironflow.v1.ConsumerGroup.ack_mode:type_name -> ironflow.v1.AckMode
+	1,  // 14: ironflow.v1.ConsumerGroup.backpressure:type_name -> ironflow.v1.BackpressureMode
+	29, // 15: ironflow.v1.ConsumerGroup.metadata:type_name -> google.protobuf.Struct
+	2,  // 16: ironflow.v1.ConsumerGroup.status:type_name -> ironflow.v1.ConsumerGroupStatus
+	31, // 17: ironflow.v1.ConsumerGroup.created_at:type_name -> google.protobuf.Timestamp
+	31, // 18: ironflow.v1.ConsumerGroup.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 19: ironflow.v1.CreateConsumerGroupRequest.ack_mode:type_name -> ironflow.v1.AckMode
+	1,  // 20: ironflow.v1.CreateConsumerGroupRequest.backpressure:type_name -> ironflow.v1.BackpressureMode
+	29, // 21: ironflow.v1.CreateConsumerGroupRequest.metadata:type_name -> google.protobuf.Struct
+	2,  // 22: ironflow.v1.ListConsumerGroupsRequest.status:type_name -> ironflow.v1.ConsumerGroupStatus
+	13, // 23: ironflow.v1.ListConsumerGroupsResponse.groups:type_name -> ironflow.v1.ConsumerGroup
+	13, // 24: ironflow.v1.UpdateConsumerGroupRequest.group:type_name -> ironflow.v1.ConsumerGroup
+	32, // 25: ironflow.v1.UpdateConsumerGroupRequest.update_mask:type_name -> google.protobuf.FieldMask
+	29, // 26: ironflow.v1.PublishRequest.data:type_name -> google.protobuf.Struct
+	30, // 27: ironflow.v1.PublishRequest.data_value:type_name -> google.protobuf.Value
+	26, // 28: ironflow.v1.ListTopicsResponse.topics:type_name -> ironflow.v1.TopicInfo
+	31, // 29: ironflow.v1.TopicInfo.first_message_at:type_name -> google.protobuf.Timestamp
+	31, // 30: ironflow.v1.TopicInfo.last_message_at:type_name -> google.protobuf.Timestamp
+	4,  // 31: ironflow.v1.PubSubService.Emit:input_type -> ironflow.v1.EmitRequest
+	6,  // 32: ironflow.v1.PubSubService.Subscribe:input_type -> ironflow.v1.SubscribeRequest
+	10, // 33: ironflow.v1.PubSubService.SubscribeBidirectional:input_type -> ironflow.v1.SubscriptionAck
+	11, // 34: ironflow.v1.PubSubService.AckEvent:input_type -> ironflow.v1.AckEventRequest
+	14, // 35: ironflow.v1.PubSubService.CreateConsumerGroup:input_type -> ironflow.v1.CreateConsumerGroupRequest
+	15, // 36: ironflow.v1.PubSubService.GetConsumerGroup:input_type -> ironflow.v1.GetConsumerGroupRequest
+	16, // 37: ironflow.v1.PubSubService.ListConsumerGroups:input_type -> ironflow.v1.ListConsumerGroupsRequest
+	18, // 38: ironflow.v1.PubSubService.UpdateConsumerGroup:input_type -> ironflow.v1.UpdateConsumerGroupRequest
+	19, // 39: ironflow.v1.PubSubService.DeleteConsumerGroup:input_type -> ironflow.v1.DeleteConsumerGroupRequest
+	20, // 40: ironflow.v1.PubSubService.JoinConsumerGroup:input_type -> ironflow.v1.JoinConsumerGroupRequest
+	22, // 41: ironflow.v1.PubSubService.Publish:input_type -> ironflow.v1.PublishRequest
+	24, // 42: ironflow.v1.PubSubService.ListTopics:input_type -> ironflow.v1.ListTopicsRequest
+	27, // 43: ironflow.v1.PubSubService.GetTopicStats:input_type -> ironflow.v1.GetTopicStatsRequest
+	5,  // 44: ironflow.v1.PubSubService.Emit:output_type -> ironflow.v1.EmitResponse
+	8,  // 45: ironflow.v1.PubSubService.Subscribe:output_type -> ironflow.v1.SubscriptionEvent
+	8,  // 46: ironflow.v1.PubSubService.SubscribeBidirectional:output_type -> ironflow.v1.SubscriptionEvent
+	12, // 47: ironflow.v1.PubSubService.AckEvent:output_type -> ironflow.v1.AckEventResponse
+	13, // 48: ironflow.v1.PubSubService.CreateConsumerGroup:output_type -> ironflow.v1.ConsumerGroup
+	13, // 49: ironflow.v1.PubSubService.GetConsumerGroup:output_type -> ironflow.v1.ConsumerGroup
+	17, // 50: ironflow.v1.PubSubService.ListConsumerGroups:output_type -> ironflow.v1.ListConsumerGroupsResponse
+	13, // 51: ironflow.v1.PubSubService.UpdateConsumerGroup:output_type -> ironflow.v1.ConsumerGroup
+	33, // 52: ironflow.v1.PubSubService.DeleteConsumerGroup:output_type -> google.protobuf.Empty
+	8,  // 53: ironflow.v1.PubSubService.JoinConsumerGroup:output_type -> ironflow.v1.SubscriptionEvent
+	23, // 54: ironflow.v1.PubSubService.Publish:output_type -> ironflow.v1.PublishResponse
+	25, // 55: ironflow.v1.PubSubService.ListTopics:output_type -> ironflow.v1.ListTopicsResponse
+	28, // 56: ironflow.v1.PubSubService.GetTopicStats:output_type -> ironflow.v1.GetTopicStatsResponse
+	44, // [44:57] is the sub-list for method output_type
+	31, // [31:44] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_pubsub_proto_init() }
@@ -2269,7 +2417,7 @@ func file_ironflow_v1_pubsub_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ironflow_v1_pubsub_proto_rawDesc), len(file_ironflow_v1_pubsub_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   23,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

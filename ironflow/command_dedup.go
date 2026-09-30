@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -19,6 +20,23 @@ type CommandDedupOptions struct {
 	// This matches the Node SDK convention where ttlSeconds=0 means no expiry.
 	TTL time.Duration
 }
+
+// TryClaimOptions tunes a single TryClaim call.
+type TryClaimOptions[T any] struct {
+	// IsOwner reports whether prior is this caller's own orphaned claim: a claim whose
+	// write committed but whose reply was lost. When it returns true, TryClaim returns
+	// (nil, nil) and the caller proceeds as the winner.
+	//
+	// Put a token that stays the same across retries in the claim and compare it here.
+	// IsOwner must return false for a finalized result (keep the token out of the result,
+	// or check a status field), or a finished command replays. Run one retry lineage at a
+	// time: two concurrent callers sharing a token both win.
+	IsOwner func(prior T) bool
+}
+
+// claimAttempts bounds create-write / read-back rounds when the winner keeps releasing
+// between them.
+const claimAttempts = 3
 
 // CommandDedup provides atomic command-level idempotency backed by NATS KV.
 //
@@ -99,9 +117,17 @@ func (d *CommandDedup[T]) ensureBucket(ctx context.Context) error {
 // entry if another caller already claimed this commandId (dedup hit — return the
 // prior result to your caller without re-running the handler).
 //
+// If the winner releases between the create and the read-back (404), the claim is
+// tried again, up to 3 times. After 3 lost rounds TryClaim returns an *IronflowError
+// with Code "COMMAND_DEDUP_RACE".
+//
+// If a create returns an error other than 412, the claim state is unknown: the write
+// may have committed. TryClaim does not retry it. Pass TryClaimOptions.IsOwner so a
+// later retry can recognize its own orphaned claim.
+//
 // The returned *T may be the initial claim if the winner has not yet called
 // Finalize. Design T with optional fields for data only available after Finalize.
-func (d *CommandDedup[T]) TryClaim(ctx context.Context, commandId string, claim T) (*T, error) {
+func (d *CommandDedup[T]) TryClaim(ctx context.Context, commandId string, claim T, opts ...TryClaimOptions[T]) (*T, error) {
 	if err := d.ensureBucket(ctx); err != nil {
 		return nil, err
 	}
@@ -109,27 +135,38 @@ func (d *CommandDedup[T]) TryClaim(ctx context.Context, commandId string, claim 
 	if err != nil {
 		return nil, err
 	}
-	// The KV layer (kv.go) URL-encodes keys internally — pass commandId verbatim.
-	_, err = d.kv.Bucket(d.bucketName).Create(ctx, commandId, b)
-	if err == nil {
-		return nil, nil // winner — proceed
+	var isOwner func(T) bool
+	if len(opts) > 0 {
+		isOwner = opts[0].IsOwner
 	}
-	if !isHTTPCode(err, "HTTP_412") {
-		return nil, err
-	}
-	// loser — read winner's entry
-	entry, err := d.kv.Bucket(d.bucketName).Get(ctx, commandId)
-	if err != nil {
-		if isHTTPCode(err, "HTTP_404") {
-			return nil, nil // concurrent delete race — treat as winner
+	for range claimAttempts {
+		// The KV layer (kv.go) URL-encodes keys internally — pass commandId verbatim.
+		_, err = d.kv.Bucket(d.bucketName).Create(ctx, commandId, b)
+		if err == nil {
+			return nil, nil // winner — proceed
 		}
-		return nil, err
+		if !isHTTPCode(err, "HTTP_412") {
+			return nil, err
+		}
+		entry, err := d.kv.Bucket(d.bucketName).Get(ctx, commandId)
+		if err != nil {
+			if isHTTPCode(err, "HTTP_404") {
+				continue // the winner released between our write and read: claim again
+			}
+			return nil, err
+		}
+		var prior T
+		if jsonErr := json.Unmarshal(entry.Value, &prior); jsonErr != nil {
+			return nil, jsonErr // corrupt entry — propagate so the operator can investigate
+		}
+		if isOwner != nil && isOwner(prior) {
+			return nil, nil
+		}
+		return &prior, nil
 	}
-	var prior T
-	if jsonErr := json.Unmarshal(entry.Value, &prior); jsonErr != nil {
-		return nil, jsonErr // corrupt entry — propagate so the operator can investigate
-	}
-	return &prior, nil
+	return nil, NewError(
+		fmt.Sprintf("command dedup: claim for %q lost the race %d times", commandId, claimAttempts),
+		"COMMAND_DEDUP_RACE", false)
 }
 
 // Finalize updates the dedup entry with the handler's final result. Subsequent
