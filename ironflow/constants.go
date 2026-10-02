@@ -48,7 +48,13 @@ const (
 
 	// EnvLogLevel is the environment variable for log level (debug, info, warn, error, silent).
 	EnvLogLevel = "IRONFLOW_LOG_LEVEL"
+
+	// EnvEnvironment is the environment variable for the target environment of a worker.
+	EnvEnvironment = "IRONFLOW_ENV"
 )
+
+// HeaderEnvironment scopes a request to an environment.
+const HeaderEnvironment = "X-Ironflow-Environment"
 
 // Default timeout values
 const (

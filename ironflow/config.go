@@ -157,6 +157,9 @@ func (cc *ConfigClient) Watch(ctx context.Context, name string, callbacks Config
 	if cc.client.apiKey != "" {
 		header.Set("Authorization", "Bearer "+cc.client.apiKey)
 	}
+	if cc.client.environment != "" {
+		header.Set(HeaderEnvironment, cc.client.environment)
+	}
 
 	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, wsURL+path, header)
 	if resp != nil && resp.Body != nil {

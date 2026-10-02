@@ -155,6 +155,21 @@ func (s *StepClient) Map(name string, items []any, fn func(item any, bc *BranchC
 	return Map(s.ctx, name, items, fn)
 }
 
+// Invoke calls another function and waits for its result.
+func (s *StepClient) Invoke(functionID string, input any, opts ...InvokeOptions) (any, error) {
+	return Invoke[any](s.ctx, functionID, input, opts...)
+}
+
+// InvokeAsync starts another function without waiting for its result.
+func (s *StepClient) InvokeAsync(functionID string, input any) (InvokeAsyncResult, error) {
+	return InvokeAsync(s.ctx, functionID, input)
+}
+
+// Publish sends a message to a developer pub/sub topic as a durable step.
+func (s *StepClient) Publish(topic string, data any, opts ...PublishOption) error {
+	return Publish(s.ctx, topic, data, opts...)
+}
+
 // CreateHandler creates an event handler with a type-safe, simplified API.
 //
 // This is the recommended way to create handlers. It provides:

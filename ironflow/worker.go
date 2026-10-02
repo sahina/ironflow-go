@@ -47,6 +47,25 @@ type WorkerConfig struct {
 	// APIKey is the API key for authentication. If empty, falls back to IRONFLOW_API_KEY env var.
 	APIKey string
 
+	// Environment is the target environment, by name or ID. If empty, falls
+	// back to the IRONFLOW_ENV env var. If both are empty, no environment
+	// header is sent and the server uses the API key's environment or the default.
+	//
+	// A value that does not match the environment of a scoped API key gets a
+	// 403 on every request. It scopes worker requests, projections and durable
+	// Publish steps; agent memory and a Client built in a handler are not scoped.
+	Environment string
+
+	// CheckpointInterval is the debounce window for reporting completed steps
+	// while a job still runs (default: 1s). Polling worker only: the streaming
+	// worker reports each step over its stream.
+	CheckpointInterval time.Duration
+
+	// DrainTimeout is how long Drain waits for active jobs before it cancels
+	// them (default: 30s). On an engine Shutdown, the streaming worker uses the
+	// drain timeout in the message instead, when the message has one.
+	DrainTimeout time.Duration
+
 	// OnError is called when a job fails during async execution.
 	// It is called after compensations run but before reporting the failure to the server.
 	// It does not affect retry behavior. The callback should not block —
@@ -176,12 +195,14 @@ func NewWorker(config WorkerConfig) *Worker {
 		httpClient: &http.Client{Timeout: DefaultClientTimeout},
 		logger:     logger,
 		executor: &jobExecutor{
-			functions: functions,
-			upcasters: config.Upcasters,
-			serverURL: config.ServerURL,
-			apiKey:    config.APIKey,
-			logger:    logger,
-			onError:   config.OnError,
+			functions:          functions,
+			upcasters:          config.Upcasters,
+			serverURL:          config.ServerURL,
+			apiKey:             config.APIKey,
+			environment:        config.Environment,
+			logger:             logger,
+			onError:            config.OnError,
+			checkpointInterval: config.CheckpointInterval,
 		},
 		stopCh: make(chan struct{}),
 	}
@@ -203,7 +224,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		cancelRun()
 	}()
 
-	w.logger.Info("Starting worker", "workerId", w.workerID, "functions", len(w.functions))
+	w.logger.Info("Starting worker", "workerId", w.workerID, "functions", len(w.functions), "environment", resolveEnvironment(w.config.Environment))
 
 	// Connect loop with auto-reconnect
 	for {
@@ -269,8 +290,18 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 }
 
-// Drain stops polling, waits up to 30 seconds for active jobs, then cancels
-// remaining jobs so their leases can expire and be reclaimed by the server.
+// drainTimeout returns d, or the default drain deadline when d is zero or
+// negative.
+func drainTimeout(d time.Duration) time.Duration {
+	if d > 0 {
+		return d
+	}
+	return workerDrainTimeout
+}
+
+// Drain stops polling, waits up to DrainTimeout (default 30 seconds) for active
+// jobs, then cancels remaining jobs so their leases can expire and be reclaimed
+// by the server.
 func (w *Worker) Drain() {
 	w.jobsMu.Lock()
 	if w.state.Load() == int32(stateStopped) {
@@ -283,7 +314,7 @@ func (w *Worker) Drain() {
 	w.jobsMu.Unlock()
 	w.cancelRunContext()
 
-	deadline := time.NewTimer(workerDrainTimeout)
+	deadline := time.NewTimer(drainTimeout(w.config.DrainTimeout))
 	defer deadline.Stop()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -397,9 +428,9 @@ func (w *Worker) stopProjectionRunners() {
 	}
 }
 
-// getHeaders returns the headers for HTTP requests (e.g., API key).
+// getHeaders returns the headers for HTTP requests (API key, environment).
 func (w *Worker) getHeaders() map[string]string {
-	return buildAuthHeaders(w.config.APIKey)
+	return buildWorkerHeaders(w.config.APIKey, w.config.Environment)
 }
 
 // registerWorker registers the worker with the server.
@@ -585,7 +616,7 @@ func (w *Worker) requestJobs(ctx context.Context, available int) ([]*jobAssignme
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		if authErr := authError(resp.StatusCode, "failed to get job"); authErr != nil {
+		if authErr := authError(resp, "failed to get job"); authErr != nil {
 			return nil, authErr
 		}
 		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
@@ -773,7 +804,7 @@ func (w *Worker) httpPut(ctx context.Context, path string, body any, result any)
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
-		if authErr := authError(resp.StatusCode, "request to "+path+" failed"); authErr != nil {
+		if authErr := authError(resp, "request to "+path+" failed"); authErr != nil {
 			return authErr
 		}
 		respBody, _ := io.ReadAll(resp.Body)

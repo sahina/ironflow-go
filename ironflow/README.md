@@ -427,7 +427,6 @@ handler := ironflow.Serve(ironflow.ServeConfig{
     SkipVerification: false,   // skip signature check (dev only)
     ServerURL:        "http://localhost:9123", // for webhook event emission
     Webhooks:         []ironflow.Webhook{stripeWebhook}, // webhook sources
-    Projections:      []ironflow.Projection{orderTotals}, // register projections
     Upcasters:        registry, // event schema upcasting
 })
 
@@ -474,21 +473,26 @@ if err := worker.Run(ctx); err != nil {
 }
 ```
 
-- `Run(ctx)` -- starts the pull worker, auto-reconnects, and drains for up to 30 seconds when `ctx` is cancelled.
-- `Drain()` -- stops polling, waits up to 30 seconds for active jobs, then cancels the remainder so the server can reclaim their leases.
+- `Run(ctx)` -- starts the pull worker, auto-reconnects, and drains for up to `DrainTimeout` (default 30 seconds) when `ctx` is cancelled.
+- `Drain()` -- stops polling, waits up to `DrainTimeout` (default 30 seconds) for active jobs, then cancels the remainder so the server can reclaim their leases.
 - `Stop()` -- immediately stops: cancels active jobs and projection runners.
 
 ### Streaming Worker
 
 `NewStreamingWorker` takes the same `WorkerConfig` and exposes `Run` / `Drain` /
 `Stop`, but receives jobs over a ConnectRPC bidirectional stream instead of HTTP
-polling. The 30-second drain deadline above applies to the polling worker.
+polling. `Drain()` has the same 30-second deadline, and `Stop()` closes the
+stream. A cancelled `Run` context starts a drain, as in the pull worker.
 
 ```go
 worker := ironflow.NewStreamingWorker(ironflow.WorkerConfig{
     Functions: []ironflow.Function{GenerateVideo},
 })
-if err := worker.Run(ctx); err != nil {
+
+ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+defer cancel()
+
+if err := worker.Run(ctx); err != nil && ctx.Err() == nil {
     log.Fatal(err)
 }
 ```

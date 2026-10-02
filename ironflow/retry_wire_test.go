@@ -212,3 +212,45 @@ func TestRegisterFunctions_AlwaysRegistersPull(t *testing.T) {
 		t.Fatalf("preferredMode = %v, want EXECUTION_MODE_PULL (#2426)", got["preferredMode"])
 	}
 }
+
+// registeredBody registers one function through registerFunctions and returns
+// the RegisterFunction body the server received.
+func registeredBody(t *testing.T, cfg FunctionConfig) map[string]any {
+	t.Helper()
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &got)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	fn := CreateFunction(cfg, func(ctx Context) (any, error) { return nil, nil })
+	if err := registerFunctions(context.Background(), srv.URL, nil,
+		map[string]Function{fn.Config.ID: fn}, srv.Client(), NewNoopLogger()); err != nil {
+		t.Fatalf("registerFunctions: %v", err)
+	}
+	return got
+}
+
+func TestRegisterFunctions_SendsDescription(t *testing.T) {
+	got := registeredBody(t, FunctionConfig{
+		ID:          "fn_desc",
+		Description: "Sends the welcome email",
+		Triggers:    []Trigger{{Event: "user.created"}},
+	})
+	if got["description"] != "Sends the welcome email" {
+		t.Fatalf("description = %v; body was %v", got["description"], got)
+	}
+}
+
+func TestRegisterFunctions_OmitsEmptyDescription(t *testing.T) {
+	got := registeredBody(t, FunctionConfig{
+		ID:       "fn_no_desc",
+		Triggers: []Trigger{{Event: "user.created"}},
+	})
+	if _, present := got["description"]; present {
+		t.Fatalf("description must be absent; body was %v", got)
+	}
+}

@@ -195,6 +195,9 @@ func (b *KVBucket) putWithHeaders(ctx context.Context, key string, value []byte,
 	if b.client.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+b.client.apiKey)
 	}
+	if b.client.environment != "" {
+		req.Header.Set(HeaderEnvironment, b.client.environment)
+	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -314,6 +317,9 @@ func (b *KVBucket) Watch(ctx context.Context, callbacks KVWatchCallbacks, opts .
 	header := http.Header{}
 	if b.client.apiKey != "" {
 		header.Set("Authorization", "Bearer "+b.client.apiKey)
+	}
+	if b.client.environment != "" {
+		header.Set(HeaderEnvironment, b.client.environment)
 	}
 
 	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, wsURL+path, header)
@@ -443,6 +449,9 @@ func (c *Client) restRequest(ctx context.Context, method, path string, body any,
 	req.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	if c.environment != "" {
+		req.Header.Set(HeaderEnvironment, c.environment)
 	}
 	if path == "/api/v1/secrets" || strings.HasPrefix(path, "/api/v1/secrets/") {
 		// Secret routes require an explicit environment header, while the

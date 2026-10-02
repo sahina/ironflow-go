@@ -1688,7 +1688,8 @@ type PublishRequest struct {
 	// data, so an object costs no extra bytes and old clients are
 	// unaffected.
 	DataValue *structpb.Value `protobuf:"bytes,4,opt,name=data_value,json=dataValue,proto3" json:"data_value,omitempty"`
-	// Optional idempotency key for deduplication
+	// Optional idempotency key for deduplication. At most 255 bytes, with no
+	// whitespace or control characters; anything else is InvalidArgument.
 	IdempotencyKey string `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1754,10 +1755,14 @@ func (x *PublishRequest) GetIdempotencyKey() string {
 
 type PublishResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Unique ID for this published message
+	// Unique ID for this published message. When duplicate is true this is the ID
+	// of the message stored by the first publish, not of the dropped retry.
 	EventId string `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	// JetStream sequence number
-	Sequence      uint64 `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	Sequence uint64 `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	// True when the idempotency key matched an earlier publish inside the
+	// stream's deduplication window and this publish stored nothing.
+	Duplicate     bool `protobuf:"varint,3,opt,name=duplicate,proto3" json:"duplicate,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1804,6 +1809,13 @@ func (x *PublishResponse) GetSequence() uint64 {
 		return x.Sequence
 	}
 	return 0
+}
+
+func (x *PublishResponse) GetDuplicate() bool {
+	if x != nil {
+		return x.Duplicate
+	}
+	return false
 }
 
 type ListTopicsRequest struct {
@@ -2233,10 +2245,11 @@ const file_ironflow_v1_pubsub_proto_rawDesc = "" +
 	"\x04data\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x04data\x125\n" +
 	"\n" +
 	"data_value\x18\x04 \x01(\v2\x16.google.protobuf.ValueR\tdataValue\x12'\n" +
-	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"H\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\"f\n" +
 	"\x0fPublishResponse\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1a\n" +
-	"\bsequence\x18\x02 \x01(\x04R\bsequence\"\x13\n" +
+	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12\x1c\n" +
+	"\tduplicate\x18\x03 \x01(\bR\tduplicate\"\x13\n" +
 	"\x11ListTopicsRequest\"D\n" +
 	"\x12ListTopicsResponse\x12.\n" +
 	"\x06topics\x18\x01 \x03(\v2\x16.ironflow.v1.TopicInfoR\x06topics\"\xf5\x01\n" +

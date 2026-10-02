@@ -60,6 +60,7 @@ type jobExecutor struct {
 	// so an explicit WorkerConfig.APIKey reaches durable step callbacks
 	// (step.Publish) the same way it reaches the polling transport.
 	apiKey             string
+	environment        string // the worker's configured environment; empty falls back to IRONFLOW_ENV
 	logger             Logger
 	onError            func(err error, ctx ErrorContext)
 	checkpointInterval time.Duration // zero uses checkpointInterval
@@ -113,6 +114,7 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 
 	exec.stepTimeout = fn.Config.StepTimeout
 	exec.serverURL = e.serverURL
+	exec.environment = resolveEnvironment(e.environment)
 	if apiKey := e.apiKey; apiKey != "" {
 		exec.apiKey = apiKey
 	} else if apiKey := GetAPIKey(); apiKey != "" {
@@ -146,12 +148,14 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 	// Build context
 	fnCtx := Context{
 		Event: Event{
-			ID:        job.Event.ID,
-			Name:      job.Event.Name,
-			Version:   job.Event.Version,
-			RawData:   eventData,
-			Timestamp: timestamp,
-			Metadata:  eventMetadata,
+			ID:             job.Event.ID,
+			Name:           job.Event.Name,
+			Version:        job.Event.Version,
+			RawData:        eventData,
+			Timestamp:      timestamp,
+			IdempotencyKey: job.Event.IdempotencyKey,
+			Source:         EventSourceType(job.Event.Source),
+			Metadata:       eventMetadata,
 		},
 		Run: RunInfo{
 			ID:          job.RunID,
@@ -159,6 +163,7 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 			Attempt:     job.Attempt,
 			MaxAttempts: job.MaxAttempts,
 			StartedAt:   time.Now(),
+			Environment: exec.environment,
 		},
 		Secrets: NewSecretsReader(jobSecrets(job)),
 		exec:    exec,
@@ -179,7 +184,9 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 			}
 		}()
 
-		result, execErr = fn.Handler(fnCtx)
+		if execErr = validateEventInput(fn, fnCtx.Event); execErr == nil {
+			result, execErr = fn.Handler(fnCtx)
+		}
 	}()
 
 	// Handle yield signal
@@ -385,12 +392,14 @@ type jobAssignment struct {
 }
 
 type jobEvent struct {
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
-	Version   int             `json:"version"`
-	Data      json.RawMessage `json:"data"`
-	Timestamp string          `json:"timestamp"`
-	Metadata  json.RawMessage `json:"metadata,omitempty"`
+	ID             string          `json:"id"`
+	Name           string          `json:"name"`
+	Version        int             `json:"version"`
+	Data           json.RawMessage `json:"data"`
+	Timestamp      string          `json:"timestamp"`
+	IdempotencyKey string          `json:"idempotency_key,omitempty"`
+	Source         string          `json:"source,omitempty"`
+	Metadata       json.RawMessage `json:"metadata,omitempty"`
 }
 
 type completedStep struct {

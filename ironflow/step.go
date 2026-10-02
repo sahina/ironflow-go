@@ -55,6 +55,9 @@ type executionContext struct {
 	serverURL string
 	// apiKey is the API key for authenticated requests from steps.
 	apiKey string
+	// environment scopes requests made from steps to the worker's environment.
+	// Empty in push mode and when the worker has none configured.
+	environment string
 	// logger receives SDK-level diagnostics raised from inside a step, such as
 	// the #1671/#1792 unscoped-branch warning. Nil in push mode (serve.go has
 	// no logger to give) and in tests; warnLogger falls back to the default.
@@ -515,10 +518,10 @@ func Compensate(ctx Context, stepName string, fn func() error) {
 //
 //	err := ironflow.Publish(ctx, "order.processed", map[string]any{
 //	    "orderId": event.Data.OrderID,
-//	})
-func Publish(ctx Context, topic string, data any) error {
+//	}, ironflow.WithPublishIdempotencyKey(event.Data.OrderID))
+func Publish(ctx Context, topic string, data any, opts ...PublishOption) error {
 	_, err := Run[any](ctx, publishStepName(topic), func() (any, error) {
-		return doPublish(ctx.exec, topic, data)
+		return doPublish(ctx.exec, topic, data, opts...)
 	})
 	return err
 }
@@ -536,9 +539,9 @@ func Publish(ctx Context, topic string, data any) error {
 // The "publish:" prefix is a stepIDNamespaces entry, so it is deliberately NOT
 // escaped — a topic without a colon still yields legacy == id and takes
 // preferLegacyStepID's early-return path, same as a plain step name.
-func PublishWithBranch(b *BranchContext, topic string, data any) error {
+func PublishWithBranch(b *BranchContext, topic string, data any, opts ...PublishOption) error {
 	_, err := RunWithBranch[any](b, publishStepName(topic), func() (any, error) {
-		return doPublish(b.parent, topic, data)
+		return doPublish(b.parent, topic, data, opts...)
 	})
 	return err
 }
@@ -552,15 +555,23 @@ func publishStepName(topic string) string {
 // doPublish performs the publish HTTP call. It reads only run-wide config, so
 // it is identical at the root and inside a branch; the scoping lives entirely
 // in which Run variant wraps it.
-func doPublish(exec *executionContext, topic string, data any) (any, error) {
+func doPublish(exec *executionContext, topic string, data any, opts ...PublishOption) (any, error) {
 	serverURL := exec.serverURL
 	if serverURL == "" {
 		return nil, fmt.Errorf("server URL not configured for publish step")
 	}
 
+	cfg := &publishConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
 	reqBody := map[string]any{
 		"topic": topic,
 		"data":  data,
+	}
+	if cfg.idempotencyKey != "" {
+		reqBody["idempotencyKey"] = cfg.idempotencyKey
 	}
 	bodyJSON, err := json.Marshal(reqBody)
 	if err != nil {
@@ -583,6 +594,9 @@ func doPublish(exec *executionContext, topic string, data any) (any, error) {
 	// routed through Client.request, so it does not get the header for free.
 	if exec.runID != "" {
 		req.Header.Set(HeaderRunID, exec.runID)
+	}
+	if exec.environment != "" {
+		req.Header.Set(HeaderEnvironment, exec.environment)
 	}
 
 	resp, err := http.DefaultClient.Do(req)

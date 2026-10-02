@@ -93,6 +93,9 @@ type FunctionConfig struct {
 	// Name is the display name for the function.
 	Name string
 
+	// Description is a human-readable summary of what the function does.
+	Description string
+
 	// Triggers are the event triggers that invoke this function.
 	Triggers []Trigger
 
@@ -128,6 +131,13 @@ type FunctionConfig struct {
 
 	// EndpointURL is the HTTP endpoint for push mode.
 	EndpointURL string
+
+	// Validate checks the event payload before the handler runs. A returned
+	// error fails the run without retry, since a payload that cannot match
+	// will never match. Cron ticks skip it: the engine fabricates their
+	// payload. A redacted payload fails before Validate is called. Local only;
+	// nothing is sent to the server.
+	Validate func(data json.RawMessage) error
 
 	// Secrets is the list of secret names this function requires.
 	// The engine resolves these secrets and passes their values at execution time.
@@ -333,6 +343,13 @@ type RunInfo struct {
 
 	// StartedAt is when the run started.
 	StartedAt time.Time
+
+	// Environment is the environment this run's outbound calls are scoped to:
+	// the value a pull worker polls with, or ServeConfig.Environment /
+	// IRONFLOW_ENV in push mode. Empty means the SDK sends no environment
+	// header and the server picks one. Pass it to ClientConfig.Environment
+	// for a Client built inside a handler.
+	Environment string
 }
 
 // EventFilter defines a filter for waitForEvent.

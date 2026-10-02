@@ -24,6 +24,26 @@ func buildAuthHeaders(apiKey string) map[string]string {
 	return headers
 }
 
+// buildWorkerHeaders returns the auth headers plus the environment header.
+// With no environment set it sends no header: the server then resolves the
+// API key's environment or env_default, as it did before this option existed.
+func buildWorkerHeaders(apiKey, environment string) map[string]string {
+	headers := buildAuthHeaders(apiKey)
+	if environment = resolveEnvironment(environment); environment != "" {
+		headers[HeaderEnvironment] = environment
+	}
+	return headers
+}
+
+// resolveEnvironment returns the configured environment, or IRONFLOW_ENV when
+// none is configured.
+func resolveEnvironment(configured string) string {
+	if configured != "" {
+		return configured
+	}
+	return os.Getenv(EnvEnvironment)
+}
+
 // registerFunctions registers all worker functions with the Ironflow server
 // via the ConnectRPC RegisterFunction endpoint.
 func registerFunctions(ctx context.Context, serverURL string, headers map[string]string, functions map[string]Function, httpClient *http.Client, logger Logger) error {
@@ -47,6 +67,9 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 			"name":          fn.Config.Name,
 			"triggers":      triggers,
 			"preferredMode": "EXECUTION_MODE_PULL",
+		}
+		if fn.Config.Description != "" {
+			body["description"] = fn.Config.Description
 		}
 
 		if fn.Config.Retry != nil {
@@ -132,14 +155,15 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 		if err != nil {
 			return fmt.Errorf("failed to register function %s: %w", id, err)
 		}
-		_ = resp.Body.Close()
-
+		// Closed after the status check: authError reads a 403 body.
 		if resp.StatusCode >= 400 {
-			if authErr := authError(resp.StatusCode, fmt.Sprintf("failed to register function %s", id)); authErr != nil {
+			defer func() { _ = resp.Body.Close() }()
+			if authErr := authError(resp, fmt.Sprintf("failed to register function %s", id)); authErr != nil {
 				return authErr
 			}
 			return fmt.Errorf("failed to register function %s: status %d", id, resp.StatusCode)
 		}
+		_ = resp.Body.Close()
 
 		logger.Info("Registered function", "functionId", id)
 	}

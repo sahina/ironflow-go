@@ -171,20 +171,6 @@ func (m memoryClient) Append(eventName string, data map[string]any, opts ...Memo
 	return nil
 }
 
-// EntityStream is a parity stub. Lands when a concrete cross-agent
-// peer-memory use case surfaces.
-func (m memoryClient) EntityStream(streamID, projectionName string) (map[string]any, error) {
-	if projectionName == "" {
-		return nil, NewMemoryProjectionRequiredError(streamID)
-	}
-	return nil, &ironflow.IronflowError{
-		Message:   "memory.EntityStream is not yet implemented — entityStream lands when a concrete cross-agent peer-memory use case surfaces",
-		Code:      CodeMemoryNotImplemented,
-		Retryable: false,
-		Details:   map[string]any{"method": "EntityStream"},
-	}
-}
-
 // requireConfigured returns the resolved config + runtime, raising if
 // memory was not configured on the agent.
 func (m memoryClient) requireConfigured() (*MemoryConfig, *agentRuntime, error) {
@@ -231,10 +217,11 @@ func coerceProjectionState(cached any) map[string]any {
 }
 
 // defaultMemoryBackend constructs a backend wrapping a fresh
-// ironflow.Client built from environment variables. Returns nil + nil
-// when no server URL is configured so makeMemory can surface a clear
-// "no backend" error on first use.
-func defaultMemoryBackend() (MemoryBackend, error) {
+// ironflow.Client built from environment variables, scoped to the run's
+// environment so the stream and the projection wait land where the run's
+// projections run (#2471). Returns nil + nil when no server URL is
+// configured so makeMemory can surface a clear "no backend" error on first use.
+func defaultMemoryBackend(environment string) (MemoryBackend, error) {
 	serverURL := os.Getenv("IRONFLOW_URL")
 	if serverURL == "" {
 		serverURL = os.Getenv("IRONFLOW_SERVER_URL")
@@ -244,8 +231,9 @@ func defaultMemoryBackend() (MemoryBackend, error) {
 	}
 
 	client := ironflow.NewClient(ironflow.ClientConfig{
-		ServerURL: serverURL,
-		APIKey:    os.Getenv("IRONFLOW_API_KEY"),
+		ServerURL:   serverURL,
+		APIKey:      os.Getenv("IRONFLOW_API_KEY"),
+		Environment: environment,
 	})
 
 	return &clientBackedBackend{client: client}, nil

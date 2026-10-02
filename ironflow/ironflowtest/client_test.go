@@ -1,6 +1,8 @@
 package ironflowtest_test
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -420,5 +422,37 @@ func TestStepOutput_NotFound(t *testing.T) {
 	run := tc.Emit(t, "test.event", map[string]any{})
 	if run.StepOutput("nonexistent") != nil {
 		t.Fatal("expected nil for nonexistent step")
+	}
+}
+
+func TestEmit_ValidateRejectsInput(t *testing.T) {
+	ran := false
+	fn := ironflow.CreateFunction(ironflow.FunctionConfig{
+		ID:       "validated",
+		Triggers: []ironflow.Trigger{{Event: "validated.event"}},
+		Validate: func(json.RawMessage) error { return errors.New("bad payload") },
+	}, func(ironflow.Context) (any, error) { ran = true; return nil, nil })
+	tc := ironflowtest.NewClient(t, ironflowtest.Config{Functions: []ironflow.Function{fn}})
+
+	run := tc.Emit(t, "validated.event", map[string]any{})
+
+	if ran {
+		t.Error("handler ran despite invalid input")
+	}
+	if run.Status != "failed" || run.Error == nil || ironflow.IsRetryable(run.Error) {
+		t.Errorf("run = %+v, want failed with a non-retryable error", run)
+	}
+}
+
+func TestEmit_ValidateAcceptsInput(t *testing.T) {
+	fn := ironflow.CreateFunction(ironflow.FunctionConfig{
+		ID:       "validated",
+		Triggers: []ironflow.Trigger{{Event: "validated.event"}},
+		Validate: func(json.RawMessage) error { return nil },
+	}, func(ironflow.Context) (any, error) { return "ok", nil })
+	tc := ironflowtest.NewClient(t, ironflowtest.Config{Functions: []ironflow.Function{fn}})
+
+	if run := tc.Emit(t, "validated.event", map[string]any{}); run.Status != "completed" {
+		t.Fatalf("status = %s, want completed", run.Status)
 	}
 }

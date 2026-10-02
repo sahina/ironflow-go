@@ -11,7 +11,7 @@ import (
 func TestDefaultMemoryBackend_NoServerURL(t *testing.T) {
 	t.Setenv("IRONFLOW_URL", "")
 	t.Setenv("IRONFLOW_SERVER_URL", "")
-	backend, err := defaultMemoryBackend()
+	backend, err := defaultMemoryBackend("")
 	if err == nil {
 		t.Fatal("expected error when no server URL set")
 	}
@@ -25,7 +25,7 @@ func TestDefaultMemoryBackend_WithServerURL(t *testing.T) {
 		t.Skip("skip on CI — calls NewClient which prints banner")
 	}
 	t.Setenv("IRONFLOW_SERVER_URL", "http://localhost:9123")
-	backend, err := defaultMemoryBackend()
+	backend, err := defaultMemoryBackend("")
 	if err != nil {
 		t.Fatalf("defaultMemoryBackend: %v", err)
 	}

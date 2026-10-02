@@ -362,7 +362,7 @@ func (r *ProjectionRunner) post(method string, body any, result any) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		if authErr := authError(resp.StatusCode, fmt.Sprintf("projection %s %s", r.projection.Config.Name, method)); authErr != nil {
+		if authErr := authError(resp, fmt.Sprintf("projection %s %s", r.projection.Config.Name, method)); authErr != nil {
 			return authErr
 		}
 		respBody, _ := io.ReadAll(resp.Body)

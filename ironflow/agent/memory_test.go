@@ -3,6 +3,9 @@ package agent
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/sahina/ironflow-go/ironflow"
@@ -175,22 +178,6 @@ func TestMemory_AppendNilDataRejected(t *testing.T) {
 	}
 }
 
-func TestMemory_EntityStreamRequiresProjection(t *testing.T) {
-	interceptor := newFakeInterceptor(t)
-	ctx, _ := newAgentContext(t, AgentConfig{
-		Function: ironflow.FunctionConfig{ID: "a"},
-		Memory:   &MemoryConfig{StreamID: "s", Projection: "p"},
-	}, interceptor)
-	_, err := Memory(ctx).EntityStream("stream-x", "")
-	if err == nil {
-		t.Fatal("expected projection-required error")
-	}
-	var pr *MemoryProjectionRequiredError
-	if !errors.As(err, &pr) {
-		t.Fatalf("err is not MemoryProjectionRequiredError: %T %v", err, err)
-	}
-}
-
 func TestMemory_BypassCache(t *testing.T) {
 	interceptor := newFakeInterceptor(t)
 	backend := &fakeMemoryBackend{
@@ -222,5 +209,73 @@ func TestMemory_BypassCache(t *testing.T) {
 	}
 	if count != 2 {
 		t.Errorf("memory.get step count = %d, want 2 (bypass triggers second call)", count)
+	}
+}
+
+// The default backend writes memory where the run lives (#2471).
+func TestDefaultMemoryBackend_SendsRunEnvironment(t *testing.T) {
+	var mu sync.Mutex
+	seen := map[string]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen[r.URL.Path] = r.Header.Get(ironflow.HeaderEnvironment)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	t.Setenv("IRONFLOW_URL", srv.URL)
+	t.Setenv("IRONFLOW_API_KEY", "")
+
+	b, err := defaultMemoryBackend("staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	_, _ = b.AppendEvent(ctx, "s1", MemoryAppendInput{Name: "n", Data: map[string]any{"a": 1}, EntityType: "agent"})
+	_ = b.WaitForEvent(ctx, "e1", "notes", ironflow.WaitForProjectionOpts{})
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, path := range []string{
+		"/ironflow.v1.EntityStreamService/AppendEvent",
+		"/ironflow.v1.ProjectionService/WaitForEvent",
+	} {
+		if seen[path] != "staging" {
+			t.Errorf("%s: X-Ironflow-Environment = %q, want staging", path, seen[path])
+		}
+	}
+}
+
+// Agent() builds the default backend from the run's environment (#2471).
+func TestAgent_MemoryBackendUsesRunEnvironment(t *testing.T) {
+	got := "unset"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get(ironflow.HeaderEnvironment)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	t.Setenv("IRONFLOW_URL", srv.URL)
+	t.Setenv("IRONFLOW_API_KEY", "")
+
+	fn := Agent(AgentConfig{
+		Function: ironflow.FunctionConfig{ID: "agent-mem", Triggers: []ironflow.Trigger{{Event: "x"}}},
+		Memory:   &MemoryConfig{StreamID: "s", Projection: "p"},
+	}, func(ctx Context) (any, error) {
+		// The fake interceptor does not run step bodies, so call the backend directly.
+		_, _ = ctx.runtime.memoryBackend.AppendEvent(context.Background(), "s",
+			MemoryAppendInput{Name: "n", Data: map[string]any{"a": 1}, EntityType: "agent"})
+		return nil, nil
+	})
+
+	event := ironflow.Event{ID: "e", Name: "x", Version: 1, RawData: []byte("{}")}
+	ictx := ironflow.NewTestContext(event, "run-x", "agent-mem", newFakeInterceptor(t))
+	ictx.Run.Environment = "staging"
+	if _, err := fn.Handler(ictx); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if got != "staging" {
+		t.Errorf("AppendEvent X-Ironflow-Environment = %q, want staging", got)
 	}
 }

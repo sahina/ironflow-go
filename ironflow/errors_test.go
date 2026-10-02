@@ -120,6 +120,18 @@ func TestIsRetryable(t *testing.T) {
 		}
 	})
 
+	// The step error's own flag must win over a cause that carries none: a
+	// memoized-output decode failure is terminal, and its cause is a plain
+	// encoding/json error (#2444).
+	t.Run("returns false for StepError with retryable=false and a plain cause", func(t *testing.T) {
+		if IsRetryable(NewStepError("step failed", "step_123", "my-step", false, errors.New("root cause"))) {
+			t.Error("expected IsRetryable to read the StepError's own flag")
+		}
+		if IsRetryable(NewStepError("step failed", "step_123", "my-step", false, nil)) {
+			t.Error("expected IsRetryable to read the StepError's own flag with no cause")
+		}
+	})
+
 	t.Run("returns true for regular errors", func(t *testing.T) {
 		err := errors.New("regular error")
 		if !IsRetryable(err) {

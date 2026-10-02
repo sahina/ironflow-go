@@ -41,7 +41,8 @@ type ToolDefinition[I any, O any] struct {
 	// Validate is an optional caller-supplied input validator. Returning
 	// a non-nil error raises ToolValidationError. Go has no
 	// Zod-equivalent runtime validator — callers wire whatever they
-	// want (struct tags, custom logic, codegen).
+	// want (struct tags, custom logic, codegen). This is the intended
+	// contract (#2466): with Validate nil, Go does not validate.
 	Validate func(input I) error
 
 	// Idempotent selects the idempotency strategy. Defaults to
@@ -192,8 +193,8 @@ type MemoryAppendOptions struct {
 
 // MemoryClient is the per-run handle returned by Memory(ctx).
 //
-// Wraps an entity stream keyed by the agent run. EntityStream requires
-// a projection — raw replay is not exposed.
+// Wraps an entity stream keyed by the agent run. Reads go through a
+// projection — raw replay is not exposed.
 type MemoryClient interface {
 	// Get reads the projected memory state. Returns (nil, nil) when
 	// the projection has no record for this run.
@@ -202,12 +203,6 @@ type MemoryClient interface {
 	// Append a memory event (durable). Auto-WaitForProjection ensures
 	// read-your-writes inside the same run.
 	Append(eventName string, data map[string]any, opts ...MemoryAppendOptions) error
-
-	// EntityStream opens a projection-backed entity stream view. Stub
-	// for parity with @ironflow/node/agent — returns
-	// MemoryProjectionRequiredError on empty projection name and
-	// otherwise returns NotImplemented.
-	EntityStream(streamID, projectionName string) (map[string]any, error)
 }
 
 // MemoryConfig configures durable memory for an agent.
@@ -333,6 +328,11 @@ type ExposeMcpConfig struct {
 	// agent:tools:register action. Falls back to IRONFLOW_API_KEY env
 	// when empty.
 	APIKey string
+
+	// Environment scopes RegisterTool and UnregisterTool through
+	// X-Ironflow-Environment. Falls back to IRONFLOW_ENV. With neither set
+	// no header is sent and the server uses the API key's environment.
+	Environment string
 }
 
 // ExposeMcpHandle is returned from ExposeMcp(). Call Unregister() to
@@ -355,6 +355,7 @@ type ExposeMcpHandle struct {
 	agentName    string
 	serverURL    string
 	apiKey       string
+	environment  string
 	unregistered bool
 	unregMu      sync.Mutex
 }

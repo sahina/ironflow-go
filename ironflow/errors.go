@@ -1,8 +1,10 @@
 package ironflow
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -38,6 +40,19 @@ var (
 
 	// ErrForbidden is returned when the caller lacks permission (HTTP 403).
 	ErrForbidden = errors.New("forbidden")
+
+	// ErrPreconditionFailed is returned when an If-Match or If-None-Match
+	// condition did not hold (HTTP 412). Never Retryable: the same condition
+	// fails again.
+	ErrPreconditionFailed = errors.New("ironflow: precondition failed")
+
+	// ErrPayloadTooLarge is returned when a file exceeds the server, bucket or
+	// signed-URL size cap (HTTP 413).
+	ErrPayloadTooLarge = errors.New("ironflow: payload too large")
+
+	// ErrUnsupportedMediaType is returned when the bucket or signed URL does not
+	// allow the file's content type (HTTP 415).
+	ErrUnsupportedMediaType = errors.New("ironflow: unsupported media type")
 
 	// ErrConflict is returned when the server rejects a request because it
 	// conflicts with state already in flight (HTTP 409 / Connect
@@ -170,6 +185,11 @@ type StepError struct {
 	StepName string
 }
 
+// Unwrap returns the embedded IronflowError. Without it the promoted
+// IronflowError.Unwrap goes straight to Cause, and errors.As never sees this
+// error's own Code and Retryable.
+func (e *StepError) Unwrap() error { return e.IronflowError }
+
 // NewStepError creates a new StepError.
 func NewStepError(message, stepID, stepName string, retryable bool, cause error) *StepError {
 	return &StepError{
@@ -194,6 +214,9 @@ type StepTimeoutError struct {
 	StepName string
 	Timeout  time.Duration
 }
+
+// Unwrap returns the embedded IronflowError, for the same reason as StepError.
+func (e *StepTimeoutError) Unwrap() error { return e.IronflowError }
 
 // NewStepTimeoutError creates a new StepTimeoutError.
 func NewStepTimeoutError(stepName string, timeout time.Duration) *StepTimeoutError {
@@ -319,8 +342,13 @@ const AuthHelp = "Set IRONFLOW_API_KEY (or the APIKey config field). " +
 // status. Callers with a reconnect loop should stop on it (errors.Is against
 // ErrUnauthorized / ErrForbidden) rather than retry an auth failure on the
 // network cadence — a missing or revoked key does not fix itself.
-func authError(status int, what string) error {
-	switch status {
+//
+// A 403 carries the server's message, and — when the request named an
+// environment — a hint naming it: the server answers 403 for a key used
+// against an environment outside its scope (#2472), where the key is fine.
+// It reads the 403 body, so callers must not have consumed it.
+func authError(resp *http.Response, what string) error {
+	switch resp.StatusCode {
 	case http.StatusUnauthorized:
 		return &IronflowError{
 			Message: fmt.Sprintf("%s: 401 unauthenticated. %s", what, AuthHelp),
@@ -329,10 +357,40 @@ func authError(status int, what string) error {
 		}
 	case http.StatusForbidden:
 		return &IronflowError{
-			Message: fmt.Sprintf("%s: 403 forbidden. %s", what, AuthHelp),
+			Message: fmt.Sprintf("%s: 403 forbidden%s. %s%s", what, serverMessage(resp), environmentHint(resp), AuthHelp),
 			Code:    "UNAUTHORIZED",
 			Cause:   ErrForbidden,
 		}
 	}
 	return nil
+}
+
+// serverMessage returns ": <message>" from a JSON error body, or "".
+func serverMessage(resp *http.Response) string {
+	var body struct {
+		Message string `json:"message"`
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+	if json.Unmarshal(b, &body) != nil || body.Message == "" {
+		return ""
+	}
+	return ": " + body.Message
+}
+
+// environmentHint names the environment the request carried.
+func environmentHint(resp *http.Response) string {
+	if resp.Request == nil {
+		return ""
+	}
+	return environmentHintFor(resp.Request.Header.Get(HeaderEnvironment))
+}
+
+// environmentHintFor returns "" when env is empty. The SDK cannot tell whether
+// WorkerConfig.Environment or IRONFLOW_ENV supplied it, so it names both.
+func environmentHintFor(env string) string {
+	if env == "" {
+		return ""
+	}
+	return fmt.Sprintf("The request used environment %q (from WorkerConfig.Environment or IRONFLOW_ENV); "+
+		"if the API key is correct, that environment may not match the key's scope. ", env)
 }

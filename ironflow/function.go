@@ -86,6 +86,23 @@ func CreateFunction(config FunctionConfig, handler FunctionHandler) Function {
 	}
 }
 
+// validateEventInput enforces fn.Config.Validate on the incoming event. Every
+// execution path (push and pull) calls it before the handler.
+func validateEventInput(fn Function, ev Event) error {
+	if fn.Config.Validate == nil || ev.Source == EventSourceCron {
+		return nil
+	}
+	if IsRedacted(ev.RawData) {
+		return NewNonRetryableError(fmt.Sprintf(
+			"event %q for function %q was redacted: its payload was irreversibly replaced with a placeholder and cannot satisfy Validate",
+			ev.Name, fn.Config.ID))
+	}
+	if err := fn.Config.Validate(ev.RawData); err != nil {
+		return WrapNonRetryable(fmt.Errorf("validation failed in event %q for function %q: %w", ev.Name, fn.Config.ID, err))
+	}
+	return nil
+}
+
 // validateFunctionConfig validates the function configuration.
 func validateFunctionConfig(config FunctionConfig) error {
 	if err := validateFunctionID(config.ID); err != nil {
@@ -220,6 +237,10 @@ func GetFunctionMetadata(fn Function) map[string]any {
 		},
 		"timeout_ms": config.Timeout.Milliseconds(),
 		"mode":       string(config.Mode),
+	}
+
+	if config.Description != "" {
+		metadata["description"] = config.Description
 	}
 
 	if config.Concurrency != nil {

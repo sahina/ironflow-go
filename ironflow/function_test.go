@@ -440,3 +440,24 @@ func TestValidateFunctionID(t *testing.T) {
 		}
 	}
 }
+
+func TestGetFunctionMetadata_Description(t *testing.T) {
+	handler := func(ctx Context) (any, error) { return nil, nil }
+
+	with := GetFunctionMetadata(CreateFunction(FunctionConfig{
+		ID:          "fn_desc",
+		Description: "Sends the welcome email",
+		Triggers:    []Trigger{{Event: "user.created"}},
+	}, handler))
+	if with["description"] != "Sends the welcome email" {
+		t.Errorf("description = %v, want the configured text", with["description"])
+	}
+
+	without := GetFunctionMetadata(CreateFunction(FunctionConfig{
+		ID:       "fn_no_desc",
+		Triggers: []Trigger{{Event: "user.created"}},
+	}, handler))
+	if _, present := without["description"]; present {
+		t.Errorf("description must be absent when empty; metadata was %v", without)
+	}
+}

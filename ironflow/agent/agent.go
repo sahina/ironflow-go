@@ -96,6 +96,9 @@ func Agent(cfg AgentConfig, handler AgentHandler) ironflow.Function {
 		// behavior for duplicate tools so registration fails loudly.
 		panic(err)
 	}
+	if cfg.Memory != nil && cfg.Memory.Projection == "" {
+		panic(NewMemoryProjectionRequiredError(cfg.Memory.StreamID))
+	}
 
 	maxTurns := cfg.MaxTurns
 	if maxTurns <= 0 {
@@ -114,7 +117,7 @@ func Agent(cfg AgentConfig, handler AgentHandler) ironflow.Function {
 		}
 
 		if memCfg != nil {
-			backend, berr := defaultMemoryBackend()
+			backend, berr := defaultMemoryBackend(ictx.Run.Environment)
 			if berr == nil {
 				runtime.memoryBackend = backend
 			}

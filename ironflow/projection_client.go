@@ -381,7 +381,7 @@ func (pc *ProjectionClient) ExecuteSQL(ctx context.Context, query string) (*SQLQ
 		pc.client.httpClient,
 		pc.client.serverURL,
 		connect.WithProtoJSON(),
-		connect.WithInterceptors(bearerInterceptor(pc.client.apiKey)),
+		connect.WithInterceptors(pc.client.interceptor()),
 	)
 
 	req := connect.NewRequest(&ironflowv1.ExecuteSQLRequest{Query: query})
@@ -414,7 +414,7 @@ func (pc *ProjectionClient) ExecuteSQL(ctx context.Context, query string) (*SQLQ
 }
 
 func (pc *ProjectionClient) rpc() ironflowv1connect.ProjectionServiceClient {
-	return ironflowv1connect.NewProjectionServiceClient(pc.client.httpClient, pc.client.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(bearerInterceptor(pc.client.apiKey)))
+	return ironflowv1connect.NewProjectionServiceClient(pc.client.httpClient, pc.client.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(pc.client.interceptor()))
 }
 
 // rfc3339OrEmpty renders a protobuf timestamp the way the rest of this package

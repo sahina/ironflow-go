@@ -135,7 +135,6 @@ there is no Zod conversion step to fail.
 | `AGENT_MEMORY_NO_BACKEND` | `IronflowError` |
 | `AGENT_MEMORY_PROJECTION_REQUIRED` | `MemoryProjectionRequiredError` |
 | `AGENT_MEMORY_INVALID_DATA` | `IronflowError` |
-| `AGENT_MEMORY_NOT_IMPLEMENTED` | `IronflowError` |
 | `AGENT_MCP_NO_TOOLS` | `IronflowError` |
 | `AGENT_MCP_MISSING_CALLBACK_URL` | `IronflowError` |
 | `AGENT_MCP_MISSING_SERVER_URL` | `IronflowError` |

@@ -3,6 +3,7 @@ package ironflow
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -16,15 +17,18 @@ type ServeConfig struct {
 	// Functions are the functions to serve.
 	Functions []Function
 
-	// Projections are the projections to register with the server.
-	Projections []Projection
-
 	// Webhooks are the webhook sources to handle.
 	Webhooks []Webhook
 
 	// ServerURL is the Ironflow server URL for emitting webhook events.
 	// When set, SDK-defined webhooks will emit events to the server after transform.
 	ServerURL string
+
+	// Environment scopes the durable Publish steps of push-mode runs through
+	// X-Ironflow-Environment. Falls back to IRONFLOW_ENV. With neither set no
+	// header is sent and the server uses the API key's environment. There is
+	// no "default" fallback: a key scoped to another environment would get 403.
+	Environment string
 
 	// SigningKey is the secret for webhook signature verification.
 	SigningKey string
@@ -68,6 +72,7 @@ func Serve(config ServeConfig) http.Handler {
 		functions:        functionMap,
 		webhooks:         webhookMap,
 		serverURL:        config.ServerURL,
+		environment:      resolveEnvironment(config.Environment),
 		signingKey:       config.SigningKey,
 		skipVerification: config.SkipVerification,
 		upcasters:        config.Upcasters,
@@ -78,6 +83,7 @@ type serveHandler struct {
 	functions        map[string]Function
 	webhooks         map[string]Webhook
 	serverURL        string
+	environment      string
 	signingKey       string
 	skipVerification bool
 	upcasters        *UpcasterRegistry
@@ -136,6 +142,7 @@ func (h *serveHandler) executeHandler(fn Function, req *PushRequest) *PushRespon
 	exec := newExecutionContext(req)
 	exec.stepTimeout = fn.Config.StepTimeout
 	exec.serverURL = h.serverURL
+	exec.environment = h.environment
 	if apiKey := GetAPIKey(); apiKey != "" {
 		exec.apiKey = apiKey
 	}
@@ -170,6 +177,7 @@ func (h *serveHandler) executeHandler(fn Function, req *PushRequest) *PushRespon
 			Attempt:     req.Attempt,
 			MaxAttempts: req.MaxAttempts,
 			StartedAt:   time.Now(),
+			Environment: exec.environment,
 		},
 		Secrets: NewSecretsReader(req.Secrets),
 		exec:    exec,
@@ -192,7 +200,9 @@ func (h *serveHandler) executeHandler(fn Function, req *PushRequest) *PushRespon
 			}
 		}()
 
-		result, execErr = fn.Handler(ctx)
+		if execErr = validateEventInput(fn, ctx.Event); execErr == nil {
+			result, execErr = fn.Handler(ctx)
+		}
 	}()
 
 	// Handle yield signal
@@ -206,18 +216,13 @@ func (h *serveHandler) executeHandler(fn Function, req *PushRequest) *PushRespon
 
 	// Handle error
 	if execErr != nil {
-		var code string
-		var retryable bool
+		code := "ERROR"
+		retryable := true
 
-		if ironflowErr, ok := execErr.(*IronflowError); ok {
+		var ironflowErr *IronflowError
+		if errors.As(execErr, &ironflowErr) {
 			code = ironflowErr.Code
 			retryable = ironflowErr.Retryable
-		} else if stepErr, ok := execErr.(*StepError); ok {
-			code = stepErr.Code
-			retryable = stepErr.Retryable
-		} else {
-			code = "ERROR"
-			retryable = true
 		}
 
 		// Run compensations only if error is not retryable (terminal failure)

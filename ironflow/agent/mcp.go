@@ -145,6 +145,11 @@ func ExposeMcp(cfg ExposeMcpConfig) (*ExposeMcpHandle, error) {
 		}
 	}
 
+	environment := cfg.Environment
+	if environment == "" {
+		environment = os.Getenv(ironflow.EnvEnvironment)
+	}
+
 	seen := make(map[string]struct{}, len(cfg.Tools))
 	toolPayload := make([]toolDefJSON, 0, len(cfg.Tools))
 	for _, def := range cfg.Tools {
@@ -174,7 +179,7 @@ func ExposeMcp(cfg ExposeMcpConfig) (*ExposeMcpHandle, error) {
 		Tools:       toolPayload,
 	}
 
-	respBody, err := postJSON(serverURL, registerToolPath, apiKey, body)
+	respBody, err := postJSON(serverURL, registerToolPath, apiKey, environment, body)
 	if err != nil {
 		return nil, err
 	}
@@ -201,13 +206,14 @@ func ExposeMcp(cfg ExposeMcpConfig) (*ExposeMcpHandle, error) {
 	}
 
 	return &ExposeMcpHandle{
-		Name:      cfg.Name,
-		ToolCount: len(decoded.RegisteredToolNames),
-		Status:    "active",
-		ToolNames: decoded.RegisteredToolNames,
-		agentName: cfg.Name,
-		serverURL: serverURL,
-		apiKey:    apiKey,
+		Name:        cfg.Name,
+		ToolCount:   len(decoded.RegisteredToolNames),
+		Status:      "active",
+		ToolNames:   decoded.RegisteredToolNames,
+		agentName:   cfg.Name,
+		serverURL:   serverURL,
+		apiKey:      apiKey,
+		environment: environment,
 	}, nil
 }
 
@@ -229,7 +235,7 @@ func (h *ExposeMcpHandle) Unregister() error {
 
 	unregisterLocal(h.agentName)
 
-	if _, err := postJSON(h.serverURL, unregisterToolPath, h.apiKey, unregisterToolRequestJSON{
+	if _, err := postJSON(h.serverURL, unregisterToolPath, h.apiKey, h.environment, unregisterToolRequestJSON{
 		AgentName: h.agentName,
 	}); err != nil {
 		return &ironflow.IronflowError{
@@ -283,7 +289,7 @@ type unregisterToolRequestJSON struct {
 // the response, and returns the bytes. 4xx/5xx are mapped to a
 // transport-level *IronflowError; the response body is closed before
 // returning in every branch.
-func postJSON(serverURL, path, apiKey string, body any) ([]byte, error) {
+func postJSON(serverURL, path, apiKey, environment string, body any) ([]byte, error) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		return nil, &ironflow.IronflowError{
@@ -305,6 +311,9 @@ func postJSON(serverURL, path, apiKey string, body any) ([]byte, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if environment != "" {
+		req.Header.Set(ironflow.HeaderEnvironment, environment)
+	}
 
 	resp, err := getHTTPClient().Do(req)
 	if err != nil {

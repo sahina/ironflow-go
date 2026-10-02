@@ -1,6 +1,9 @@
 package ironflow
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -204,5 +207,26 @@ func TestMapWithBranchScopesStepIDs(t *testing.T) {
 		if !ids[want] {
 			t.Errorf("missing nested step ID %q; got %v", want, ids)
 		}
+	}
+}
+
+func TestPublishWithBranchSendsIdempotencyKey(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"eventId": "evt_abc", "sequence": "1"})
+	}))
+	defer server.Close()
+
+	b, exec := newBranch(t, nil)
+	exec.serverURL = server.URL
+
+	if err := PublishWithBranch(b, "order.processed", map[string]any{"id": 1},
+		WithPublishIdempotencyKey("order-1")); err != nil {
+		t.Fatalf("PublishWithBranch: %v", err)
+	}
+	if body["idempotencyKey"] != "order-1" {
+		t.Fatalf("idempotencyKey = %v, want order-1; body was %v", body["idempotencyKey"], body)
 	}
 }

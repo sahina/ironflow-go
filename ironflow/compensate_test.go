@@ -3,6 +3,7 @@ package ironflow
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -303,6 +304,66 @@ func TestServeHTTP_CompensationOnNonRetryableError(t *testing.T) {
 	}
 	if compStep.Status != "completed" {
 		t.Errorf("expected compensation status 'completed', got %q", compStep.Status)
+	}
+}
+
+// TestServeHTTP_NonRetryableBehindAnotherType covers a non-retryable error that
+// the handler returns outside a step, where the *IronflowError is not the
+// concrete type: embedded in NonRetryableError, or wrapped with %w (#2444).
+func TestServeHTTP_NonRetryableBehindAnotherType(t *testing.T) {
+	cases := []struct {
+		name     string
+		err      error
+		wantCode string
+	}{
+		{"NonRetryableError returned directly", NewNonRetryableError("card declined"), "NON_RETRYABLE"},
+		{"wrapped IronflowError", fmt.Errorf("ship: %w", NewError("no stock", "NO_STOCK", false)), "NO_STOCK"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			compensated := false
+
+			fn := CreateFunction(FunctionConfig{
+				ID:       "saga-fn",
+				Triggers: []Trigger{{Event: "test.event"}},
+			}, func(ctx Context) (any, error) {
+				_, _ = Run(ctx, "charge", func() (string, error) {
+					return "tx-123", nil
+				})
+				Compensate(ctx, "charge", func() error {
+					compensated = true
+					return nil
+				})
+				return nil, tc.err
+			})
+
+			handler := Serve(ServeConfig{
+				Functions:        []Function{fn},
+				SkipVerification: true,
+			})
+
+			req := httptest.NewRequest(http.MethodPost, "/api/ironflow", strings.NewReader(validPushBody("saga-fn")))
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			var resp PushResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("failed to parse response: %v", err)
+			}
+			if resp.Error == nil {
+				t.Fatal("expected error in response")
+			}
+			if resp.Error.Retryable {
+				t.Error("expected retryable to be false")
+			}
+			if resp.Error.Code != tc.wantCode {
+				t.Errorf("expected error code %q, got %q", tc.wantCode, resp.Error.Code)
+			}
+			if !compensated {
+				t.Error("expected compensation to run on non-retryable error")
+			}
+		})
 	}
 }
 

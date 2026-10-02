@@ -126,7 +126,11 @@ func (tc *TestClient) Emit(t *testing.T, eventName string, data any) *TestRun {
 	ctx := ironflow.NewTestContext(event, runID, fn.Config.ID, interceptor)
 
 	// Execute handler
-	output, execErr := fn.Handler(ctx)
+	var output any
+	execErr := validateInput(fn, event)
+	if execErr == nil {
+		output, execErr = fn.Handler(ctx)
+	}
 
 	if execErr != nil {
 		// Run compensations in reverse
@@ -155,6 +159,21 @@ func (tc *TestClient) Emit(t *testing.T, eventName string, data any) *TestRun {
 		Output:           output,
 		CompensationsRan: []string{},
 	}
+}
+
+// validateInput mirrors the engine-side check in the ironflow package
+// (validateEventInput), which is unexported. Keep the two in step.
+func validateInput(fn ironflow.Function, ev ironflow.Event) error {
+	if fn.Config.Validate == nil || ev.Source == ironflow.EventSourceCron {
+		return nil
+	}
+	if ironflow.IsRedacted(ev.RawData) {
+		return ironflow.NewNonRetryableError(fmt.Sprintf("event %q for function %q was redacted and cannot satisfy Validate", ev.Name, fn.Config.ID))
+	}
+	if err := fn.Config.Validate(ev.RawData); err != nil {
+		return ironflow.WrapNonRetryable(fmt.Errorf("validation failed in event %q for function %q: %w", ev.Name, fn.Config.ID, err))
+	}
+	return nil
 }
 
 // testInterceptor implements ironflow.TestInterceptor

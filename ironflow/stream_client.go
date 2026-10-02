@@ -15,7 +15,7 @@ import (
 )
 
 func (c *Client) entityRPC() ironflowv1connect.EntityStreamServiceClient {
-	return ironflowv1connect.NewEntityStreamServiceClient(c.httpClient, c.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(bearerInterceptor(c.apiKey)))
+	return ironflowv1connect.NewEntityStreamServiceClient(c.httpClient, c.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(c.interceptor()))
 }
 func streamTimestamp(value *timestamppb.Timestamp) string {
 	if value == nil {

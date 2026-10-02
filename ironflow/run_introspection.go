@@ -54,7 +54,7 @@ type RunStreamsResult struct {
 
 // GetRunSteps returns the durable steps recorded for a run.
 func (c *Client) GetRunSteps(ctx context.Context, runID string) (*RunStepsResult, error) {
-	rpc := ironflowv1connect.NewIronflowServiceClient(c.httpClient, c.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(bearerInterceptor(c.apiKey)))
+	rpc := ironflowv1connect.NewIronflowServiceClient(c.httpClient, c.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(c.interceptor()))
 	var response *connect.Response[ironflowv1.GetRunStepsResponse]
 	// sdkcoverage: POST /ironflow.v1.IronflowService/GetRunSteps
 	err := c.withRetry(ctx, func() error {

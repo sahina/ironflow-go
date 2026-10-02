@@ -377,3 +377,52 @@ func equalSlices(a, b []string) bool {
 	}
 	return true
 }
+
+// Register and Unregister both carry the environment; the explicit field wins
+// over IRONFLOW_ENV, and with neither no header is sent (#2471).
+func TestExposeMcp_Environment(t *testing.T) {
+	for _, tc := range []struct{ name, config, envVar, want string }{
+		{"config", "staging", "qa", "staging"},
+		{"env var", "", "qa", "qa"},
+		{"none", "", "", "<absent>"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clearLocalForTests()
+			defer clearLocalForTests()
+			t.Setenv(ironflow.EnvEnvironment, tc.envVar)
+			var got []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				v := "<absent>"
+				if h, ok := r.Header[http.CanonicalHeaderKey(ironflow.HeaderEnvironment)]; ok {
+					v = h[0]
+				}
+				got = append(got, v)
+				if strings.HasSuffix(r.URL.Path, "UnregisterTool") {
+					_, _ = w.Write([]byte(`{}`))
+					return
+				}
+				writeRegisterResponse(w, testHMACSecret, []string{"x.y"})
+			}))
+			defer server.Close()
+
+			handle, err := ExposeMcp(ExposeMcpConfig{
+				Name:        "x",
+				Version:     "0.1.0",
+				CallbackURL: testCallbackURL,
+				ServerURL:   server.URL,
+				APIKey:      testAPIKey,
+				Environment: tc.config,
+				Tools:       []McpToolDef{{Name: "y", InputSchemaJSON: testSchema, Handler: noopHandler}},
+			})
+			if err != nil {
+				t.Fatalf("ExposeMcp: %v", err)
+			}
+			if err := handle.Unregister(); err != nil {
+				t.Fatalf("Unregister: %v", err)
+			}
+			if len(got) != 2 || got[0] != tc.want || got[1] != tc.want {
+				t.Errorf("headers = %v, want [%s %s]", got, tc.want, tc.want)
+			}
+		})
+	}
+}

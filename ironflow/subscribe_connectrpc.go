@@ -187,18 +187,31 @@ func newGrpcSubscriptionClient(config GrpcSubscriptionClientConfig, apiKey strin
 	}
 }
 
-// bearerAuth attaches an Authorization header to every ConnectRPC request.
-// A plain connect.UnaryInterceptorFunc would not do: PubSubService.Subscribe is
-// server-streaming, and the streaming path needs its own wrapper.
-type bearerAuth struct{ key string }
+// bearerAuth attaches the Authorization and environment headers to every
+// ConnectRPC request. A plain connect.UnaryInterceptorFunc would not do:
+// PubSubService.Subscribe is server-streaming, and the streaming path needs
+// its own wrapper.
+type bearerAuth struct{ key, env string }
 
 func bearerInterceptor(key string) connect.Interceptor { return bearerAuth{key: key} }
 
+// interceptor authenticates and scopes the ConnectRPC clients built from c.
+func (c *Client) interceptor() connect.Interceptor {
+	return bearerAuth{key: c.apiKey, env: c.environment}
+}
+
+func (b bearerAuth) apply(h http.Header) {
+	if b.key != "" {
+		h.Set("Authorization", "Bearer "+b.key)
+	}
+	if b.env != "" {
+		h.Set(HeaderEnvironment, b.env)
+	}
+}
+
 func (b bearerAuth) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		if b.key != "" {
-			req.Header().Set("Authorization", "Bearer "+b.key)
-		}
+		b.apply(req.Header())
 		return next(ctx, req)
 	}
 }
@@ -206,9 +219,7 @@ func (b bearerAuth) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 func (b bearerAuth) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
 	return func(ctx context.Context, spec connect.Spec) connect.StreamingClientConn {
 		conn := next(ctx, spec)
-		if b.key != "" {
-			conn.RequestHeader().Set("Authorization", "Bearer "+b.key)
-		}
+		b.apply(conn.RequestHeader())
 		return conn
 	}
 }

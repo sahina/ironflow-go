@@ -553,3 +553,52 @@ func TestServe_DuplicateFunctionWarning(t *testing.T) {
 		t.Errorf("expected second function to win, got result: %v", resp.Result)
 	}
 }
+
+// Push mode scopes Publish with ServeConfig.Environment, else IRONFLOW_ENV,
+// else no header — never "default", which would 403 a scoped key (#2471).
+func TestServe_PublishEnvironment(t *testing.T) {
+	for _, tc := range []struct{ name, config, envVar, want string }{
+		{"config", "staging", "qa", "staging"},
+		{"env var", "", "qa", "qa"},
+		{"none", "", "", "<absent>"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(EnvEnvironment, tc.envVar)
+			got, runEnv := "unset", "unset"
+			pubsub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = "<absent>"
+				if v, ok := r.Header[http.CanonicalHeaderKey(HeaderEnvironment)]; ok {
+					got = v[0]
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"eventId": "evt_1", "sequence": "1"})
+			}))
+			defer pubsub.Close()
+
+			fn := CreateFunction(FunctionConfig{ID: "pub-fn", Triggers: []Trigger{{Event: "test.event"}}},
+				func(ctx Context) (any, error) {
+					runEnv = ctx.Run.Environment
+					return nil, Publish(ctx, "orders", map[string]any{"id": 1})
+				})
+			handler := Serve(ServeConfig{
+				Functions:        []Function{fn},
+				ServerURL:        pubsub.URL,
+				SkipVerification: true,
+				Environment:      tc.config,
+			})
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/ironflow", strings.NewReader(validPushBody("pub-fn"))))
+
+			if got != tc.want {
+				t.Errorf("publish X-Ironflow-Environment = %q, want %q", got, tc.want)
+			}
+			wantRun := tc.want
+			if wantRun == "<absent>" {
+				wantRun = ""
+			}
+			if runEnv != wantRun {
+				t.Errorf("Run.Environment = %q, want %q", runEnv, wantRun)
+			}
+		})
+	}
+}

@@ -420,3 +420,54 @@ func TestClientGetTopicStats(t *testing.T) {
 		}
 	})
 }
+
+// capturePublishBody runs one durable publish against a test server and
+// returns the JSON body the server received.
+func capturePublishBody(t *testing.T, publish func(ctx Context) error) map[string]any {
+	t.Helper()
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"eventId": "evt_abc", "sequence": "1"})
+	}))
+	defer server.Close()
+
+	exec := &executionContext{
+		runID:          "test-run",
+		stepCounters:   make(map[string]int),
+		completedSteps: make(map[string]*CompletedStep),
+		executedSteps:  make([]*StepResult, 0),
+		serverURL:      server.URL,
+	}
+	if err := publish(Context{exec: exec}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	return body
+}
+
+func TestPublish_SendsIdempotencyKey(t *testing.T) {
+	body := capturePublishBody(t, func(ctx Context) error {
+		return Publish(ctx, "order.processed", map[string]any{"orderId": "123"},
+			WithPublishIdempotencyKey("order-123"))
+	})
+	if body["idempotencyKey"] != "order-123" {
+		t.Fatalf("idempotencyKey = %v, want order-123; body was %v", body["idempotencyKey"], body)
+	}
+}
+
+func TestPublish_OmitsEmptyIdempotencyKey(t *testing.T) {
+	for name, opts := range map[string][]PublishOption{
+		"no option": nil,
+		"empty key": {WithPublishIdempotencyKey("")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := capturePublishBody(t, func(ctx Context) error {
+				return Publish(ctx, "order.processed", map[string]any{"orderId": "123"}, opts...)
+			})
+			if _, present := body["idempotencyKey"]; present {
+				t.Fatalf("idempotencyKey must be absent; body was %v", body)
+			}
+		})
+	}
+}

@@ -18,7 +18,6 @@ const (
 	CodeMemoryNoBackend          = "AGENT_MEMORY_NO_BACKEND"
 	CodeMemoryProjectionRequired = "AGENT_MEMORY_PROJECTION_REQUIRED"
 	CodeMemoryInvalidData        = "AGENT_MEMORY_INVALID_DATA"
-	CodeMemoryNotImplemented     = "AGENT_MEMORY_NOT_IMPLEMENTED"
 	CodeMcpNoTools               = "AGENT_MCP_NO_TOOLS"
 	CodeMcpMissingCallbackURL    = "AGENT_MCP_MISSING_CALLBACK_URL"
 	CodeMcpMissingServerURL      = "AGENT_MCP_MISSING_SERVER_URL"
@@ -174,9 +173,9 @@ func NewToolNotFoundError(toolName string) *ToolNotFoundError {
 // quote returns a double-quoted string for inclusion in error messages.
 func quote(s string) string { return `"` + s + `"` }
 
-// MemoryProjectionRequiredError is raised when Memory.EntityStream is
-// called without a projection. Per architecture decision: raw event
-// replay is not exposed through the agent memory API.
+// MemoryProjectionRequiredError means Agent was given a MemoryConfig with an
+// empty Projection. Per architecture decision: raw event replay is not exposed
+// through the agent memory API. Agent panics with it at definition time.
 type MemoryProjectionRequiredError struct {
 	*ironflow.IronflowError
 	StreamID string
@@ -186,7 +185,7 @@ type MemoryProjectionRequiredError struct {
 func NewMemoryProjectionRequiredError(streamID string) *MemoryProjectionRequiredError {
 	return &MemoryProjectionRequiredError{
 		IronflowError: &ironflow.IronflowError{
-			Message:   "memory.EntityStream requires a projection — raw replay is not exposed via the agent API",
+			Message:   "agent memory requires a projection — raw replay is not exposed via the agent API",
 			Code:      CodeMemoryProjectionRequired,
 			Retryable: false,
 			Details:   map[string]any{"streamId": streamID},

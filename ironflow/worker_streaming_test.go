@@ -3,7 +3,9 @@ package ironflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -1044,9 +1046,8 @@ func TestStreamingWorker_Shutdown(t *testing.T) {
 			return err
 		}
 
-		// Keep the stream alive for a bit so the worker can process
-		go recvLoop(ctx, stream, handler)
-		<-ctx.Done()
+		// As the engine does, keep the stream open until the worker closes it.
+		recvLoop(ctx, stream, handler)
 		return nil
 	}
 
@@ -1070,8 +1071,7 @@ func TestStreamingWorker_Shutdown(t *testing.T) {
 	// Wait for worker to stop via shutdown message
 	select {
 	case <-time.After(4 * time.Second):
-		t.Log("worker did not exit from shutdown within timeout, cancelling context")
-		cancel()
+		t.Fatal("the worker did not stop after the Shutdown message")
 	case <-done:
 		// Worker exited — success
 	}
@@ -1167,8 +1167,8 @@ func TestStreamingWorker_Drain(t *testing.T) {
 			return err
 		}
 
-		go recvLoop(ctx, stream, handler)
-		<-ctx.Done()
+		// As the engine does, end the stream when the worker half-closes it.
+		recvLoop(ctx, stream, handler)
 		return nil
 	}
 
@@ -1992,5 +1992,1179 @@ func TestStreamingWorker_ConnectSendsAPIKey(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("stream never connected")
+	}
+}
+
+// ============================================================================
+// Drain deadline, rejects and Stop (#2446)
+// ============================================================================
+
+func TestStreamingWorker_Drain_DeadlineCancelsActiveJobs(t *testing.T) {
+	originalDrainTimeout := workerDrainTimeout
+	workerDrainTimeout = 10 * time.Millisecond
+	t.Cleanup(func() { workerDrainTimeout = originalDrainTimeout })
+	w := NewStreamingWorker(WorkerConfig{ServerURL: "http://example.com", Logger: NewNoopLogger()})
+	w.state.Store(int32(stateConnected))
+	ctx, cancel := context.WithCancel(context.Background())
+	var cancelled atomic.Bool
+	w.activeJobs.Store("job-1", &activeJob{cancel: func() { cancelled.Store(true); cancel() }})
+	w.jobCount.Store(1)
+
+	done := make(chan struct{})
+	go func() { w.Drain(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Drain did not stop at the deadline")
+	}
+
+	if w.state.Load() != int32(stateStopped) {
+		t.Fatalf("state = %d, want stopped", w.state.Load())
+	}
+	if !cancelled.Load() || ctx.Err() == nil {
+		t.Fatal("deadline did not cancel the active job")
+	}
+}
+
+// waitStopped fails the test unless the worker stops within limit.
+func waitStopped(t *testing.T, w *StreamingWorker, limit time.Duration) {
+	t.Helper()
+	select {
+	case <-w.stopCh:
+	case <-time.After(limit):
+		t.Fatalf("worker did not stop within %s", limit)
+	}
+}
+
+// The engine stops waiting after drain_timeout_ms, so the worker must not
+// drain for its own longer default (#2458).
+func TestStreamingWorker_Shutdown_UsesMessageDrainTimeout(t *testing.T) {
+	w := NewStreamingWorker(WorkerConfig{ServerURL: "http://example.com", Logger: NewNoopLogger()})
+	w.state.Store(int32(stateConnected))
+	w.activeJobs.Store("job-1", &activeJob{cancel: func() {}})
+	w.jobCount.Store(1)
+
+	w.handleShutdown(&ironflowv1.Shutdown{DrainTimeoutMs: 50})
+	waitStopped(t, w, 2*time.Second)
+}
+
+func TestStreamingWorker_Drain_UsesConfigDrainTimeout(t *testing.T) {
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL:    "http://example.com",
+		Logger:       NewNoopLogger(),
+		DrainTimeout: 50 * time.Millisecond,
+	})
+	w.state.Store(int32(stateConnected))
+	w.activeJobs.Store("job-1", &activeJob{cancel: func() {}})
+	w.jobCount.Store(1)
+
+	go w.Drain()
+	waitStopped(t, w, 2*time.Second)
+}
+
+// A Shutdown without a drain timeout falls back to the configured one.
+func TestStreamingWorker_Shutdown_ZeroMessageTimeoutUsesConfig(t *testing.T) {
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL:    "http://example.com",
+		Logger:       NewNoopLogger(),
+		DrainTimeout: 50 * time.Millisecond,
+	})
+	w.state.Store(int32(stateConnected))
+	w.activeJobs.Store("job-1", &activeJob{cancel: func() {}})
+	w.jobCount.Store(1)
+
+	w.handleShutdown(&ironflowv1.Shutdown{})
+	waitStopped(t, w, 2*time.Second)
+}
+
+// Stop aborts the stream, and the engine can then miss the last results. When
+// the jobs are done, Drain sends what is queued and half-closes the stream; the
+// engine reads to the end and closes it.
+func TestStreamingWorker_Drain_ClosesStreamGracefully(t *testing.T) {
+	handler := &mockWorkerHandler{}
+	var halfClosed atomic.Bool
+	jobAcked := make(chan struct{})
+
+	handler.onConnect = func(ctx context.Context, stream *connect.BidiStream[ironflowv1.WorkerMessage, ironflowv1.EngineMessage]) error {
+		if _, err := doRegistrationHandshake(stream, handler, 30000); err != nil {
+			return err
+		}
+		if err := stream.Send(&ironflowv1.EngineMessage{
+			Payload: &ironflowv1.EngineMessage_Job{
+				Job: makeJobAssignment("job-gc", "run-gc", "gc-fn", map[string]any{}),
+			},
+		}); err != nil {
+			return err
+		}
+		for {
+			msg, err := stream.Receive()
+			if err != nil {
+				// io.EOF is the half-close. An abort arrives as a cancel error.
+				halfClosed.Store(errors.Is(err, io.EOF))
+				return nil
+			}
+			handler.record(msg)
+			if msg.GetJobAck() != nil {
+				close(jobAcked)
+			}
+		}
+	}
+
+	server := startMockServer(t, handler)
+
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL: server.URL,
+		Functions: []Function{testFn("gc-fn", func(ctx Context) (any, error) {
+			return map[string]any{"ok": true}, nil
+		})},
+		Logger: NewNoopLogger(),
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- w.Run(context.Background()) }()
+	select {
+	case <-jobAcked:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for the job")
+	}
+
+	w.Drain()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned %v, want nil", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not return after the drain")
+	}
+	if !halfClosed.Load() {
+		t.Error("Drain aborted the stream, want a half-close")
+	}
+	completed := hasMessageType(handler.getReceived(), func(p any) bool {
+		c, ok := p.(*ironflowv1.WorkerMessage_JobCompleted)
+		return ok && c.JobCompleted.GetJobId() == "job-gc"
+	})
+	if !completed {
+		t.Error("the engine did not receive JobCompleted before the stream closed")
+	}
+}
+
+// The graceful close must send every queued message before the half-close.
+// The send loop takes the close signal at random among its ready cases, so
+// with 50 messages queued the flush loop runs with a queue that is not empty.
+func TestStreamingWorker_Drain_FlushesQueueBeforeHalfClose(t *testing.T) {
+	const queued = 50
+	handler := &mockWorkerHandler{}
+	var registered atomic.Bool
+
+	handler.onConnect = func(ctx context.Context, stream *connect.BidiStream[ironflowv1.WorkerMessage, ironflowv1.EngineMessage]) error {
+		if _, err := doRegistrationHandshake(stream, handler, 30000); err != nil {
+			return err
+		}
+		registered.Store(true)
+		recvLoop(ctx, stream, handler)
+		return nil
+	}
+
+	server := startMockServer(t, handler)
+
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL: server.URL,
+		Functions: []Function{testFn("fn", func(ctx Context) (any, error) { return nil, nil })},
+		Logger:    NewNoopLogger(),
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- w.Run(context.Background()) }()
+
+	deadline := time.After(3 * time.Second)
+	for !registered.Load() || w.state.Load() != int32(stateConnected) {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for the connection")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+
+	for i := 0; i < queued; i++ {
+		w.outCh <- &ironflowv1.WorkerMessage{
+			Payload: &ironflowv1.WorkerMessage_JobCompleted{
+				JobCompleted: &ironflowv1.JobCompleted{JobId: fmt.Sprintf("queued-%d", i)},
+			},
+		}
+	}
+	w.Drain()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not return after the drain")
+	}
+	got := 0
+	for _, msg := range handler.getReceived() {
+		if msg.GetJobCompleted() != nil {
+			got++
+		}
+	}
+	if got != queued {
+		t.Fatalf("the engine received %d of %d queued results", got, queued)
+	}
+}
+
+// The graceful close must not wait longer than the drain deadline for an
+// engine that does not close the stream.
+func TestStreamingWorker_Drain_DeadlineWhenEngineHoldsStream(t *testing.T) {
+	originalDrainTimeout := workerDrainTimeout
+	workerDrainTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { workerDrainTimeout = originalDrainTimeout })
+
+	handler := &mockWorkerHandler{}
+	var registered atomic.Bool
+
+	handler.onConnect = func(ctx context.Context, stream *connect.BidiStream[ironflowv1.WorkerMessage, ironflowv1.EngineMessage]) error {
+		if _, err := doRegistrationHandshake(stream, handler, 30000); err != nil {
+			return err
+		}
+		registered.Store(true)
+		// Does not read the stream, so it does not see the half-close.
+		<-ctx.Done()
+		return nil
+	}
+
+	server := startMockServer(t, handler)
+
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL: server.URL,
+		Functions: []Function{testFn("fn", func(ctx Context) (any, error) { return nil, nil })},
+		Logger:    NewNoopLogger(),
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- w.Run(context.Background()) }()
+
+	deadline := time.After(3 * time.Second)
+	for !registered.Load() || w.state.Load() != int32(stateConnected) {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for the connection")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+
+	drained := make(chan struct{})
+	go func() { w.Drain(); close(drained) }()
+	select {
+	case <-drained:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Drain did not stop at the deadline")
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned %v, want nil", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not return after the forced stop")
+	}
+	if w.state.Load() != int32(stateStopped) {
+		t.Fatalf("state = %d, want stopped", w.state.Load())
+	}
+}
+
+// Before Run there is no stream to close and no Run loop to stop the worker,
+// so Drain must stop it and not wait for the deadline.
+func TestStreamingWorker_Drain_BeforeRun_StopsImmediately(t *testing.T) {
+	w := NewStreamingWorker(WorkerConfig{ServerURL: "http://example.com", Logger: NewNoopLogger()})
+
+	drained := make(chan struct{})
+	go func() { w.Drain(); close(drained) }()
+	select {
+	case <-drained:
+	case <-time.After(time.Second):
+		t.Fatal("Drain waited on a worker that never ran")
+	}
+	if w.state.Load() != int32(stateStopped) {
+		t.Fatalf("state = %d, want stopped", w.state.Load())
+	}
+}
+
+// A Drain on another goroutine must not miss a job that the receive loop
+// accepts at the same time: Drain then half-closes the stream while the job
+// starts. For each accepted job, Drain must see a job count that is not zero.
+func TestStreamingWorker_Drain_SeesJobAcceptedConcurrently(t *testing.T) {
+	block := make(chan struct{})
+	t.Cleanup(func() { close(block) })
+
+	for i := 0; i < 3000; i++ {
+		w := NewStreamingWorker(WorkerConfig{
+			ServerURL: "http://example.com",
+			Functions: []Function{testFn("fn", func(ctx Context) (any, error) { <-block; return nil, nil })},
+			Logger:    NewNoopLogger(),
+		})
+		w.state.Store(int32(stateConnected))
+		job := makeJobAssignment("job-1", "run-1", "fn", map[string]any{})
+
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		var sawNoJob bool
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			w.handleJobAssignment(context.Background(), job)
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			// The first two steps of Drain.
+			storeStateUnlessStopped(&w.state, stateDraining)
+			sawNoJob = w.jobCount.Load() == 0
+		}()
+		close(start)
+		wg.Wait()
+
+		// A refused job queues a JobNack; only an accepted job queues a JobAck.
+		accepted := false
+		for len(w.outCh) > 0 {
+			if (<-w.outCh).GetJobAck() != nil {
+				accepted = true
+			}
+		}
+		w.Stop()
+		if accepted && sawNoJob {
+			t.Fatalf("iteration %d: the worker accepted a job that Drain did not see", i)
+		}
+	}
+}
+
+// Without a stream no result can reach the engine. A reconnect would only open
+// the worker to new jobs that the deadline then cancels.
+func TestStreamingWorker_DrainingStreamDrop_StopsWithoutReconnect(t *testing.T) {
+	handler := &mockWorkerHandler{}
+	var connects atomic.Int32
+	dropStream := make(chan struct{})
+
+	handler.onConnect = func(ctx context.Context, stream *connect.BidiStream[ironflowv1.WorkerMessage, ironflowv1.EngineMessage]) error {
+		connects.Add(1)
+		if _, err := doRegistrationHandshake(stream, handler, 30000); err != nil {
+			return err
+		}
+		<-dropStream
+		return nil
+	}
+
+	server := startMockServer(t, handler)
+
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL:      server.URL,
+		Functions:      []Function{testFn("fn", func(ctx Context) (any, error) { return nil, nil })},
+		ReconnectDelay: 20 * time.Millisecond,
+		Logger:         NewNoopLogger(),
+	})
+	w.jobCount.Store(1) // an active job keeps Drain in its wait
+
+	done := make(chan error, 1)
+	go func() { done <- w.Run(context.Background()) }()
+
+	deadline := time.After(3 * time.Second)
+	for w.state.Load() != int32(stateConnected) {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for the connection")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	go w.Drain()
+	for w.state.Load() != int32(stateDraining) {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for the drain")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	close(dropStream)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned %v, want nil", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not stop after the stream dropped during the drain")
+	}
+	if n := connects.Load(); n != 1 {
+		t.Fatalf("the worker connected %d times, want 1", n)
+	}
+	if w.state.Load() != int32(stateStopped) {
+		t.Fatalf("state = %d, want stopped", w.state.Load())
+	}
+}
+
+// refusedJob runs one assignment through handleJobAssignment and returns what
+// the worker queued for the engine.
+func refusedJob(t *testing.T, prepare func(w *StreamingWorker)) []*ironflowv1.WorkerMessage {
+	t.Helper()
+	var ran atomic.Bool
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL: "http://example.com",
+		Functions: []Function{testFn("fn", func(ctx Context) (any, error) { ran.Store(true); return nil, nil })},
+		Logger:    NewNoopLogger(),
+	})
+	prepare(w)
+
+	job := makeJobAssignment("job-1", "run-1", "fn", map[string]any{})
+	job.ExecutionSeq = 7
+	job.LeaseToken = "tok"
+	w.handleJobAssignment(context.Background(), job)
+
+	var out []*ironflowv1.WorkerMessage
+	for {
+		select {
+		case msg := <-w.outCh:
+			out = append(out, msg)
+			continue
+		default:
+		}
+		break
+	}
+	if ran.Load() {
+		t.Fatal("the refused job ran")
+	}
+	return out
+}
+
+// A worker that cannot run a job refuses it with a nack (#2456). A nack uses no
+// run attempt, and the engine re-queues the job at once.
+func TestStreamingWorker_NacksJobItCannotRun(t *testing.T) {
+	full := func(w *StreamingWorker) { w.jobCount.Store(int32(w.config.MaxConcurrentJobs)) }
+	draining := func(w *StreamingWorker) { w.state.Store(int32(stateDraining)) }
+	cases := map[string]struct {
+		prepare func(w *StreamingWorker)
+		reason  ironflowv1.JobNackReason
+	}{
+		"at capacity":          {full, ironflowv1.JobNackReason_JOB_NACK_REASON_AT_CAPACITY},
+		"draining":             {draining, ironflowv1.JobNackReason_JOB_NACK_REASON_DRAINING},
+		"draining at capacity": {func(w *StreamingWorker) { full(w); draining(w) }, ironflowv1.JobNackReason_JOB_NACK_REASON_DRAINING},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			out := refusedJob(t, tc.prepare)
+			if len(out) != 1 {
+				t.Fatalf("got %d messages, want 1 nack", len(out))
+			}
+			nack := out[0].GetJobNack()
+			if nack == nil {
+				t.Fatalf("got %T, want a JobNack", out[0].GetPayload())
+			}
+			if nack.GetJobId() != "job-1" || nack.GetRunId() != "run-1" || nack.GetExecutionSeq() != 7 || nack.GetLeaseToken() != "tok" {
+				t.Fatalf("nack does not echo the fence: %+v", nack)
+			}
+			if nack.GetReason() != tc.reason {
+				t.Fatalf("reason = %v, want %v", nack.GetReason(), tc.reason)
+			}
+		})
+	}
+}
+
+// The receive loop continues after a Shutdown message, so the worker must be
+// draining before it reads the next message.
+func TestStreamingWorker_Shutdown_DrainsBeforeNextMessage(t *testing.T) {
+	w := NewStreamingWorker(WorkerConfig{ServerURL: "http://example.com", Logger: NewNoopLogger()})
+	w.state.Store(int32(stateConnected))
+
+	w.handleShutdown(&ironflowv1.Shutdown{})
+
+	if w.state.Load() == int32(stateConnected) {
+		t.Fatal("the worker still accepts jobs after handleShutdown returned")
+	}
+}
+
+// An engine Shutdown message starts a drain. The active job completes and
+// reports on the open stream, and the worker does not reconnect.
+func TestStreamingWorker_Shutdown_DrainsActiveJob(t *testing.T) {
+	handler := &mockWorkerHandler{}
+	var connects atomic.Int32
+
+	handler.onConnect = func(ctx context.Context, stream *connect.BidiStream[ironflowv1.WorkerMessage, ironflowv1.EngineMessage]) error {
+		connects.Add(1)
+		if _, err := doRegistrationHandshake(stream, handler, 30000); err != nil {
+			return err
+		}
+		if err := stream.Send(&ironflowv1.EngineMessage{
+			Payload: &ironflowv1.EngineMessage_Job{
+				Job: makeJobAssignment("job-sd", "run-sd", "sd-fn", map[string]any{}),
+			},
+		}); err != nil {
+			return err
+		}
+		if err := stream.Send(&ironflowv1.EngineMessage{
+			Payload: &ironflowv1.EngineMessage_Shutdown{Shutdown: &ironflowv1.Shutdown{Reason: "deploy"}},
+		}); err != nil {
+			return err
+		}
+		recvLoop(ctx, stream, handler)
+		return nil
+	}
+
+	server := startMockServer(t, handler)
+
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL: server.URL,
+		Functions: []Function{testFn("sd-fn", func(ctx Context) (any, error) {
+			time.Sleep(200 * time.Millisecond)
+			return map[string]any{"ok": true}, nil
+		})},
+		ReconnectDelay: 50 * time.Millisecond,
+		Logger:         NewNoopLogger(),
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- w.Run(context.Background()) }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned %v, want nil", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the worker did not stop after the Shutdown drain")
+	}
+
+	completed := hasMessageType(handler.getReceived(), func(p any) bool {
+		c, ok := p.(*ironflowv1.WorkerMessage_JobCompleted)
+		return ok && c.JobCompleted.GetJobId() == "job-sd"
+	})
+	if !completed {
+		t.Error("the engine did not receive JobCompleted for the job that was active at Shutdown")
+	}
+	if n := connects.Load(); n != 1 {
+		t.Errorf("the worker connected %d times, want 1: a draining worker must not reconnect", n)
+	}
+}
+
+// The engine reclaims a streaming worker's leases when the stream closes, so
+// Stop must close it without help from the server.
+func TestStreamingWorker_Stop_ClosesStream(t *testing.T) {
+	handler := &mockWorkerHandler{}
+	var registered atomic.Bool
+	streamClosed := make(chan struct{})
+
+	handler.onConnect = func(ctx context.Context, stream *connect.BidiStream[ironflowv1.WorkerMessage, ironflowv1.EngineMessage]) error {
+		if _, err := doRegistrationHandshake(stream, handler, 30000); err != nil {
+			return err
+		}
+		registered.Store(true)
+		<-ctx.Done()
+		close(streamClosed)
+		return nil
+	}
+
+	server := startMockServer(t, handler)
+
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL:      server.URL,
+		Functions:      []Function{testFn("stop-fn", func(ctx Context) (any, error) { return nil, nil })},
+		ReconnectDelay: 100 * time.Millisecond,
+		Logger:         NewNoopLogger(),
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- w.Run(context.Background()) }()
+
+	deadline := time.After(2 * time.Second)
+	for !registered.Load() {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for registration")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	w.Stop()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Stop did not cause Run to exit")
+	}
+	select {
+	case <-streamClosed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Stop did not close the stream")
+	}
+}
+
+// A cancelled Run context does not unblock Receive while the engine holds the
+// stream open, so Run must close the stream itself.
+// waitFor polls cond until it holds or the test times out.
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.After(3 * time.Second)
+	for !cond() {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for %s", what)
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
+// readToEOF records the worker's messages until the stream ends and reports
+// whether it ended with a half-close.
+func readToEOF(stream *connect.BidiStream[ironflowv1.WorkerMessage, ironflowv1.EngineMessage], handler *mockWorkerHandler, onMsg func(*ironflowv1.WorkerMessage)) bool {
+	for {
+		msg, err := stream.Receive()
+		if err != nil {
+			return errors.Is(err, io.EOF)
+		}
+		handler.record(msg)
+		if onMsg != nil {
+			onMsg(msg)
+		}
+	}
+}
+
+// signal.NotifyContext plus Run(ctx) is the usual shutdown pattern, so a
+// cancelled Run context must drain as in the polling Worker: the active job
+// completes and reports on the open stream, a new job is ignored, and Run
+// returns the context error.
+func TestStreamingWorker_ContextCancel_DrainsActiveJob(t *testing.T) {
+	handler := &mockWorkerHandler{}
+	var halfClosed atomic.Bool
+	jobStarted := make(chan struct{})
+	sendSecond := make(chan struct{})
+	release := make(chan struct{})
+
+	handler.onConnect = func(ctx context.Context, stream *connect.BidiStream[ironflowv1.WorkerMessage, ironflowv1.EngineMessage]) error {
+		if _, err := doRegistrationHandshake(stream, handler, 30000); err != nil {
+			return err
+		}
+		if err := stream.Send(&ironflowv1.EngineMessage{
+			Payload: &ironflowv1.EngineMessage_Job{Job: makeJobAssignment("job-1", "run-1", "cc-fn", map[string]any{})},
+		}); err != nil {
+			return err
+		}
+		select {
+		case <-sendSecond:
+		case <-ctx.Done():
+			return nil
+		}
+		if err := stream.Send(&ironflowv1.EngineMessage{
+			Payload: &ironflowv1.EngineMessage_Job{Job: makeJobAssignment("job-2", "run-2", "cc-fn", map[string]any{})},
+		}); err != nil {
+			return err
+		}
+		halfClosed.Store(readToEOF(stream, handler, nil))
+		return nil
+	}
+
+	server := startMockServer(t, handler)
+
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL: server.URL,
+		Functions: []Function{testFn("cc-fn", func(ctx Context) (any, error) {
+			if ctx.Run.ID == "run-1" {
+				close(jobStarted)
+			}
+			<-release
+			return map[string]any{"ok": true}, nil
+		})},
+		Logger: NewNoopLogger(),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	select {
+	case <-jobStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for the job")
+	}
+
+	cancel()
+	waitFor(t, "the drain", func() bool { return w.state.Load() == int32(stateDraining) })
+	close(sendSecond)
+
+	select {
+	case err := <-done:
+		t.Fatalf("Run returned %v with a job still active, want a drain", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run returned %v, want context.Canceled", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not return after the drain")
+	}
+	if !halfClosed.Load() {
+		t.Error("the drain aborted the stream, want a half-close")
+	}
+	received := handler.getReceived()
+	if !hasMessageType(received, func(p any) bool {
+		c, ok := p.(*ironflowv1.WorkerMessage_JobCompleted)
+		return ok && c.JobCompleted.GetJobId() == "job-1"
+	}) {
+		t.Error("the engine did not receive JobCompleted for the active job")
+	}
+	if hasMessageType(received, func(p any) bool {
+		a, ok := p.(*ironflowv1.WorkerMessage_JobAck)
+		return ok && a.JobAck.GetJobId() == "job-2"
+	}) {
+		t.Error("the draining worker accepted a new job")
+	}
+	if w.state.Load() != int32(stateStopped) {
+		t.Fatalf("state = %d, want stopped", w.state.Load())
+	}
+}
+
+// The drain deadline, not the cancelled Run context, stops a job that does not
+// finish.
+func TestStreamingWorker_ContextCancel_DeadlineStopsWorker(t *testing.T) {
+	originalDrainTimeout := workerDrainTimeout
+	workerDrainTimeout = 150 * time.Millisecond
+	t.Cleanup(func() { workerDrainTimeout = originalDrainTimeout })
+
+	handler := &mockWorkerHandler{}
+	jobStarted := make(chan struct{})
+	block := make(chan struct{})
+	t.Cleanup(func() { close(block) })
+
+	handler.onConnect = func(ctx context.Context, stream *connect.BidiStream[ironflowv1.WorkerMessage, ironflowv1.EngineMessage]) error {
+		if _, err := doRegistrationHandshake(stream, handler, 30000); err != nil {
+			return err
+		}
+		if err := stream.Send(&ironflowv1.EngineMessage{
+			Payload: &ironflowv1.EngineMessage_Job{Job: makeJobAssignment("job-1", "run-1", "dl-fn", map[string]any{})},
+		}); err != nil {
+			return err
+		}
+		readToEOF(stream, handler, nil)
+		return nil
+	}
+
+	server := startMockServer(t, handler)
+
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL: server.URL,
+		Functions: []Function{testFn("dl-fn", func(ctx Context) (any, error) {
+			close(jobStarted)
+			<-block
+			return nil, nil
+		})},
+		Logger: NewNoopLogger(),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	select {
+	case <-jobStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for the job")
+	}
+	start := time.Now()
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run returned %v, want context.Canceled", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not return at the drain deadline")
+	}
+	if d := time.Since(start); d < workerDrainTimeout/2 {
+		t.Fatalf("Run returned after %v, want at the drain deadline (%v)", d, workerDrainTimeout)
+	}
+	if w.state.Load() != int32(stateStopped) {
+		t.Fatalf("state = %d, want stopped", w.state.Load())
+	}
+}
+
+// The h2c client has no timeout, so only Stop can end a registration that
+// hangs. A cancelled Run context must not leave Run blocked in it: the drain
+// deadline stops the worker, and Stop cancels the registration.
+func TestStreamingWorker_ContextCancel_DuringHungRegistration(t *testing.T) {
+	originalDrainTimeout := workerDrainTimeout
+	workerDrainTimeout = 150 * time.Millisecond
+	t.Cleanup(func() { workerDrainTimeout = originalDrainTimeout })
+
+	registering := make(chan struct{}, 1)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ironflow.v1.IronflowService/RegisterFunction", func(w http.ResponseWriter, r *http.Request) {
+		registering <- struct{}{}
+		<-r.Context().Done()
+	})
+	server := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
+	server.Start()
+	t.Cleanup(server.Close)
+
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL: server.URL,
+		Functions: []Function{testFn("fn", func(ctx Context) (any, error) { return nil, nil })},
+		Logger:    NewNoopLogger(),
+	})
+	t.Cleanup(w.Stop)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+
+	select {
+	case <-registering:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for the registration")
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run returned %v, want context.Canceled", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run stayed blocked in the registration")
+	}
+	if w.state.Load() != int32(stateStopped) {
+		t.Fatalf("state = %d, want stopped", w.state.Load())
+	}
+}
+
+// startHangingRegistrationRun starts Run on a background context against an
+// engine that accepts the registration request and never answers it (#2480).
+func startHangingRegistrationRun(t *testing.T) (*StreamingWorker, <-chan error) {
+	t.Helper()
+	registering := make(chan struct{}, 1)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ironflow.v1.IronflowService/RegisterFunction", func(w http.ResponseWriter, r *http.Request) {
+		registering <- struct{}{}
+		<-r.Context().Done()
+	})
+	server := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
+	server.Start()
+	t.Cleanup(server.Close)
+
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL: server.URL,
+		Functions: []Function{testFn("fn", func(ctx Context) (any, error) { return nil, nil })},
+		Logger:    NewNoopLogger(),
+	})
+	t.Cleanup(w.Stop)
+
+	done := make(chan error, 1)
+	go func() { done <- w.Run(context.Background()) }()
+
+	select {
+	case <-registering:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for the registration")
+	}
+	return w, done
+}
+
+func TestStreamingWorker_Stop_DuringHungRegistration(t *testing.T) {
+	w, done := startHangingRegistrationRun(t)
+
+	w.Stop()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run stayed blocked in the registration after Stop")
+	}
+}
+
+// The signal-handler pattern: Run on a background context, Drain on a signal.
+// Drain has no jobs to wait for, so the drain deadline stops the worker.
+func TestStreamingWorker_Drain_DuringHungRegistration(t *testing.T) {
+	originalDrainTimeout := workerDrainTimeout
+	workerDrainTimeout = 150 * time.Millisecond
+	t.Cleanup(func() { workerDrainTimeout = originalDrainTimeout })
+
+	w, done := startHangingRegistrationRun(t)
+
+	go w.Drain()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run stayed blocked in the registration after Drain")
+	}
+}
+
+// The Graceful Shutdown example cancels the Run context and calls Drain from
+// a signal handler at the same time.
+func TestStreamingWorker_ContextCancel_WithConcurrentDrain(t *testing.T) {
+	handler := &mockWorkerHandler{}
+	var halfClosed atomic.Bool
+
+	handler.onConnect = func(ctx context.Context, stream *connect.BidiStream[ironflowv1.WorkerMessage, ironflowv1.EngineMessage]) error {
+		if _, err := doRegistrationHandshake(stream, handler, 30000); err != nil {
+			return err
+		}
+		halfClosed.Store(readToEOF(stream, handler, nil))
+		return nil
+	}
+
+	server := startMockServer(t, handler)
+
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL: server.URL,
+		Functions: []Function{testFn("ctx-fn", func(ctx Context) (any, error) { return nil, nil })},
+		Logger:    NewNoopLogger(),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+	waitFor(t, "the connection", func() bool { return w.state.Load() == int32(stateConnected) })
+
+	drained := make(chan struct{})
+	go func() { w.Drain(); close(drained) }()
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run returned %v, want context.Canceled", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not return after the drain")
+	}
+	select {
+	case <-drained:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Drain did not return")
+	}
+	if !halfClosed.Load() {
+		t.Error("the drain aborted the stream, want a half-close")
+	}
+	if w.state.Load() != int32(stateStopped) {
+		t.Fatalf("state = %d, want stopped", w.state.Load())
+	}
+}
+
+// Without a stream there is nothing to drain: a cancel during the reconnect
+// wait stops the worker without waiting for the delay.
+func TestStreamingWorker_ContextCancel_WhileDisconnected(t *testing.T) {
+	handler := &mockWorkerHandler{}
+	var connects atomic.Int32
+	handler.onConnect = func(ctx context.Context, stream *connect.BidiStream[ironflowv1.WorkerMessage, ironflowv1.EngineMessage]) error {
+		connects.Add(1)
+		return connect.NewError(connect.CodeUnavailable, errors.New("engine restarting"))
+	}
+	server := startMockServer(t, handler)
+
+	w := NewStreamingWorker(WorkerConfig{
+		ServerURL:      server.URL,
+		Functions:      []Function{testFn("fn", func(ctx Context) (any, error) { return nil, nil })},
+		ReconnectDelay: time.Hour,
+		Logger:         NewNoopLogger(),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+	waitFor(t, "the first connect", func() bool { return connects.Load() > 0 })
+	time.Sleep(50 * time.Millisecond) // into the reconnect wait
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run returned %v, want context.Canceled", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run waited out the reconnect delay")
+	}
+	if w.state.Load() != int32(stateStopped) {
+		t.Fatalf("state = %d, want stopped", w.state.Load())
+	}
+}
+
+func TestStreamingAssignment_CarriesIdempotencyKeyAndSource(t *testing.T) {
+	pa := &ironflowv1.JobAssignment{
+		JobId: "j", RunId: "r", FunctionId: "fn",
+		Event: &ironflowv1.Event{Id: "e1", Name: "e", IdempotencyKey: "idem-1", Source: "webhook"},
+	}
+	job, err := protoToJobAssignment(pa)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Event.IdempotencyKey != "idem-1" {
+		t.Errorf("IdempotencyKey = %q, want idem-1", job.Event.IdempotencyKey)
+	}
+	if job.Event.Source != "webhook" {
+		t.Errorf("Source = %q, want webhook", job.Event.Source)
+	}
+}
+
+// ============================================================================
+// Full send queue (#2478)
+// ============================================================================
+
+func fullOutCh() chan *ironflowv1.WorkerMessage {
+	ch := make(chan *ironflowv1.WorkerMessage, 2)
+	for range cap(ch) {
+		ch <- &ironflowv1.WorkerMessage{}
+	}
+	return ch
+}
+
+func TestStreamJobReporter_FullQueue_TerminalReportWaitsForSpace(t *testing.T) {
+	outCh := fullOutCh()
+	r := &streamJobReporter{outCh: outCh, logger: NewNoopLogger()}
+
+	done := make(chan error, 1)
+	go func() { done <- r.ReportCompleted(context.Background(), "job-1", nil, nil, 0) }()
+
+	select {
+	case err := <-done:
+		t.Fatalf("report returned while the queue was full: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	<-outCh // the send loop frees a slot
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("report did not complete after space freed")
+	}
+	<-outCh
+	if _, ok := (<-outCh).GetPayload().(*ironflowv1.WorkerMessage_JobCompleted); !ok {
+		t.Fatal("JobCompleted was not queued")
+	}
+}
+
+func TestStreamJobReporter_FullQueue_CancelledReportReturnsError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	reports := map[string]func(r *streamJobReporter) error{
+		"completed": func(r *streamJobReporter) error { return r.ReportCompleted(ctx, "j", nil, nil, 0) },
+		"failed": func(r *streamJobReporter) error {
+			return r.ReportFailed(ctx, "j", &PushError{Message: "boom"}, nil, 0)
+		},
+		"yielded": func(r *streamJobReporter) error {
+			return r.ReportYielded(ctx, "j", &YieldInfo{Type: "wait_for_event", StepID: "s"}, nil, 0)
+		},
+		"yielded-bad-sleep": func(r *streamJobReporter) error {
+			return r.ReportYielded(ctx, "j", &YieldInfo{Type: "sleep", Until: "not-a-time"}, nil, 0)
+		},
+	}
+	for name, report := range reports {
+		t.Run(name, func(t *testing.T) {
+			outCh := fullOutCh()
+			r := &streamJobReporter{outCh: outCh, logger: NewNoopLogger()}
+			if err := report(r); err == nil {
+				t.Fatal("expected an error when the report cannot be queued")
+			}
+			if len(outCh) != cap(outCh) {
+				t.Fatalf("queue changed: len=%d", len(outCh))
+			}
+		})
+	}
+}
+
+func TestStreamJobReporter_CancelledCtxStillQueuesWhenSpaceFree(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	outCh := make(chan *ironflowv1.WorkerMessage, 1)
+	r := &streamJobReporter{outCh: outCh, logger: NewNoopLogger()}
+	if err := r.ReportCompleted(ctx, "j", nil, nil, 0); err != nil {
+		t.Fatalf("report with free space must not fail on a cancelled ctx: %v", err)
+	}
+	if len(outCh) != 1 {
+		t.Fatal("message not queued")
+	}
+}
+
+func TestStreamStepReporter_FullQueue_LogsDrop(t *testing.T) {
+	log := &captureLogger{}
+	r := &streamStepReporter{outCh: fullOutCh(), logger: log, jobID: "job-1"}
+
+	r.ReportStepStarted("s1", "n", "invoke")
+	r.ReportStepCompleted("s1", "n", "invoke", nil, 1)
+	r.ReportStepFailed("s2", "n", "invoke", "err", 1)
+
+	if got := len(log.warnings()); got != 3 {
+		t.Fatalf("expected 3 drop warnings, got %d: %v", got, log.warnings())
+	}
+}
+
+func TestStreamingWorker_DrainOutCh_LogsDiscardedCount(t *testing.T) {
+	log := &captureLogger{}
+	w := &StreamingWorker{outCh: fullOutCh(), logger: log}
+
+	w.drainOutCh()
+
+	if len(w.outCh) != 0 {
+		t.Fatal("queue not drained")
+	}
+	if len(log.warnings()) != 1 {
+		t.Fatalf("expected one warning, got %v", log.warnings())
+	}
+}
+
+// ============================================================================
+// Full send queue: ack and nack (#2500)
+// ============================================================================
+
+// enqueue runs on the receive loop, so it must not block, but a JobNack must
+// not be lost either: without it the engine waits for the lease to expire.
+func TestStreamingWorker_FullQueue_NackWaitsForSpace(t *testing.T) {
+	w := &StreamingWorker{outCh: fullOutCh(), logger: NewNoopLogger()}
+	job := &ironflowv1.JobAssignment{JobId: "job-1", RunId: "run-1", ExecutionSeq: 7, LeaseToken: "tok"}
+
+	returned := make(chan struct{})
+	go func() {
+		w.nackJob(context.Background(), job, ironflowv1.JobNackReason_JOB_NACK_REASON_AT_CAPACITY)
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		t.Fatal("nackJob blocked the receive loop on a full queue")
+	}
+
+	<-w.outCh // the send loop frees a slot
+	<-w.outCh
+	select {
+	case msg := <-w.outCh:
+		if msg.GetJobNack().GetJobId() != "job-1" {
+			t.Fatalf("got %T, want the JobNack", msg.GetPayload())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the nack was dropped instead of waiting for space")
+	}
+}
+
+func TestStreamingWorker_FullQueue_EnqueueStopsWaitingWhenCtxEnds(t *testing.T) {
+	w := &StreamingWorker{outCh: fullOutCh(), logger: NewNoopLogger()}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	w.enqueue(ctx, &ironflowv1.WorkerMessage{Payload: &ironflowv1.WorkerMessage_JobAck{JobAck: &ironflowv1.JobAck{JobId: "job-1"}}})
+	cancel() // the connection ended
+	time.Sleep(50 * time.Millisecond)
+
+	<-w.outCh // space frees up only after the connection is gone
+	<-w.outCh
+	time.Sleep(50 * time.Millisecond)
+	if len(w.outCh) != 0 {
+		t.Fatal("a message from the ended connection was queued")
 	}
 }

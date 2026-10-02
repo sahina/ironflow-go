@@ -101,6 +101,9 @@ func (c *Client) WaitForProjectionStream(ctx context.Context, name string, opts 
 	if c.apiKey != "" {
 		creq.Header().Set("Authorization", "Bearer "+c.apiKey)
 	}
+	if c.environment != "" {
+		creq.Header().Set(HeaderEnvironment, c.environment)
+	}
 
 	// sdkcoverage: POST /ironflow.v1.ProjectionService/WaitProjectionCatchupStream
 	stream, err := projClient.WaitProjectionCatchupStream(streamCtx, creq)

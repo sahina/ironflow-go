@@ -296,6 +296,70 @@ func TestStepClient_Run(t *testing.T) {
 	}
 }
 
+func TestStepClient_Publish(t *testing.T) {
+	body := capturePublishBody(t, func(ctx Context) error {
+		return (&StepClient{ctx: ctx}).Publish("order.processed", map[string]any{"orderId": "123"},
+			WithPublishIdempotencyKey("order-123"))
+	})
+	if body["topic"] != "order.processed" {
+		t.Errorf("topic = %v, want order.processed", body["topic"])
+	}
+	if body["idempotencyKey"] != "order-123" {
+		t.Errorf("idempotencyKey = %v, want order-123", body["idempotencyKey"])
+	}
+}
+
+// Memoized steps keep these tests off the network: an un-memoized invoke
+// yields to the engine by panicking.
+func TestStepClient_InvokeReturnsMemoizedOutput(t *testing.T) {
+	exec := &executionContext{
+		runID:        "run-001",
+		functionID:   "test-function",
+		attempt:      1,
+		stepCounters: make(map[string]int),
+		completedSteps: map[string]*CompletedStep{
+			"run-001:child:0": {
+				ID: "run-001:child:0", Name: "run-001:child:0",
+				Status: "completed", Output: map[string]any{"ok": true},
+			},
+		},
+		executedSteps: make([]*StepResult, 0),
+	}
+
+	got, err := (&StepClient{ctx: Context{exec: exec}}).Invoke("child", map[string]any{"n": 1})
+	if err != nil {
+		t.Fatalf("step.Invoke failed: %v", err)
+	}
+	m, ok := got.(map[string]any)
+	if !ok || m["ok"] != true {
+		t.Fatalf("output = %#v, want map with ok=true", got)
+	}
+}
+
+func TestStepClient_InvokeAsyncReturnsMemoizedRunID(t *testing.T) {
+	exec := &executionContext{
+		runID:        "run-001",
+		functionID:   "test-function",
+		attempt:      1,
+		stepCounters: make(map[string]int),
+		completedSteps: map[string]*CompletedStep{
+			"run-001:child:0": {
+				ID: "run-001:child:0", Name: "run-001:child:0",
+				Status: "completed", Output: map[string]any{"run_id": "run-child-1"},
+			},
+		},
+		executedSteps: make([]*StepResult, 0),
+	}
+
+	got, err := (&StepClient{ctx: Context{exec: exec}}).InvokeAsync("child", nil)
+	if err != nil {
+		t.Fatalf("step.InvokeAsync failed: %v", err)
+	}
+	if got.RunID != "run-child-1" {
+		t.Fatalf("RunID = %q, want run-child-1", got.RunID)
+	}
+}
+
 // ============================================================================
 // HandlerContext Tests
 // ============================================================================

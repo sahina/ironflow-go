@@ -67,6 +67,15 @@ type ClientConfig struct {
 	// IRONFLOW_API_KEY env var. Optional for local dev.
 	APIKey string
 
+	// Environment scopes the client's requests (events, runs, entity streams,
+	// projections, webhooks, KV, config, ...) through the
+	// X-Ironflow-Environment header. Secret routes send their own "current"
+	// value, and subscriptions do not send it. Empty sends no header: the server
+	// then uses the API key's environment, or the default environment when
+	// auth is off. The client does not read IRONFLOW_ENV: a process can set it
+	// for its worker and still use a Client for another environment's key (#2471).
+	Environment string
+
 	// Timeout is the request timeout (default: 30s).
 	Timeout time.Duration
 
@@ -86,6 +95,7 @@ type ClientConfig struct {
 type Client struct {
 	serverURL   string
 	apiKey      string
+	environment string
 	timeout     time.Duration
 	httpClient  *http.Client
 	retryConfig *ClientRetryConfig
@@ -186,6 +196,7 @@ func NewClient(config ClientConfig) *Client {
 	return &Client{
 		serverURL:   serverURL,
 		apiKey:      apiKey,
+		environment: config.Environment,
 		timeout:     timeout,
 		httpClient:  httpClient,
 		retryConfig: retryConfig,
@@ -1119,7 +1130,7 @@ func (c *Client) PatchStep(ctx context.Context, stepID string, output map[string
 			return err
 		}
 	}
-	client := ironflowv1connect.NewIronflowServiceClient(c.httpClient, c.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(bearerInterceptor(c.apiKey)))
+	client := ironflowv1connect.NewIronflowServiceClient(c.httpClient, c.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(c.interceptor()))
 	// sdkcoverage: POST /ironflow.v1.IronflowService/PatchStep
 	return c.withRetry(ctx, func() error {
 		_, err := client.PatchStep(ctx, connect.NewRequest(&ironflowv1.PatchStepRequest{StepId: stepID, Output: value, Reason: reason}))
@@ -1129,7 +1140,7 @@ func (c *Client) PatchStep(ctx context.Context, stepID string, output map[string
 
 // ListFunctions returns all registered functions.
 func (c *Client) ListFunctions(ctx context.Context) ([]FunctionInfo, error) {
-	rpc := ironflowv1connect.NewIronflowServiceClient(c.httpClient, c.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(bearerInterceptor(c.apiKey)))
+	rpc := ironflowv1connect.NewIronflowServiceClient(c.httpClient, c.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(c.interceptor()))
 	// sdkcoverage: POST /ironflow.v1.IronflowService/ListFunctions
 	resp, err := rpc.ListFunctions(ctx, connect.NewRequest(&ironflowv1.ListFunctionsRequest{}))
 	if err != nil {
@@ -1154,6 +1165,9 @@ func (c *Client) ListWorkers(ctx context.Context) ([]WorkerInfo, error) {
 	req.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	if c.environment != "" {
+		req.Header.Set(HeaderEnvironment, c.environment)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -2189,6 +2203,9 @@ func (c *Client) executeRequest(ctx context.Context, httpClient *http.Client, me
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
+	if c.environment != "" {
+		req.Header.Set(HeaderEnvironment, c.environment)
+	}
 	// Forward the emitting run id (when the context carries one) so events a
 	// function emits are attributed to the run for the flow map's learned
 	// emit edges (#1262). Matches the JS SDK's run-context propagation.
@@ -2208,69 +2225,7 @@ func (c *Client) executeRequest(ctx context.Context, httpClient *http.Client, me
 	}
 
 	if resp.StatusCode >= 400 {
-		var errResp struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		}
-		_ = json.Unmarshal(respBody, &errResp) // best-effort parsing
-
-		ironflowErr := NewError(
-			fmt.Sprintf("%s: %s", errResp.Code, errResp.Message),
-			errResp.Code,
-			resp.StatusCode >= 500,
-		)
-		ironflowErr.Details = map[string]any{"http_status": resp.StatusCode}
-
-		switch resp.StatusCode {
-		case http.StatusUnauthorized:
-			ironflowErr.Cause = ErrUnauthorized
-			// Name the env var and the key file, not just the status (#1673).
-			ironflowErr.Message += " — " + AuthHelp
-		case http.StatusPaymentRequired:
-			ironflowErr.Cause = ErrEnterpriseLicenseRequired
-		case http.StatusForbidden:
-			ironflowErr.Cause = ErrForbidden
-			ironflowErr.Message += " — " + AuthHelp
-		case http.StatusConflict:
-			// Without this, a 409 is indistinguishable from any other 4xx and
-			// callers have to string-match the message to tell "already in
-			// flight, wait" apart from a real failure (#1963).
-			//
-			// Two Connect codes land here and want opposite things (#2074).
-			// "aborted" is a lost CAS race: nothing was applied, so re-read and
-			// reissue. Anything else — "already_exists", or a REST body carrying
-			// no code at all — is a deduplicated resume: wait, do not reissue.
-			//
-			// Retryable stays false on both. gRPC defines Aborted as "retry at a
-			// higher level" — restart the read-modify-write — and Retryable here
-			// means something narrower: requestWith re-sends the identical
-			// marshaled body, which is wrong for both halves of "aborted".
-			// Entity-stream append and the webhook mutators CAS on a version
-			// the caller supplied, so a reissue is futile by construction;
-			// UpdateFunction, UpdateFunctionStatus, RollbackFunction and
-			// CancelRun CAS on a version the server read itself, so a reissue
-			// could land — silently re-applying a write the caller never
-			// re-read. The discrimination callers need is the sentinel, not
-			// the flag.
-			// The reason header splits the two meanings of "aborted" the same
-			// way the Connect path does (#2093); see connectError.
-			if errResp.Code == connect.CodeAborted.String() {
-				if resp.Header.Get(ErrorReasonHeader) == ReasonInjectionUnverified {
-					ironflowErr.Cause = ErrInjectionUnverified
-				} else {
-					ironflowErr.Cause = ErrContended
-				}
-			} else {
-				ironflowErr.Cause = ErrConflict
-			}
-		}
-
-		// Parse Retry-After header if present
-		if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
-			ironflowErr.RetryAfter = parseRetryAfter(retryAfter)
-		}
-
-		return ironflowErr
+		return c.errorFromResponse(resp, respBody)
 	}
 
 	if result != nil {
@@ -2280,6 +2235,84 @@ func (c *Client) executeRequest(ctx context.Context, httpClient *http.Client, me
 	}
 
 	return nil
+}
+
+// errorFromResponse maps a >= 400 response to an *IronflowError; shared by
+// the JSON path and the raw byte-transfer path.
+func (c *Client) errorFromResponse(resp *http.Response, respBody []byte) *IronflowError {
+	var errResp struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(respBody, &errResp) // best-effort parsing
+
+	ironflowErr := NewError(
+		fmt.Sprintf("%s: %s", errResp.Code, errResp.Message),
+		errResp.Code,
+		resp.StatusCode >= 500,
+	)
+	ironflowErr.Details = map[string]any{"http_status": resp.StatusCode}
+
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		ironflowErr.Cause = ErrUnauthorized
+		// Name the env var and the key file, not just the status (#1673).
+		ironflowErr.Message += " — " + AuthHelp
+	case http.StatusPaymentRequired:
+		ironflowErr.Cause = ErrEnterpriseLicenseRequired
+	case http.StatusForbidden:
+		ironflowErr.Cause = ErrForbidden
+		// A file bucket with signed URLs off is a setting, not a key problem.
+		if errResp.Code != codeSignedURLsDisabled {
+			ironflowErr.Message += " — " + AuthHelp
+		}
+	case http.StatusConflict:
+		// Without this, a 409 is indistinguishable from any other 4xx and
+		// callers have to string-match the message to tell "already in
+		// flight, wait" apart from a real failure (#1963).
+		//
+		// Two Connect codes land here and want opposite things (#2074).
+		// "aborted" is a lost CAS race: nothing was applied, so re-read and
+		// reissue. Anything else — "already_exists", or a REST body carrying
+		// no code at all — is a deduplicated resume: wait, do not reissue.
+		//
+		// Retryable stays false on both. gRPC defines Aborted as "retry at a
+		// higher level" — restart the read-modify-write — and Retryable here
+		// means something narrower: requestWith re-sends the identical
+		// marshaled body, which is wrong for both halves of "aborted".
+		// Entity-stream append and the webhook mutators CAS on a version
+		// the caller supplied, so a reissue is futile by construction;
+		// UpdateFunction, UpdateFunctionStatus, RollbackFunction and
+		// CancelRun CAS on a version the server read itself, so a reissue
+		// could land — silently re-applying a write the caller never
+		// re-read. The discrimination callers need is the sentinel, not
+		// the flag.
+		// The reason header splits the two meanings of "aborted" the same
+		// way the Connect path does (#2093); see connectError.
+		if errResp.Code == connect.CodeAborted.String() {
+			if resp.Header.Get(ErrorReasonHeader) == ReasonInjectionUnverified {
+				ironflowErr.Cause = ErrInjectionUnverified
+			} else {
+				ironflowErr.Cause = ErrContended
+			}
+		} else {
+			ironflowErr.Cause = ErrConflict
+		}
+	case http.StatusPreconditionFailed:
+		ironflowErr.Cause = ErrPreconditionFailed
+	case http.StatusRequestEntityTooLarge:
+		ironflowErr.Cause = ErrPayloadTooLarge
+	case http.StatusUnsupportedMediaType:
+		ironflowErr.Cause = ErrUnsupportedMediaType
+	}
+
+	// Parse Retry-After header if present
+	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+		ironflowErr.RetryAfter = parseRetryAfter(retryAfter)
+	}
+
+	return ironflowErr
+
 }
 
 // parseRetryAfter parses the Retry-After header value.

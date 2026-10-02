@@ -62,6 +62,38 @@ func TestAgent_DuplicateTool_Panics(t *testing.T) {
 	}, func(_ Context) (any, error) { return nil, nil })
 }
 
+func TestAgent_EmptyMemoryProjection_Panics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for empty memory projection")
+		}
+		err, ok := r.(error)
+		if !ok {
+			t.Fatalf("recovered non-error: %T %v", r, r)
+		}
+		var pe *MemoryProjectionRequiredError
+		if !errors.As(err, &pe) {
+			t.Fatalf("recovered err is not MemoryProjectionRequiredError: %T %v", err, err)
+		}
+		if pe.StreamID != "mem-stream" {
+			t.Errorf("StreamID = %q, want %q", pe.StreamID, "mem-stream")
+		}
+	}()
+
+	Agent(AgentConfig{
+		Function: ironflow.FunctionConfig{ID: "agent-no-projection"},
+		Memory:   &MemoryConfig{StreamID: "mem-stream"},
+	}, func(_ Context) (any, error) { return nil, nil })
+}
+
+func TestAgent_MemoryWithProjection_OK(t *testing.T) {
+	Agent(AgentConfig{
+		Function: ironflow.FunctionConfig{ID: "agent-projection"},
+		Memory:   &MemoryConfig{StreamID: "mem-stream", Projection: "mem-proj"},
+	}, func(_ Context) (any, error) { return nil, nil })
+}
+
 func TestContext_TurnZero_Initial(t *testing.T) {
 	interceptor := newFakeInterceptor(t)
 	ctx, _ := newAgentContext(t, AgentConfig{

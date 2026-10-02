@@ -27,7 +27,7 @@ func (c *Client) Schemas() *SchemaClient {
 }
 
 func (sc *SchemaClient) rpc() ironflowv1connect.EventSchemaServiceClient {
-	return ironflowv1connect.NewEventSchemaServiceClient(sc.client.httpClient, sc.client.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(bearerInterceptor(sc.client.apiKey)))
+	return ironflowv1connect.NewEventSchemaServiceClient(sc.client.httpClient, sc.client.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(sc.client.interceptor()))
 }
 
 // Register registers a new event schema or a new version.
