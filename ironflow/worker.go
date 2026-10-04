@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/sahina/ironflow-go/ironflow/discovery"
 )
 
 // WorkerConfig configures the worker.
@@ -157,6 +159,7 @@ type activeJob struct {
 //	    log.Fatal(err)
 //	}
 func NewWorker(config WorkerConfig) *Worker {
+	discovery.Hydrate()
 	PrintBanner()
 
 	// Defaults

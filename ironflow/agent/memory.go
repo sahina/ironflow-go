@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sahina/ironflow-go/ironflow"
+	"github.com/sahina/ironflow-go/ironflow/discovery"
 )
 
 // memoryAppendWaitTimeout is the wait window for the auto-catchup
@@ -222,6 +223,7 @@ func coerceProjectionState(cached any) map[string]any {
 // projections run (#2471). Returns nil + nil when no server URL is
 // configured so makeMemory can surface a clear "no backend" error on first use.
 func defaultMemoryBackend(environment string) (MemoryBackend, error) {
+	discovery.Hydrate()
 	serverURL := os.Getenv("IRONFLOW_URL")
 	if serverURL == "" {
 		serverURL = os.Getenv("IRONFLOW_SERVER_URL")

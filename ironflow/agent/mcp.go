@@ -53,6 +53,7 @@ import (
 	"time"
 
 	"github.com/sahina/ironflow-go/ironflow"
+	"github.com/sahina/ironflow-go/ironflow/discovery"
 )
 
 const (
@@ -103,6 +104,7 @@ func getHTTPClient() httpDoer {
 //	AGENT_MCP_DUPLICATE_TOOL, AGENT_MCP_MISSING_SCHEMA,
 //	AGENT_MCP_TRANSPORT_ERROR, AGENT_MCP_INVALID_RESPONSE.
 func ExposeMcp(cfg ExposeMcpConfig) (*ExposeMcpHandle, error) {
+	discovery.Hydrate()
 	if len(cfg.Tools) == 0 {
 		return nil, &ironflow.IronflowError{
 			Message:   "ExposeMcp requires at least one tool",

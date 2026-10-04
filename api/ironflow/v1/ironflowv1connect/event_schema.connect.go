@@ -33,6 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// EventSchemaServiceListSchemaHistoryProcedure is the fully-qualified name of the
+	// EventSchemaService's ListSchemaHistory RPC.
+	EventSchemaServiceListSchemaHistoryProcedure = "/ironflow.v1.EventSchemaService/ListSchemaHistory"
+	// EventSchemaServiceGetSchemaRevisionProcedure is the fully-qualified name of the
+	// EventSchemaService's GetSchemaRevision RPC.
+	EventSchemaServiceGetSchemaRevisionProcedure = "/ironflow.v1.EventSchemaService/GetSchemaRevision"
 	// EventSchemaServiceRegisterSchemaProcedure is the fully-qualified name of the EventSchemaService's
 	// RegisterSchema RPC.
 	EventSchemaServiceRegisterSchemaProcedure = "/ironflow.v1.EventSchemaService/RegisterSchema"
@@ -55,6 +61,9 @@ const (
 
 // EventSchemaServiceClient is a client for the ironflow.v1.EventSchemaService service.
 type EventSchemaServiceClient interface {
+	// Archived definitions captured before replacement or deletion.
+	ListSchemaHistory(context.Context, *connect.Request[v1.ListSchemaHistoryRequest]) (*connect.Response[v1.ListSchemaHistoryResponse], error)
+	GetSchemaRevision(context.Context, *connect.Request[v1.GetSchemaRevisionRequest]) (*connect.Response[v1.GetSchemaRevisionResponse], error)
 	RegisterSchema(context.Context, *connect.Request[v1.RegisterSchemaRequest]) (*connect.Response[v1.RegisterSchemaResponse], error)
 	GetSchema(context.Context, *connect.Request[v1.GetSchemaRequest]) (*connect.Response[v1.GetSchemaResponse], error)
 	ListSchemas(context.Context, *connect.Request[v1.ListSchemasRequest]) (*connect.Response[v1.ListSchemasResponse], error)
@@ -81,6 +90,20 @@ func NewEventSchemaServiceClient(httpClient connect.HTTPClient, baseURL string, 
 	baseURL = strings.TrimRight(baseURL, "/")
 	eventSchemaServiceMethods := v1.File_ironflow_v1_event_schema_proto.Services().ByName("EventSchemaService").Methods()
 	return &eventSchemaServiceClient{
+		listSchemaHistory: connect.NewClient[v1.ListSchemaHistoryRequest, v1.ListSchemaHistoryResponse](
+			httpClient,
+			baseURL+EventSchemaServiceListSchemaHistoryProcedure,
+			connect.WithSchema(eventSchemaServiceMethods.ByName("ListSchemaHistory")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		getSchemaRevision: connect.NewClient[v1.GetSchemaRevisionRequest, v1.GetSchemaRevisionResponse](
+			httpClient,
+			baseURL+EventSchemaServiceGetSchemaRevisionProcedure,
+			connect.WithSchema(eventSchemaServiceMethods.ByName("GetSchemaRevision")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		registerSchema: connect.NewClient[v1.RegisterSchemaRequest, v1.RegisterSchemaResponse](
 			httpClient,
 			baseURL+EventSchemaServiceRegisterSchemaProcedure,
@@ -126,12 +149,24 @@ func NewEventSchemaServiceClient(httpClient connect.HTTPClient, baseURL string, 
 
 // eventSchemaServiceClient implements EventSchemaServiceClient.
 type eventSchemaServiceClient struct {
-	registerSchema   *connect.Client[v1.RegisterSchemaRequest, v1.RegisterSchemaResponse]
-	getSchema        *connect.Client[v1.GetSchemaRequest, v1.GetSchemaResponse]
-	listSchemas      *connect.Client[v1.ListSchemasRequest, v1.ListSchemasResponse]
-	deleteSchema     *connect.Client[v1.DeleteSchemaRequest, v1.DeleteSchemaResponse]
-	testUpcast       *connect.Client[v1.TestUpcastRequest, v1.TestUpcastResponse]
-	checkEnforcement *connect.Client[v1.CheckEnforcementRequest, v1.CheckEnforcementResponse]
+	listSchemaHistory *connect.Client[v1.ListSchemaHistoryRequest, v1.ListSchemaHistoryResponse]
+	getSchemaRevision *connect.Client[v1.GetSchemaRevisionRequest, v1.GetSchemaRevisionResponse]
+	registerSchema    *connect.Client[v1.RegisterSchemaRequest, v1.RegisterSchemaResponse]
+	getSchema         *connect.Client[v1.GetSchemaRequest, v1.GetSchemaResponse]
+	listSchemas       *connect.Client[v1.ListSchemasRequest, v1.ListSchemasResponse]
+	deleteSchema      *connect.Client[v1.DeleteSchemaRequest, v1.DeleteSchemaResponse]
+	testUpcast        *connect.Client[v1.TestUpcastRequest, v1.TestUpcastResponse]
+	checkEnforcement  *connect.Client[v1.CheckEnforcementRequest, v1.CheckEnforcementResponse]
+}
+
+// ListSchemaHistory calls ironflow.v1.EventSchemaService.ListSchemaHistory.
+func (c *eventSchemaServiceClient) ListSchemaHistory(ctx context.Context, req *connect.Request[v1.ListSchemaHistoryRequest]) (*connect.Response[v1.ListSchemaHistoryResponse], error) {
+	return c.listSchemaHistory.CallUnary(ctx, req)
+}
+
+// GetSchemaRevision calls ironflow.v1.EventSchemaService.GetSchemaRevision.
+func (c *eventSchemaServiceClient) GetSchemaRevision(ctx context.Context, req *connect.Request[v1.GetSchemaRevisionRequest]) (*connect.Response[v1.GetSchemaRevisionResponse], error) {
+	return c.getSchemaRevision.CallUnary(ctx, req)
 }
 
 // RegisterSchema calls ironflow.v1.EventSchemaService.RegisterSchema.
@@ -166,6 +201,9 @@ func (c *eventSchemaServiceClient) CheckEnforcement(ctx context.Context, req *co
 
 // EventSchemaServiceHandler is an implementation of the ironflow.v1.EventSchemaService service.
 type EventSchemaServiceHandler interface {
+	// Archived definitions captured before replacement or deletion.
+	ListSchemaHistory(context.Context, *connect.Request[v1.ListSchemaHistoryRequest]) (*connect.Response[v1.ListSchemaHistoryResponse], error)
+	GetSchemaRevision(context.Context, *connect.Request[v1.GetSchemaRevisionRequest]) (*connect.Response[v1.GetSchemaRevisionResponse], error)
 	RegisterSchema(context.Context, *connect.Request[v1.RegisterSchemaRequest]) (*connect.Response[v1.RegisterSchemaResponse], error)
 	GetSchema(context.Context, *connect.Request[v1.GetSchemaRequest]) (*connect.Response[v1.GetSchemaResponse], error)
 	ListSchemas(context.Context, *connect.Request[v1.ListSchemasRequest]) (*connect.Response[v1.ListSchemasResponse], error)
@@ -188,6 +226,20 @@ type EventSchemaServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewEventSchemaServiceHandler(svc EventSchemaServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	eventSchemaServiceMethods := v1.File_ironflow_v1_event_schema_proto.Services().ByName("EventSchemaService").Methods()
+	eventSchemaServiceListSchemaHistoryHandler := connect.NewUnaryHandler(
+		EventSchemaServiceListSchemaHistoryProcedure,
+		svc.ListSchemaHistory,
+		connect.WithSchema(eventSchemaServiceMethods.ByName("ListSchemaHistory")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	eventSchemaServiceGetSchemaRevisionHandler := connect.NewUnaryHandler(
+		EventSchemaServiceGetSchemaRevisionProcedure,
+		svc.GetSchemaRevision,
+		connect.WithSchema(eventSchemaServiceMethods.ByName("GetSchemaRevision")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	eventSchemaServiceRegisterSchemaHandler := connect.NewUnaryHandler(
 		EventSchemaServiceRegisterSchemaProcedure,
 		svc.RegisterSchema,
@@ -230,6 +282,10 @@ func NewEventSchemaServiceHandler(svc EventSchemaServiceHandler, opts ...connect
 	)
 	return "/ironflow.v1.EventSchemaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case EventSchemaServiceListSchemaHistoryProcedure:
+			eventSchemaServiceListSchemaHistoryHandler.ServeHTTP(w, r)
+		case EventSchemaServiceGetSchemaRevisionProcedure:
+			eventSchemaServiceGetSchemaRevisionHandler.ServeHTTP(w, r)
 		case EventSchemaServiceRegisterSchemaProcedure:
 			eventSchemaServiceRegisterSchemaHandler.ServeHTTP(w, r)
 		case EventSchemaServiceGetSchemaProcedure:
@@ -250,6 +306,14 @@ func NewEventSchemaServiceHandler(svc EventSchemaServiceHandler, opts ...connect
 
 // UnimplementedEventSchemaServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedEventSchemaServiceHandler struct{}
+
+func (UnimplementedEventSchemaServiceHandler) ListSchemaHistory(context.Context, *connect.Request[v1.ListSchemaHistoryRequest]) (*connect.Response[v1.ListSchemaHistoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.EventSchemaService.ListSchemaHistory is not implemented"))
+}
+
+func (UnimplementedEventSchemaServiceHandler) GetSchemaRevision(context.Context, *connect.Request[v1.GetSchemaRevisionRequest]) (*connect.Response[v1.GetSchemaRevisionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.EventSchemaService.GetSchemaRevision is not implemented"))
+}
 
 func (UnimplementedEventSchemaServiceHandler) RegisterSchema(context.Context, *connect.Request[v1.RegisterSchemaRequest]) (*connect.Response[v1.RegisterSchemaResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.EventSchemaService.RegisterSchema is not implemented"))

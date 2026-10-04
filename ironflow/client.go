@@ -19,6 +19,7 @@ import (
 
 	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
 	"github.com/sahina/ironflow-go/api/ironflow/v1/ironflowv1connect"
+	"github.com/sahina/ironflow-go/ironflow/discovery"
 )
 
 // RetryEvent contains information about a retry attempt.
@@ -122,6 +123,7 @@ type Client struct {
 //	    "total":   99.99,
 //	})
 func NewClient(config ClientConfig) *Client {
+	discovery.Hydrate()
 	PrintBanner()
 
 	serverURL := config.ServerURL

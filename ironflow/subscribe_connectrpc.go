@@ -18,6 +18,7 @@ import (
 
 	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
 	"github.com/sahina/ironflow-go/api/ironflow/v1/ironflowv1connect"
+	"github.com/sahina/ironflow-go/ironflow/discovery"
 )
 
 // GrpcSubscriptionClientConfig configures a gRPC subscription client.
@@ -143,6 +144,7 @@ func (s *GrpcSubscription) Unsubscribe() {
 // yet, so this constructor authenticates from IRONFLOW_API_KEY;
 // Client.CreateGrpcSubscriptionClient passes the parent client's resolved key.
 func NewGrpcSubscriptionClient(config GrpcSubscriptionClientConfig) *GrpcSubscriptionClient {
+	discovery.Hydrate()
 	return newGrpcSubscriptionClient(config, GetAPIKey())
 }
 

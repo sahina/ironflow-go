@@ -33,6 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ProjectionServiceListProjectionHistoryProcedure is the fully-qualified name of the
+	// ProjectionService's ListProjectionHistory RPC.
+	ProjectionServiceListProjectionHistoryProcedure = "/ironflow.v1.ProjectionService/ListProjectionHistory"
+	// ProjectionServiceGetProjectionRevisionProcedure is the fully-qualified name of the
+	// ProjectionService's GetProjectionRevision RPC.
+	ProjectionServiceGetProjectionRevisionProcedure = "/ironflow.v1.ProjectionService/GetProjectionRevision"
 	// ProjectionServiceRegisterProjectionProcedure is the fully-qualified name of the
 	// ProjectionService's RegisterProjection RPC.
 	ProjectionServiceRegisterProjectionProcedure = "/ironflow.v1.ProjectionService/RegisterProjection"
@@ -100,6 +106,9 @@ const (
 
 // ProjectionServiceClient is a client for the ironflow.v1.ProjectionService service.
 type ProjectionServiceClient interface {
+	// Archived definitions captured before replacement or deletion.
+	ListProjectionHistory(context.Context, *connect.Request[v1.ListProjectionHistoryRequest]) (*connect.Response[v1.ListProjectionHistoryResponse], error)
+	GetProjectionRevision(context.Context, *connect.Request[v1.GetProjectionRevisionRequest]) (*connect.Response[v1.GetProjectionRevisionResponse], error)
 	// Registration (SDK → Server)
 	RegisterProjection(context.Context, *connect.Request[v1.RegisterProjectionRequest]) (*connect.Response[v1.RegisterProjectionResponse], error)
 	UnregisterProjection(context.Context, *connect.Request[v1.UnregisterProjectionRequest]) (*connect.Response[v1.UnregisterProjectionResponse], error)
@@ -159,6 +168,20 @@ func NewProjectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 	baseURL = strings.TrimRight(baseURL, "/")
 	projectionServiceMethods := v1.File_ironflow_v1_projection_proto.Services().ByName("ProjectionService").Methods()
 	return &projectionServiceClient{
+		listProjectionHistory: connect.NewClient[v1.ListProjectionHistoryRequest, v1.ListProjectionHistoryResponse](
+			httpClient,
+			baseURL+ProjectionServiceListProjectionHistoryProcedure,
+			connect.WithSchema(projectionServiceMethods.ByName("ListProjectionHistory")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		getProjectionRevision: connect.NewClient[v1.GetProjectionRevisionRequest, v1.GetProjectionRevisionResponse](
+			httpClient,
+			baseURL+ProjectionServiceGetProjectionRevisionProcedure,
+			connect.WithSchema(projectionServiceMethods.ByName("GetProjectionRevision")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		registerProjection: connect.NewClient[v1.RegisterProjectionRequest, v1.RegisterProjectionResponse](
 			httpClient,
 			baseURL+ProjectionServiceRegisterProjectionProcedure,
@@ -295,6 +318,8 @@ func NewProjectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 
 // projectionServiceClient implements ProjectionServiceClient.
 type projectionServiceClient struct {
+	listProjectionHistory       *connect.Client[v1.ListProjectionHistoryRequest, v1.ListProjectionHistoryResponse]
+	getProjectionRevision       *connect.Client[v1.GetProjectionRevisionRequest, v1.GetProjectionRevisionResponse]
 	registerProjection          *connect.Client[v1.RegisterProjectionRequest, v1.RegisterProjectionResponse]
 	unregisterProjection        *connect.Client[v1.UnregisterProjectionRequest, v1.UnregisterProjectionResponse]
 	pollProjectionEvents        *connect.Client[v1.PollProjectionEventsRequest, v1.PollProjectionEventsResponse]
@@ -316,6 +341,16 @@ type projectionServiceClient struct {
 	waitProjectionCatchupBatch  *connect.Client[v1.WaitProjectionCatchupBatchRequest, v1.WaitProjectionCatchupBatchResponse]
 	waitForEvent                *connect.Client[v1.WaitForEventRequest, v1.WaitProjectionCatchupResponse]
 	waitProjectionCatchupStream *connect.Client[v1.WaitProjectionCatchupRequest, v1.WaitProjectionCatchupStreamResponse]
+}
+
+// ListProjectionHistory calls ironflow.v1.ProjectionService.ListProjectionHistory.
+func (c *projectionServiceClient) ListProjectionHistory(ctx context.Context, req *connect.Request[v1.ListProjectionHistoryRequest]) (*connect.Response[v1.ListProjectionHistoryResponse], error) {
+	return c.listProjectionHistory.CallUnary(ctx, req)
+}
+
+// GetProjectionRevision calls ironflow.v1.ProjectionService.GetProjectionRevision.
+func (c *projectionServiceClient) GetProjectionRevision(ctx context.Context, req *connect.Request[v1.GetProjectionRevisionRequest]) (*connect.Response[v1.GetProjectionRevisionResponse], error) {
+	return c.getProjectionRevision.CallUnary(ctx, req)
 }
 
 // RegisterProjection calls ironflow.v1.ProjectionService.RegisterProjection.
@@ -425,6 +460,9 @@ func (c *projectionServiceClient) WaitProjectionCatchupStream(ctx context.Contex
 
 // ProjectionServiceHandler is an implementation of the ironflow.v1.ProjectionService service.
 type ProjectionServiceHandler interface {
+	// Archived definitions captured before replacement or deletion.
+	ListProjectionHistory(context.Context, *connect.Request[v1.ListProjectionHistoryRequest]) (*connect.Response[v1.ListProjectionHistoryResponse], error)
+	GetProjectionRevision(context.Context, *connect.Request[v1.GetProjectionRevisionRequest]) (*connect.Response[v1.GetProjectionRevisionResponse], error)
 	// Registration (SDK → Server)
 	RegisterProjection(context.Context, *connect.Request[v1.RegisterProjectionRequest]) (*connect.Response[v1.RegisterProjectionResponse], error)
 	UnregisterProjection(context.Context, *connect.Request[v1.UnregisterProjectionRequest]) (*connect.Response[v1.UnregisterProjectionResponse], error)
@@ -480,6 +518,20 @@ type ProjectionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewProjectionServiceHandler(svc ProjectionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	projectionServiceMethods := v1.File_ironflow_v1_projection_proto.Services().ByName("ProjectionService").Methods()
+	projectionServiceListProjectionHistoryHandler := connect.NewUnaryHandler(
+		ProjectionServiceListProjectionHistoryProcedure,
+		svc.ListProjectionHistory,
+		connect.WithSchema(projectionServiceMethods.ByName("ListProjectionHistory")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectionServiceGetProjectionRevisionHandler := connect.NewUnaryHandler(
+		ProjectionServiceGetProjectionRevisionProcedure,
+		svc.GetProjectionRevision,
+		connect.WithSchema(projectionServiceMethods.ByName("GetProjectionRevision")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
 	projectionServiceRegisterProjectionHandler := connect.NewUnaryHandler(
 		ProjectionServiceRegisterProjectionProcedure,
 		svc.RegisterProjection,
@@ -613,6 +665,10 @@ func NewProjectionServiceHandler(svc ProjectionServiceHandler, opts ...connect.H
 	)
 	return "/ironflow.v1.ProjectionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ProjectionServiceListProjectionHistoryProcedure:
+			projectionServiceListProjectionHistoryHandler.ServeHTTP(w, r)
+		case ProjectionServiceGetProjectionRevisionProcedure:
+			projectionServiceGetProjectionRevisionHandler.ServeHTTP(w, r)
 		case ProjectionServiceRegisterProjectionProcedure:
 			projectionServiceRegisterProjectionHandler.ServeHTTP(w, r)
 		case ProjectionServiceUnregisterProjectionProcedure:
@@ -663,6 +719,14 @@ func NewProjectionServiceHandler(svc ProjectionServiceHandler, opts ...connect.H
 
 // UnimplementedProjectionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedProjectionServiceHandler struct{}
+
+func (UnimplementedProjectionServiceHandler) ListProjectionHistory(context.Context, *connect.Request[v1.ListProjectionHistoryRequest]) (*connect.Response[v1.ListProjectionHistoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.ProjectionService.ListProjectionHistory is not implemented"))
+}
+
+func (UnimplementedProjectionServiceHandler) GetProjectionRevision(context.Context, *connect.Request[v1.GetProjectionRevisionRequest]) (*connect.Response[v1.GetProjectionRevisionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.ProjectionService.GetProjectionRevision is not implemented"))
+}
 
 func (UnimplementedProjectionServiceHandler) RegisterProjection(context.Context, *connect.Request[v1.RegisterProjectionRequest]) (*connect.Response[v1.RegisterProjectionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.ProjectionService.RegisterProjection is not implemented"))

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/sahina/ironflow-go/ironflow/discovery"
 )
 
 // ============================================================================
@@ -372,6 +374,7 @@ type pendingSubscribeAttempt struct {
 
 // NewSubscriptionClient creates a new subscription client.
 func NewSubscriptionClient(config SubscriptionClientConfig) *SubscriptionClient {
+	discovery.Hydrate()
 	if config.ReconnectDelay == 0 {
 		config.ReconnectDelay = time.Second
 	}

@@ -29,6 +29,7 @@ type RegisterSchemaRequest struct {
 	Version       int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
 	SchemaJson    string                 `protobuf:"bytes,3,opt,name=schema_json,json=schemaJson,proto3" json:"schema_json,omitempty"` // JSON Schema as string
 	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	ChangeReason  string                 `protobuf:"bytes,5,opt,name=change_reason,json=changeReason,proto3" json:"change_reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -91,12 +92,16 @@ func (x *RegisterSchemaRequest) GetDescription() string {
 	return ""
 }
 
+func (x *RegisterSchemaRequest) GetChangeReason() string {
+	if x != nil {
+		return x.ChangeReason
+	}
+	return ""
+}
+
 type RegisterSchemaResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// "created" or "updated". Advisory only: the server reads before the upsert
-	// rather than deriving this from it, so concurrent registrations of the same
-	// (event_name, version) can both report "created". The write is still
-	// correct — last one wins. Display it; do not branch on it. (#1958)
+	// "created" or "updated", determined inside the registration transaction.
 	Status        string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -476,6 +481,7 @@ type DeleteSchemaRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	EventName     string                 `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
 	Version       int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	ChangeReason  string                 `protobuf:"bytes,3,opt,name=change_reason,json=changeReason,proto3" json:"change_reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -522,6 +528,13 @@ func (x *DeleteSchemaRequest) GetVersion() int32 {
 		return x.Version
 	}
 	return 0
+}
+
+func (x *DeleteSchemaRequest) GetChangeReason() string {
+	if x != nil {
+		return x.ChangeReason
+	}
+	return ""
 }
 
 type DeleteSchemaResponse struct {
@@ -1064,18 +1077,420 @@ func (x *SchemaTraffic) GetCount() int64 {
 	return 0
 }
 
+// History revisions identify pre-change snapshots, not the current definition.
+type ListSchemaHistoryRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	EventName      string                 `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
+	Version        int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`                                     // Required positive schema version; independent of revision.
+	Limit          int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`                                         // 0 = 50, maximum 200; negative values are invalid.
+	BeforeRevision int64                  `protobuf:"varint,4,opt,name=before_revision,json=beforeRevision,proto3" json:"before_revision,omitempty"` // Exclusive cursor; 0 starts at the newest revision.
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ListSchemaHistoryRequest) Reset() {
+	*x = ListSchemaHistoryRequest{}
+	mi := &file_ironflow_v1_event_schema_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSchemaHistoryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSchemaHistoryRequest) ProtoMessage() {}
+
+func (x *ListSchemaHistoryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_event_schema_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSchemaHistoryRequest.ProtoReflect.Descriptor instead.
+func (*ListSchemaHistoryRequest) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_event_schema_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ListSchemaHistoryRequest) GetEventName() string {
+	if x != nil {
+		return x.EventName
+	}
+	return ""
+}
+
+func (x *ListSchemaHistoryRequest) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *ListSchemaHistoryRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ListSchemaHistoryRequest) GetBeforeRevision() int64 {
+	if x != nil {
+		return x.BeforeRevision
+	}
+	return 0
+}
+
+type ListSchemaHistoryResponse struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Entries            []*SchemaHistoryEntry  `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	HasMore            bool                   `protobuf:"varint,2,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
+	NextBeforeRevision int64                  `protobuf:"varint,3,opt,name=next_before_revision,json=nextBeforeRevision,proto3" json:"next_before_revision,omitempty"` // 0 when exhausted.
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ListSchemaHistoryResponse) Reset() {
+	*x = ListSchemaHistoryResponse{}
+	mi := &file_ironflow_v1_event_schema_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSchemaHistoryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSchemaHistoryResponse) ProtoMessage() {}
+
+func (x *ListSchemaHistoryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_event_schema_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSchemaHistoryResponse.ProtoReflect.Descriptor instead.
+func (*ListSchemaHistoryResponse) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_event_schema_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ListSchemaHistoryResponse) GetEntries() []*SchemaHistoryEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+func (x *ListSchemaHistoryResponse) GetHasMore() bool {
+	if x != nil {
+		return x.HasMore
+	}
+	return false
+}
+
+func (x *ListSchemaHistoryResponse) GetNextBeforeRevision() int64 {
+	if x != nil {
+		return x.NextBeforeRevision
+	}
+	return 0
+}
+
+type GetSchemaRevisionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventName     string                 `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
+	Version       int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`   // Required positive schema version; independent of revision.
+	Revision      int64                  `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"` // Required positive history revision; exact match only.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSchemaRevisionRequest) Reset() {
+	*x = GetSchemaRevisionRequest{}
+	mi := &file_ironflow_v1_event_schema_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSchemaRevisionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSchemaRevisionRequest) ProtoMessage() {}
+
+func (x *GetSchemaRevisionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_event_schema_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSchemaRevisionRequest.ProtoReflect.Descriptor instead.
+func (*GetSchemaRevisionRequest) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_event_schema_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *GetSchemaRevisionRequest) GetEventName() string {
+	if x != nil {
+		return x.EventName
+	}
+	return ""
+}
+
+func (x *GetSchemaRevisionRequest) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *GetSchemaRevisionRequest) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+type GetSchemaRevisionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entry         *SchemaHistoryEntry    `protobuf:"bytes,1,opt,name=entry,proto3" json:"entry,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSchemaRevisionResponse) Reset() {
+	*x = GetSchemaRevisionResponse{}
+	mi := &file_ironflow_v1_event_schema_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSchemaRevisionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSchemaRevisionResponse) ProtoMessage() {}
+
+func (x *GetSchemaRevisionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_event_schema_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSchemaRevisionResponse.ProtoReflect.Descriptor instead.
+func (*GetSchemaRevisionResponse) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_event_schema_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *GetSchemaRevisionResponse) GetEntry() *SchemaHistoryEntry {
+	if x != nil {
+		return x.Entry
+	}
+	return nil
+}
+
+type SchemaHistoryEntry struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	EventId            string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	Revision           int64                  `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	PreviousDefinition *SchemaDefinition      `protobuf:"bytes,3,opt,name=previous_definition,json=previousDefinition,proto3" json:"previous_definition,omitempty"`
+	ActorId            string                 `protobuf:"bytes,4,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"` // Actor of the mutation that archived the definition.
+	ChangeReason       string                 `protobuf:"bytes,5,opt,name=change_reason,json=changeReason,proto3" json:"change_reason,omitempty"`
+	ChangeType         string                 `protobuf:"bytes,6,opt,name=change_type,json=changeType,proto3" json:"change_type,omitempty"`
+	RecordedAt         *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=recorded_at,json=recordedAt,proto3" json:"recorded_at,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *SchemaHistoryEntry) Reset() {
+	*x = SchemaHistoryEntry{}
+	mi := &file_ironflow_v1_event_schema_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SchemaHistoryEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SchemaHistoryEntry) ProtoMessage() {}
+
+func (x *SchemaHistoryEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_event_schema_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SchemaHistoryEntry.ProtoReflect.Descriptor instead.
+func (*SchemaHistoryEntry) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_event_schema_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *SchemaHistoryEntry) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *SchemaHistoryEntry) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *SchemaHistoryEntry) GetPreviousDefinition() *SchemaDefinition {
+	if x != nil {
+		return x.PreviousDefinition
+	}
+	return nil
+}
+
+func (x *SchemaHistoryEntry) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *SchemaHistoryEntry) GetChangeReason() string {
+	if x != nil {
+		return x.ChangeReason
+	}
+	return ""
+}
+
+func (x *SchemaHistoryEntry) GetChangeType() string {
+	if x != nil {
+		return x.ChangeType
+	}
+	return ""
+}
+
+func (x *SchemaHistoryEntry) GetRecordedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RecordedAt
+	}
+	return nil
+}
+
+type SchemaDefinition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventName     string                 `protobuf:"bytes,1,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
+	EnvironmentId string                 `protobuf:"bytes,2,opt,name=environment_id,json=environmentId,proto3" json:"environment_id,omitempty"`
+	Version       int32                  `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
+	SchemaJson    string                 `protobuf:"bytes,4,opt,name=schema_json,json=schemaJson,proto3" json:"schema_json,omitempty"`
+	Description   string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SchemaDefinition) Reset() {
+	*x = SchemaDefinition{}
+	mi := &file_ironflow_v1_event_schema_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SchemaDefinition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SchemaDefinition) ProtoMessage() {}
+
+func (x *SchemaDefinition) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_event_schema_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SchemaDefinition.ProtoReflect.Descriptor instead.
+func (*SchemaDefinition) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_event_schema_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *SchemaDefinition) GetEventName() string {
+	if x != nil {
+		return x.EventName
+	}
+	return ""
+}
+
+func (x *SchemaDefinition) GetEnvironmentId() string {
+	if x != nil {
+		return x.EnvironmentId
+	}
+	return ""
+}
+
+func (x *SchemaDefinition) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *SchemaDefinition) GetSchemaJson() string {
+	if x != nil {
+		return x.SchemaJson
+	}
+	return ""
+}
+
+func (x *SchemaDefinition) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
 var File_ironflow_v1_event_schema_proto protoreflect.FileDescriptor
 
 const file_ironflow_v1_event_schema_proto_rawDesc = "" +
 	"\n" +
-	"\x1eironflow/v1/event_schema.proto\x12\vironflow.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x93\x01\n" +
+	"\x1eironflow/v1/event_schema.proto\x12\vironflow.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb8\x01\n" +
 	"\x15RegisterSchemaRequest\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x05R\aversion\x12\x1f\n" +
 	"\vschema_json\x18\x03 \x01(\tR\n" +
 	"schemaJson\x12 \n" +
-	"\vdescription\x18\x04 \x01(\tR\vdescription\"0\n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\x12#\n" +
+	"\rchange_reason\x18\x05 \x01(\tR\fchangeReason\"0\n" +
 	"\x16RegisterSchemaResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\"K\n" +
 	"\x10GetSchemaRequest\x12\x1d\n" +
@@ -1111,11 +1526,12 @@ const file_ironflow_v1_event_schema_proto_rawDesc = "" +
 	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1f\n" +
 	"\vschema_json\x18\x05 \x01(\tR\n" +
 	"schemaJson\x12%\n" +
-	"\x0eenvironment_id\x18\x06 \x01(\tR\renvironmentId\"N\n" +
+	"\x0eenvironment_id\x18\x06 \x01(\tR\renvironmentId\"s\n" +
 	"\x13DeleteSchemaRequest\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\x01 \x01(\tR\teventName\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\x05R\aversion\"\x16\n" +
+	"\aversion\x18\x02 \x01(\x05R\aversion\x12#\n" +
+	"\rchange_reason\x18\x03 \x01(\tR\fchangeReason\"\x16\n" +
 	"\x14DeleteSchemaResponse\"\xd8\x01\n" +
 	"\x11TestUpcastRequest\x12\x1d\n" +
 	"\n" +
@@ -1160,8 +1576,45 @@ const file_ironflow_v1_event_schema_proto_rawDesc = "" +
 	"\aversion\x18\x01 \x01(\x05R\aversion\x12\x1f\n" +
 	"\vschema_hash\x18\x02 \x01(\tR\n" +
 	"schemaHash\x12\x14\n" +
-	"\x05count\x18\x03 \x01(\x03R\x05count2\xa6\x04\n" +
-	"\x12EventSchemaService\x12Y\n" +
+	"\x05count\x18\x03 \x01(\x03R\x05count\"\x92\x01\n" +
+	"\x18ListSchemaHistoryRequest\x12\x1d\n" +
+	"\n" +
+	"event_name\x18\x01 \x01(\tR\teventName\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\x05R\aversion\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12'\n" +
+	"\x0fbefore_revision\x18\x04 \x01(\x03R\x0ebeforeRevision\"\xa3\x01\n" +
+	"\x19ListSchemaHistoryResponse\x129\n" +
+	"\aentries\x18\x01 \x03(\v2\x1f.ironflow.v1.SchemaHistoryEntryR\aentries\x12\x19\n" +
+	"\bhas_more\x18\x02 \x01(\bR\ahasMore\x120\n" +
+	"\x14next_before_revision\x18\x03 \x01(\x03R\x12nextBeforeRevision\"o\n" +
+	"\x18GetSchemaRevisionRequest\x12\x1d\n" +
+	"\n" +
+	"event_name\x18\x01 \x01(\tR\teventName\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\x05R\aversion\x12\x1a\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"R\n" +
+	"\x19GetSchemaRevisionResponse\x125\n" +
+	"\x05entry\x18\x01 \x01(\v2\x1f.ironflow.v1.SchemaHistoryEntryR\x05entry\"\xb9\x02\n" +
+	"\x12SchemaHistoryEntry\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1a\n" +
+	"\brevision\x18\x02 \x01(\x03R\brevision\x12N\n" +
+	"\x13previous_definition\x18\x03 \x01(\v2\x1d.ironflow.v1.SchemaDefinitionR\x12previousDefinition\x12\x19\n" +
+	"\bactor_id\x18\x04 \x01(\tR\aactorId\x12#\n" +
+	"\rchange_reason\x18\x05 \x01(\tR\fchangeReason\x12\x1f\n" +
+	"\vchange_type\x18\x06 \x01(\tR\n" +
+	"changeType\x12;\n" +
+	"\vrecorded_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"recordedAt\"\xb5\x01\n" +
+	"\x10SchemaDefinition\x12\x1d\n" +
+	"\n" +
+	"event_name\x18\x01 \x01(\tR\teventName\x12%\n" +
+	"\x0eenvironment_id\x18\x02 \x01(\tR\renvironmentId\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\x05R\aversion\x12\x1f\n" +
+	"\vschema_json\x18\x04 \x01(\tR\n" +
+	"schemaJson\x12 \n" +
+	"\vdescription\x18\x05 \x01(\tR\vdescription2\xf8\x05\n" +
+	"\x12EventSchemaService\x12g\n" +
+	"\x11ListSchemaHistory\x12%.ironflow.v1.ListSchemaHistoryRequest\x1a&.ironflow.v1.ListSchemaHistoryResponse\"\x03\x90\x02\x01\x12g\n" +
+	"\x11GetSchemaRevision\x12%.ironflow.v1.GetSchemaRevisionRequest\x1a&.ironflow.v1.GetSchemaRevisionResponse\"\x03\x90\x02\x01\x12Y\n" +
 	"\x0eRegisterSchema\x12\".ironflow.v1.RegisterSchemaRequest\x1a#.ironflow.v1.RegisterSchemaResponse\x12O\n" +
 	"\tGetSchema\x12\x1d.ironflow.v1.GetSchemaRequest\x1a\x1e.ironflow.v1.GetSchemaResponse\"\x03\x90\x02\x01\x12U\n" +
 	"\vListSchemas\x12\x1f.ironflow.v1.ListSchemasRequest\x1a .ironflow.v1.ListSchemasResponse\"\x03\x90\x02\x01\x12S\n" +
@@ -1182,56 +1635,70 @@ func file_ironflow_v1_event_schema_proto_rawDescGZIP() []byte {
 	return file_ironflow_v1_event_schema_proto_rawDescData
 }
 
-var file_ironflow_v1_event_schema_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_ironflow_v1_event_schema_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_ironflow_v1_event_schema_proto_goTypes = []any{
-	(*RegisterSchemaRequest)(nil),    // 0: ironflow.v1.RegisterSchemaRequest
-	(*RegisterSchemaResponse)(nil),   // 1: ironflow.v1.RegisterSchemaResponse
-	(*GetSchemaRequest)(nil),         // 2: ironflow.v1.GetSchemaRequest
-	(*GetSchemaResponse)(nil),        // 3: ironflow.v1.GetSchemaResponse
-	(*ListSchemasRequest)(nil),       // 4: ironflow.v1.ListSchemasRequest
-	(*ListSchemasResponse)(nil),      // 5: ironflow.v1.ListSchemasResponse
-	(*SchemaInfo)(nil),               // 6: ironflow.v1.SchemaInfo
-	(*DeleteSchemaRequest)(nil),      // 7: ironflow.v1.DeleteSchemaRequest
-	(*DeleteSchemaResponse)(nil),     // 8: ironflow.v1.DeleteSchemaResponse
-	(*TestUpcastRequest)(nil),        // 9: ironflow.v1.TestUpcastRequest
-	(*TestUpcastResponse)(nil),       // 10: ironflow.v1.TestUpcastResponse
-	(*UpcastStep)(nil),               // 11: ironflow.v1.UpcastStep
-	(*CheckEnforcementRequest)(nil),  // 12: ironflow.v1.CheckEnforcementRequest
-	(*CheckEnforcementResponse)(nil), // 13: ironflow.v1.CheckEnforcementResponse
-	(*SchemaCheck)(nil),              // 14: ironflow.v1.SchemaCheck
-	(*SchemaTraffic)(nil),            // 15: ironflow.v1.SchemaTraffic
-	(*timestamppb.Timestamp)(nil),    // 16: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),          // 17: google.protobuf.Struct
-	(*structpb.Value)(nil),           // 18: google.protobuf.Value
+	(*RegisterSchemaRequest)(nil),     // 0: ironflow.v1.RegisterSchemaRequest
+	(*RegisterSchemaResponse)(nil),    // 1: ironflow.v1.RegisterSchemaResponse
+	(*GetSchemaRequest)(nil),          // 2: ironflow.v1.GetSchemaRequest
+	(*GetSchemaResponse)(nil),         // 3: ironflow.v1.GetSchemaResponse
+	(*ListSchemasRequest)(nil),        // 4: ironflow.v1.ListSchemasRequest
+	(*ListSchemasResponse)(nil),       // 5: ironflow.v1.ListSchemasResponse
+	(*SchemaInfo)(nil),                // 6: ironflow.v1.SchemaInfo
+	(*DeleteSchemaRequest)(nil),       // 7: ironflow.v1.DeleteSchemaRequest
+	(*DeleteSchemaResponse)(nil),      // 8: ironflow.v1.DeleteSchemaResponse
+	(*TestUpcastRequest)(nil),         // 9: ironflow.v1.TestUpcastRequest
+	(*TestUpcastResponse)(nil),        // 10: ironflow.v1.TestUpcastResponse
+	(*UpcastStep)(nil),                // 11: ironflow.v1.UpcastStep
+	(*CheckEnforcementRequest)(nil),   // 12: ironflow.v1.CheckEnforcementRequest
+	(*CheckEnforcementResponse)(nil),  // 13: ironflow.v1.CheckEnforcementResponse
+	(*SchemaCheck)(nil),               // 14: ironflow.v1.SchemaCheck
+	(*SchemaTraffic)(nil),             // 15: ironflow.v1.SchemaTraffic
+	(*ListSchemaHistoryRequest)(nil),  // 16: ironflow.v1.ListSchemaHistoryRequest
+	(*ListSchemaHistoryResponse)(nil), // 17: ironflow.v1.ListSchemaHistoryResponse
+	(*GetSchemaRevisionRequest)(nil),  // 18: ironflow.v1.GetSchemaRevisionRequest
+	(*GetSchemaRevisionResponse)(nil), // 19: ironflow.v1.GetSchemaRevisionResponse
+	(*SchemaHistoryEntry)(nil),        // 20: ironflow.v1.SchemaHistoryEntry
+	(*SchemaDefinition)(nil),          // 21: ironflow.v1.SchemaDefinition
+	(*timestamppb.Timestamp)(nil),     // 22: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),           // 23: google.protobuf.Struct
+	(*structpb.Value)(nil),            // 24: google.protobuf.Value
 }
 var file_ironflow_v1_event_schema_proto_depIdxs = []int32{
-	16, // 0: ironflow.v1.GetSchemaResponse.created_at:type_name -> google.protobuf.Timestamp
+	22, // 0: ironflow.v1.GetSchemaResponse.created_at:type_name -> google.protobuf.Timestamp
 	6,  // 1: ironflow.v1.ListSchemasResponse.schemas:type_name -> ironflow.v1.SchemaInfo
-	16, // 2: ironflow.v1.SchemaInfo.created_at:type_name -> google.protobuf.Timestamp
-	17, // 3: ironflow.v1.TestUpcastRequest.data:type_name -> google.protobuf.Struct
-	18, // 4: ironflow.v1.TestUpcastRequest.data_value:type_name -> google.protobuf.Value
-	17, // 5: ironflow.v1.TestUpcastResponse.data:type_name -> google.protobuf.Struct
-	18, // 6: ironflow.v1.TestUpcastResponse.data_value:type_name -> google.protobuf.Value
+	22, // 2: ironflow.v1.SchemaInfo.created_at:type_name -> google.protobuf.Timestamp
+	23, // 3: ironflow.v1.TestUpcastRequest.data:type_name -> google.protobuf.Struct
+	24, // 4: ironflow.v1.TestUpcastRequest.data_value:type_name -> google.protobuf.Value
+	23, // 5: ironflow.v1.TestUpcastResponse.data:type_name -> google.protobuf.Struct
+	24, // 6: ironflow.v1.TestUpcastResponse.data_value:type_name -> google.protobuf.Value
 	11, // 7: ironflow.v1.TestUpcastResponse.steps_applied:type_name -> ironflow.v1.UpcastStep
 	14, // 8: ironflow.v1.CheckEnforcementResponse.schemas:type_name -> ironflow.v1.SchemaCheck
 	15, // 9: ironflow.v1.SchemaCheck.traffic:type_name -> ironflow.v1.SchemaTraffic
-	0,  // 10: ironflow.v1.EventSchemaService.RegisterSchema:input_type -> ironflow.v1.RegisterSchemaRequest
-	2,  // 11: ironflow.v1.EventSchemaService.GetSchema:input_type -> ironflow.v1.GetSchemaRequest
-	4,  // 12: ironflow.v1.EventSchemaService.ListSchemas:input_type -> ironflow.v1.ListSchemasRequest
-	7,  // 13: ironflow.v1.EventSchemaService.DeleteSchema:input_type -> ironflow.v1.DeleteSchemaRequest
-	9,  // 14: ironflow.v1.EventSchemaService.TestUpcast:input_type -> ironflow.v1.TestUpcastRequest
-	12, // 15: ironflow.v1.EventSchemaService.CheckEnforcement:input_type -> ironflow.v1.CheckEnforcementRequest
-	1,  // 16: ironflow.v1.EventSchemaService.RegisterSchema:output_type -> ironflow.v1.RegisterSchemaResponse
-	3,  // 17: ironflow.v1.EventSchemaService.GetSchema:output_type -> ironflow.v1.GetSchemaResponse
-	5,  // 18: ironflow.v1.EventSchemaService.ListSchemas:output_type -> ironflow.v1.ListSchemasResponse
-	8,  // 19: ironflow.v1.EventSchemaService.DeleteSchema:output_type -> ironflow.v1.DeleteSchemaResponse
-	10, // 20: ironflow.v1.EventSchemaService.TestUpcast:output_type -> ironflow.v1.TestUpcastResponse
-	13, // 21: ironflow.v1.EventSchemaService.CheckEnforcement:output_type -> ironflow.v1.CheckEnforcementResponse
-	16, // [16:22] is the sub-list for method output_type
-	10, // [10:16] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	20, // 10: ironflow.v1.ListSchemaHistoryResponse.entries:type_name -> ironflow.v1.SchemaHistoryEntry
+	20, // 11: ironflow.v1.GetSchemaRevisionResponse.entry:type_name -> ironflow.v1.SchemaHistoryEntry
+	21, // 12: ironflow.v1.SchemaHistoryEntry.previous_definition:type_name -> ironflow.v1.SchemaDefinition
+	22, // 13: ironflow.v1.SchemaHistoryEntry.recorded_at:type_name -> google.protobuf.Timestamp
+	16, // 14: ironflow.v1.EventSchemaService.ListSchemaHistory:input_type -> ironflow.v1.ListSchemaHistoryRequest
+	18, // 15: ironflow.v1.EventSchemaService.GetSchemaRevision:input_type -> ironflow.v1.GetSchemaRevisionRequest
+	0,  // 16: ironflow.v1.EventSchemaService.RegisterSchema:input_type -> ironflow.v1.RegisterSchemaRequest
+	2,  // 17: ironflow.v1.EventSchemaService.GetSchema:input_type -> ironflow.v1.GetSchemaRequest
+	4,  // 18: ironflow.v1.EventSchemaService.ListSchemas:input_type -> ironflow.v1.ListSchemasRequest
+	7,  // 19: ironflow.v1.EventSchemaService.DeleteSchema:input_type -> ironflow.v1.DeleteSchemaRequest
+	9,  // 20: ironflow.v1.EventSchemaService.TestUpcast:input_type -> ironflow.v1.TestUpcastRequest
+	12, // 21: ironflow.v1.EventSchemaService.CheckEnforcement:input_type -> ironflow.v1.CheckEnforcementRequest
+	17, // 22: ironflow.v1.EventSchemaService.ListSchemaHistory:output_type -> ironflow.v1.ListSchemaHistoryResponse
+	19, // 23: ironflow.v1.EventSchemaService.GetSchemaRevision:output_type -> ironflow.v1.GetSchemaRevisionResponse
+	1,  // 24: ironflow.v1.EventSchemaService.RegisterSchema:output_type -> ironflow.v1.RegisterSchemaResponse
+	3,  // 25: ironflow.v1.EventSchemaService.GetSchema:output_type -> ironflow.v1.GetSchemaResponse
+	5,  // 26: ironflow.v1.EventSchemaService.ListSchemas:output_type -> ironflow.v1.ListSchemasResponse
+	8,  // 27: ironflow.v1.EventSchemaService.DeleteSchema:output_type -> ironflow.v1.DeleteSchemaResponse
+	10, // 28: ironflow.v1.EventSchemaService.TestUpcast:output_type -> ironflow.v1.TestUpcastResponse
+	13, // 29: ironflow.v1.EventSchemaService.CheckEnforcement:output_type -> ironflow.v1.CheckEnforcementResponse
+	22, // [22:30] is the sub-list for method output_type
+	14, // [14:22] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_event_schema_proto_init() }
@@ -1245,7 +1712,7 @@ func file_ironflow_v1_event_schema_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ironflow_v1_event_schema_proto_rawDesc), len(file_ironflow_v1_event_schema_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   16,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

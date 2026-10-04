@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/sahina/ironflow-go/ironflow/discovery"
 )
 
 // ServeConfig configures the HTTP handler.
@@ -53,6 +55,7 @@ type ServeConfig struct {
 //	http.Handle("/api/ironflow", handler)
 //	http.ListenAndServe(":3000", nil)
 func Serve(config ServeConfig) http.Handler {
+	discovery.Hydrate()
 	// Build function map
 	functionMap := make(map[string]Function)
 	for _, fn := range config.Functions {

@@ -21,6 +21,7 @@ import (
 
 	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
 	"github.com/sahina/ironflow-go/api/ironflow/v1/ironflowv1connect"
+	"github.com/sahina/ironflow-go/ironflow/discovery"
 )
 
 // StreamingWorker is a ConnectRPC bidirectional-stream worker that communicates
@@ -72,6 +73,7 @@ type StreamingWorker struct {
 //	    log.Fatal(err)
 //	}
 func NewStreamingWorker(config WorkerConfig) *StreamingWorker {
+	discovery.Hydrate()
 	PrintBanner()
 
 	// Defaults
