@@ -1012,7 +1012,9 @@ func TestKVErrorRetryable(t *testing.T) {
 		{"409 Conflict is not retryable", 409, false},
 		{"412 Precondition Failed is not retryable", 412, false},
 		{"422 Unprocessable Entity is not retryable", 422, false},
-		{"429 Too Many Requests is not retryable", 429, false},
+		// The shared rule (ADR 0110): rate limiting is the one refusal that is
+		// safe to resend.
+		{"429 Too Many Requests is retryable", 429, true},
 		{"500 Internal Server Error is retryable", 500, true},
 		{"502 Bad Gateway is retryable", 502, true},
 		{"503 Service Unavailable is retryable", 503, true},

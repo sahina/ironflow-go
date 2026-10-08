@@ -780,11 +780,10 @@ type RotateWebhookSecretRequest struct {
 	VerifySecret string `protobuf:"bytes,2,opt,name=verify_secret,json=verifySecret,proto3" json:"verify_secret,omitempty"`
 	// Grace window in seconds during which the prior current secret keeps
 	// verifying as prev. Tri-state:
-	//
-	//	unset — use the server-side default (24 h, or whatever
-	//	        IRONFLOW_WEBHOOK_SECRET_GRACE_HOURS_DEFAULT sets).
-	//	0     — instant cutover (no grace).
-	//	N     — explicit N seconds; clamped at the server to 604800 (7 d).
+	//   unset — use the server-side default (24 h, or whatever
+	//           IRONFLOW_WEBHOOK_SECRET_GRACE_HOURS_DEFAULT sets).
+	//   0     — instant cutover (no grace).
+	//   N     — explicit N seconds; clamped at the server to 604800 (7 d).
 	GraceSeconds *int32 `protobuf:"varint,3,opt,name=grace_seconds,json=graceSeconds,proto3,oneof" json:"grace_seconds,omitempty"`
 	// Optimistic concurrency token: when set, the server requires this to
 	// match webhook_sources.updated_at and returns Aborted on mismatch.

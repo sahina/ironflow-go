@@ -2,6 +2,8 @@ package ironflow
 
 import (
 	"errors"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -209,4 +211,37 @@ func TestIsYieldSignal(t *testing.T) {
 			t.Error("expected isYieldSignal to return false for nil")
 		}
 	})
+}
+
+// Most REST handlers answer {"error": "..."} with no code or message field.
+// Reading only code/message turned "run not found" into the message ": ".
+func TestErrorFromResponseKeepsServerMessage(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{"error field only", http.StatusNotFound, `{"error":"run not found"}`, "run not found"},
+		{"code and message", http.StatusNotFound, `{"code":"NOT_FOUND","message":"run not found"}`, "NOT_FOUND: run not found"},
+		{"message wins over error", http.StatusBadRequest, `{"message":"bad limit","error":"invalid"}`, "bad limit"},
+		{"code with error field", http.StatusConflict, `{"code":"CONFLICT","error":"bucket not empty"}`, "CONFLICT: bucket not empty"},
+		{"empty body", http.StatusNotFound, ``, "HTTP 404"},
+		{"non-JSON body", http.StatusBadGateway, `upstream down`, "HTTP 502"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &http.Response{StatusCode: tc.status, Header: http.Header{}}
+			got := (&Client{}).errorFromResponse(resp, []byte(tc.body))
+			if got.Message != tc.want {
+				t.Errorf("Message = %q, want %q", got.Message, tc.want)
+			}
+		})
+	}
+
+	resp := &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{}}
+	got := (&Client{}).errorFromResponse(resp, []byte(`{"error":"invalid API key"}`))
+	if !strings.HasPrefix(got.Message, "invalid API key — ") || !strings.HasSuffix(got.Message, AuthHelp) {
+		t.Errorf("401 Message = %q, want the server text followed by AuthHelp", got.Message)
+	}
 }

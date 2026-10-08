@@ -465,12 +465,12 @@ type SubscribeOptions struct {
 	// skips events depending on how long the disconnect lasted.
 	//
 	// Rules:
-	//   - Mutually exclusive with `replay`. Setting both is INVALID_ARGUMENT
+	//   * Mutually exclusive with `replay`. Setting both is INVALID_ARGUMENT
 	//     rather than a silent merge.
-	//   - Rejected when `consumer_group` is set. That path is durable and
+	//   * Rejected when `consumer_group` is set. That path is durable and
 	//     server-positioned already, so a client cursor could rewind a consumer
 	//     other members share.
-	//   - `optional` because 0 is a legitimate "from the very beginning" and
+	//   * `optional` because 0 is a legitimate "from the very beginning" and
 	//     must be distinguishable from unset.
 	//
 	// Delivery is at-least-once: the server sending a frame is not the client

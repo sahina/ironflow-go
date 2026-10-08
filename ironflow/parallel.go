@@ -233,6 +233,10 @@ func warnUnscopedBranches(exec *executionContext, name string, branchContexts []
 //	    },
 //	)
 func Parallel[T any](ctx Context, name string, branches []func(*BranchContext) (T, error), opts ...ParallelOptions) ([]T, error) {
+	if err := ctx.exec.cancellationErr(); err != nil {
+		return nil, err
+	}
+
 	var options ParallelOptions
 	if len(opts) > 0 {
 		options = opts[0]
@@ -293,6 +297,13 @@ func Parallel[T any](ctx Context, name string, branches []func(*BranchContext) (
 				if skip {
 					return
 				}
+			}
+
+			if err := exec.cancellationErr(); err != nil {
+				mu.Lock()
+				errors[idx] = err
+				mu.Unlock()
+				return
 			}
 
 			// Execute with panic recovery (for yield signals)
@@ -444,6 +455,9 @@ func RunWithBranch[T any](b *BranchContext, name string, fn func() (T, error), o
 	b.markScopedUsed()
 
 	var zero T
+	if err := b.parent.cancellationErr(); err != nil {
+		return zero, err
+	}
 
 	if b.parent.testInterceptor != nil {
 		return testRunStep[T](b.parent, name)
@@ -549,6 +563,10 @@ func RunWithBranch[T any](b *BranchContext, name string, fn func() (T, error), o
 //
 // This is the branch-scoped equivalent of ironflow.Sleep() for use within parallel branches.
 func SleepWithBranch(b *BranchContext, name string, duration time.Duration) error {
+	if err := b.parent.cancellationErr(); err != nil {
+		return err
+	}
+
 	b.markScopedUsed()
 
 	if b.parent.testInterceptor != nil {
@@ -581,6 +599,10 @@ func SleepWithBranch(b *BranchContext, name string, duration time.Duration) erro
 //
 // This is the branch-scoped equivalent of ironflow.WaitForEvent() for use within parallel branches.
 func WaitForEventWithBranch(b *BranchContext, name string, filter EventFilter) (Event, error) {
+	if err := b.parent.cancellationErr(); err != nil {
+		return Event{}, err
+	}
+
 	b.markScopedUsed()
 
 	if b.parent.testInterceptor != nil {
@@ -645,6 +667,10 @@ func WaitForEventWithBranch(b *BranchContext, name string, filter EventFilter) (
 // branch as having used its scope, even when branches is empty, so a correct
 // callback whose only work is an empty nested fan-out is not warned about.
 func ParallelWithBranch[T any](b *BranchContext, name string, branches []func(*BranchContext) (T, error), opts ...ParallelOptions) ([]T, error) {
+	if err := b.parent.cancellationErr(); err != nil {
+		return nil, err
+	}
+
 	// Opening a nested parallel/map counts as using the enclosing branch's
 	// scope, even if this call turns out to have zero items. Marking in
 	// createBranchContext instead would miss the empty-collection case and

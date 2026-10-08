@@ -268,7 +268,7 @@ func (b *FileBucket) Put(ctx context.Context, path string, body io.Reader, size 
 	}
 	run := attempt
 	if replayable {
-		run = func() error { return b.c.withRetry(ctx, attempt) }
+		run = func() error { return b.c.withRetry(ctx, false, attempt) }
 	}
 	if err := run(); err != nil {
 		if ife, ok := err.(*IronflowError); ok && ife.Retryable && !replayable {
@@ -343,7 +343,7 @@ func (b *FileBucket) Get(ctx context.Context, path string, opts GetFileOptions) 
 		return nil, err
 	}
 	var resp *http.Response
-	err = b.c.withRetry(ctx, func() error {
+	err = b.c.withRetry(ctx, false, func() error {
 		var err error
 		//nolint:bodyclose // the body is handed to the caller in FileObject.Body
 		resp, err = b.c.rawRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/files/buckets/%s/objects/%s", bn, ep), nil, 0, hdr)
@@ -478,7 +478,7 @@ func (b *FileBucket) SignUpload(ctx context.Context, path string, opts SignUploa
 	}
 	// Retried, unlike the other files POSTs: a sign call only mints a URL.
 	var out SignedURL
-	if err := b.c.RestRequest(ctx, http.MethodPost, fmt.Sprintf("/api/v1/files/buckets/%s/signed-urls/upload", bn), body, &out); err != nil {
+	if err := b.c.requestAs(ctx, b.c.httpClient, false, http.MethodPost, fmt.Sprintf("/api/v1/files/buckets/%s/signed-urls/upload", bn), body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -496,7 +496,7 @@ func (b *FileBucket) SignDownload(ctx context.Context, path string, ttl time.Dur
 	}
 	// Retried, unlike the other files POSTs: a sign call only mints a URL.
 	var out SignedURL
-	if err := b.c.RestRequest(ctx, http.MethodPost, fmt.Sprintf("/api/v1/files/buckets/%s/signed-urls/download", bn), body, &out); err != nil {
+	if err := b.c.requestAs(ctx, b.c.httpClient, false, http.MethodPost, fmt.Sprintf("/api/v1/files/buckets/%s/signed-urls/download", bn), body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

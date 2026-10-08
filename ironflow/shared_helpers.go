@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"math/rand"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -161,7 +163,15 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 			if authErr := authError(resp, fmt.Sprintf("failed to register function %s", id)); authErr != nil {
 				return authErr
 			}
-			return fmt.Errorf("failed to register function %s: status %d", id, resp.StatusCode)
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+			retryable, retryAfter := restRetrySignal(resp.StatusCode, resp.Header, respBody)
+			detail := strings.TrimSpace(string(respBody))
+			if len(detail) > 200 {
+				detail = detail[:200]
+			}
+			regErr := NewError(fmt.Sprintf("failed to register function %s: status %d: %s", id, resp.StatusCode, detail), "FUNCTION_REGISTRATION_FAILED", retryable)
+			regErr.RetryAfter = retryAfter
+			return regErr
 		}
 		_ = resp.Body.Close()
 

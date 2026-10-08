@@ -2,6 +2,7 @@ package ironflow
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -15,6 +16,9 @@ import (
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
@@ -1134,7 +1138,7 @@ func (c *Client) PatchStep(ctx context.Context, stepID string, output map[string
 	}
 	client := ironflowv1connect.NewIronflowServiceClient(c.httpClient, c.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(c.interceptor()))
 	// sdkcoverage: POST /ironflow.v1.IronflowService/PatchStep
-	return c.withRetry(ctx, func() error {
+	return c.withRetry(ctx, true, func() error {
 		_, err := client.PatchStep(ctx, connect.NewRequest(&ironflowv1.PatchStepRequest{StepId: stepID, Output: value, Reason: reason}))
 		return connectError(err)
 	})
@@ -2071,6 +2075,36 @@ func (c *Client) request(ctx context.Context, method, path string, body any, res
 // requestWith is request with an explicit HTTP client, so calls that need a
 // transport deadline other than the client default can supply one.
 func (c *Client) requestWith(ctx context.Context, httpClient *http.Client, method, path string, body any, result any) error {
+	write := (method == http.MethodPost || method == http.MethodPatch) && !noSideEffectRPCs[path]
+	return c.requestAs(ctx, httpClient, write, method, path, body, result)
+}
+
+// noSideEffectRPCs holds the Connect paths the protos mark
+// idempotency_level = NO_SIDE_EFFECTS: reads sent as POST, which are safe to
+// resend after a 5xx. Read from the registered descriptors, so it cannot drift
+// from the protos (the JS SDK keeps the same set in safe-rpc-paths.ts).
+var noSideEffectRPCs = func() map[string]bool {
+	paths := map[string]bool{}
+	protoregistry.GlobalFiles.RangeFilesByPackage("ironflow.v1", func(fd protoreflect.FileDescriptor) bool {
+		for i := 0; i < fd.Services().Len(); i++ {
+			sd := fd.Services().Get(i)
+			for j := 0; j < sd.Methods().Len(); j++ {
+				md := sd.Methods().Get(j)
+				if opts, ok := md.Options().(*descriptorpb.MethodOptions); ok &&
+					opts.GetIdempotencyLevel() == descriptorpb.MethodOptions_NO_SIDE_EFFECTS {
+					paths["/"+string(sd.FullName())+"/"+string(md.Name())] = true
+				}
+			}
+		}
+		return true
+	})
+	return paths
+}()
+
+// requestAs is requestWith with the write/read retry class stated by the
+// caller. A POST that only reads or mints something (a signed URL) is safe to
+// resend, so it passes write=false.
+func (c *Client) requestAs(ctx context.Context, httpClient *http.Client, write bool, method, path string, body any, result any) error {
 	url := c.serverURL + path
 
 	// Marshal body once for reuse across retries
@@ -2083,13 +2117,15 @@ func (c *Client) requestWith(ctx context.Context, httpClient *http.Client, metho
 		}
 	}
 
-	return c.withRetry(ctx, func() error {
+	return c.withRetry(ctx, write, func() error {
 		return c.executeRequest(ctx, httpClient, method, url, bodyBytes, result)
 	})
 }
 
 // withRetry applies the client's retry policy to HTTP and Connect calls.
-func (c *Client) withRetry(ctx context.Context, execute func() error) error {
+// A write (POST, PATCH) is resent only when the server rate-limited it: after
+// a 5xx or a network failure the first attempt may already have been applied.
+func (c *Client) withRetry(ctx context.Context, write bool, execute func() error) error {
 	// If retry is disabled, execute once
 	if c.retryConfig == nil {
 		return execute()
@@ -2107,7 +2143,7 @@ func (c *Client) withRetry(ctx context.Context, execute func() error) error {
 
 		// Check if error is retryable
 		ironflowErr, ok := err.(*IronflowError)
-		if !ok || !ironflowErr.Retryable {
+		if !ok || !ironflowErr.Retryable || (write && !isRateLimited(ironflowErr)) {
 			return err
 		}
 
@@ -2136,10 +2172,8 @@ func (c *Client) withRetry(ctx context.Context, execute func() error) error {
 		}
 
 		// Check for Retry-After header
-		if retryAfter := ironflowErr.RetryAfter; retryAfter > 0 {
-			if retryAfter > delay {
-				delay = retryAfter
-			}
+		if retryAfter := ironflowErr.RetryAfter; retryAfter > delay {
+			delay = min(retryAfter, c.retryConfig.MaxDelay)
 		}
 
 		// Log retry attempt
@@ -2245,14 +2279,17 @@ func (c *Client) errorFromResponse(resp *http.Response, respBody []byte) *Ironfl
 	var errResp struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
+		// Most REST handlers write only {"error": "..."} (httputil.WriteError).
+		Error string `json:"error"`
 	}
 	_ = json.Unmarshal(respBody, &errResp) // best-effort parsing
+	retryable, retryAfter := restRetrySignal(resp.StatusCode, resp.Header, respBody)
 
-	ironflowErr := NewError(
-		fmt.Sprintf("%s: %s", errResp.Code, errResp.Message),
-		errResp.Code,
-		resp.StatusCode >= 500,
-	)
+	msg := cmp.Or(errResp.Message, errResp.Error, fmt.Sprintf("HTTP %d", resp.StatusCode))
+	if errResp.Code != "" {
+		msg = errResp.Code + ": " + msg
+	}
+	ironflowErr := NewError(msg, errResp.Code, retryable)
 	ironflowErr.Details = map[string]any{"http_status": resp.StatusCode}
 
 	switch resp.StatusCode {
@@ -2308,13 +2345,40 @@ func (c *Client) errorFromResponse(resp *http.Response, respBody []byte) *Ironfl
 		ironflowErr.Cause = ErrUnsupportedMediaType
 	}
 
-	// Parse Retry-After header if present
-	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
-		ironflowErr.RetryAfter = parseRetryAfter(retryAfter)
-	}
+	ironflowErr.RetryAfter = retryAfter
 
 	return ironflowErr
+}
 
+// restRetrySignal reads the server's retry hint from a REST error. The body's
+// boolean `retryable` wins; an older server sends none, so fall back to the
+// status. 501 never heals on a resend. Retry-After comes from the header when
+// present, else the body's `retry_after` seconds.
+func restRetrySignal(status int, header http.Header, body []byte) (retryable bool, retryAfter time.Duration) {
+	var sig struct {
+		Retryable  *bool    `json:"retryable"`
+		RetryAfter *float64 `json:"retry_after"`
+	}
+	_ = json.Unmarshal(body, &sig) // best-effort parsing
+	// The shared server rule (internal/errorenvelope), for servers that send no flag.
+	retryable = status == http.StatusRequestTimeout || status == http.StatusTooManyRequests ||
+		(status >= 500 && status != http.StatusNotImplemented && status != http.StatusInsufficientStorage)
+	if sig.Retryable != nil {
+		retryable = *sig.Retryable
+	}
+	if h := header.Get("Retry-After"); h != "" {
+		retryAfter = parseRetryAfter(h)
+	} else if sig.RetryAfter != nil && *sig.RetryAfter > 0 {
+		retryAfter = time.Duration(*sig.RetryAfter * float64(time.Second))
+	}
+	return retryable, retryAfter
+}
+
+// isRateLimited reports whether the server refused the request for rate
+// limiting, before doing any work, so resending a write is safe.
+func isRateLimited(err *IronflowError) bool {
+	return err.Details["http_status"] == http.StatusTooManyRequests ||
+		err.Details["connect_code"] == connect.CodeResourceExhausted.String()
 }
 
 // parseRetryAfter parses the Retry-After header value.

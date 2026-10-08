@@ -19,13 +19,18 @@ type patchService struct {
 	output   string
 	failures int
 	calls    int
+	failCode connect.Code
 }
 
 func (s *patchService) PatchStep(_ context.Context, req *connect.Request[ironflowv1.PatchStepRequest]) (*connect.Response[ironflowv1.Step], error) {
 	s.calls++
 	if s.failures > 0 {
 		s.failures--
-		return nil, connect.NewError(connect.CodeUnavailable, errors.New("try again"))
+		code := connect.CodeResourceExhausted
+		if s.failCode != 0 {
+			code = s.failCode
+		}
+		return nil, connect.NewError(code, errors.New("try again"))
 	}
 	if req.Msg.Reason != "manual fix" || req.Header().Get("Authorization") != "Bearer test-key" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("reason and authentication required"))
@@ -70,5 +75,22 @@ func TestPatchStepPreservesConfiguredRetries(t *testing.T) {
 	}
 	if service.calls != 2 || len(retries) != 1 || retries[0].Attempt != 1 || service.output != "fixed" {
 		t.Fatalf("calls=%d retries=%v output=%q", service.calls, retries, service.output)
+	}
+}
+
+// PatchStep is a write: an Unavailable may already have been applied, so it is
+// not resent.
+func TestPatchStepIsAWrite(t *testing.T) {
+	service := &patchService{failures: 2, failCode: connect.CodeUnavailable}
+	mux := http.NewServeMux()
+	mux.Handle(ironflowv1connect.NewIronflowServiceHandler(service))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	client := NewClient(ClientConfig{ServerURL: srv.URL, APIKey: "test-key", Retry: &ClientRetryConfig{MaxAttempts: 3, InitialDelay: time.Millisecond}})
+	if err := client.PatchStep(context.Background(), "step", map[string]any{"result": "fixed"}, "manual fix"); err == nil {
+		t.Fatal("want the Unavailable error")
+	}
+	if service.calls != 1 {
+		t.Fatalf("PatchStep sent %d times after Unavailable, want 1", service.calls)
 	}
 }

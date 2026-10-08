@@ -57,7 +57,7 @@ func (c *Client) GetRunSteps(ctx context.Context, runID string) (*RunStepsResult
 	rpc := ironflowv1connect.NewIronflowServiceClient(c.httpClient, c.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(c.interceptor()))
 	var response *connect.Response[ironflowv1.GetRunStepsResponse]
 	// sdkcoverage: POST /ironflow.v1.IronflowService/GetRunSteps
-	err := c.withRetry(ctx, func() error {
+	err := c.withRetry(ctx, false, func() error {
 		var err error
 		response, err = rpc.GetRunSteps(ctx, connect.NewRequest(&ironflowv1.GetRunStepsRequest{RunId: runID}))
 		return connectError(err)

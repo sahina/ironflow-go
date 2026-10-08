@@ -1,9 +1,12 @@
 package ironflow
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -598,6 +601,38 @@ func TestServe_PublishEnvironment(t *testing.T) {
 			}
 			if runEnv != wantRun {
 				t.Errorf("Run.Environment = %q, want %q", runEnv, wantRun)
+			}
+		})
+	}
+}
+
+func TestServeWarnsWithoutSigningKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   ServeConfig
+		wantWarn bool
+	}{
+		{"no key", ServeConfig{}, true},
+		{"key set", ServeConfig{SigningKey: "secret"}, false},
+		{"skip verification", ServeConfig{SkipVerification: true}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			log.SetOutput(&buf)
+			t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+			h := Serve(tt.config)
+			// A request must not log the warning again.
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/ironflow", strings.NewReader("{}")))
+
+			got := strings.Count(buf.String(), "no signing key")
+			want := 0
+			if tt.wantWarn {
+				want = 1
+			}
+			if got != want {
+				t.Errorf("warning count = %d, want %d; log: %q", got, want, buf.String())
 			}
 		})
 	}

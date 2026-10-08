@@ -383,14 +383,13 @@ func (x *InvokeToolResponse) GetError() *ToolError {
 type ToolError struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Stable error code. One of:
-	//
-	//	TOOL_NOT_FOUND
-	//	SCOPE_MISMATCH
-	//	INPUT_SCHEMA_INVALID
-	//	CALLBACK_UNREACHABLE
-	//	CALLBACK_TIMEOUT
-	//	CALLBACK_INVALID_RESPONSE
-	//	HANDLER_ERROR
+	//   TOOL_NOT_FOUND
+	//   SCOPE_MISMATCH
+	//   INPUT_SCHEMA_INVALID
+	//   CALLBACK_UNREACHABLE
+	//   CALLBACK_TIMEOUT
+	//   CALLBACK_INVALID_RESPONSE
+	//   HANDLER_ERROR
 	Code string `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
 	// Human-readable error message.
 	Message       string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`

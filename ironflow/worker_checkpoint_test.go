@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -177,5 +181,209 @@ func TestHTTPJobReporterIncludesCheckpointAndTerminalOffsets(t *testing.T) {
 		if hasSteps != expected.steps {
 			t.Errorf("update %d has steps=%v, want %v", i, hasSteps, expected.steps)
 		}
+	}
+}
+
+// Cancellation must reach step bodies, not just their outbound HTTP requests.
+func TestPollingWorkerAbandonsStaleCheckpoint(t *testing.T) {
+	for _, branch := range []bool{false, true} {
+		t.Run(fmt.Sprintf("branch=%v", branch), func(t *testing.T) {
+			progress := make(chan struct{}, 1)
+			release := make(chan struct{})
+			defer close(release)
+			var effects, reports, compensations atomic.Int32
+			var heartbeatJobs atomic.Int32
+			heartbeatJobs.Store(1)
+			w := newTestWorker("http://localhost")
+			w.executor.checkpointInterval = time.Millisecond
+			w.httpClient.Transport = &mockRoundTripper{roundTripFunc: func(req *http.Request) (*http.Response, error) {
+				var body struct {
+					Status string `json:"status"`
+					Jobs   []any  `json:"jobs"`
+				}
+				_ = json.NewDecoder(req.Body).Decode(&body)
+				if strings.HasSuffix(req.URL.Path, "/heartbeat") {
+					heartbeatJobs.Store(int32(len(body.Jobs)))
+					return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+				}
+				if body.Status == "progress" {
+					select {
+					case progress <- struct{}{}:
+					default:
+					}
+					return &http.Response{StatusCode: 409, Body: io.NopCloser(strings.NewReader(`{"error":"STALE_EXECUTION"}`))}, nil
+				}
+				reports.Add(1)
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+			}}
+			w.executor.functions["fn"] = CreateFunction(FunctionConfig{ID: "fn"}, func(ctx Context) (any, error) {
+				_, _ = Run(ctx, "first", func() (int, error) { return 1, nil })
+				Compensate(ctx, "first", func() error { compensations.Add(1); return nil })
+				<-release
+				step := func() (int, error) { effects.Add(1); return 2, nil }
+				if branch {
+					return Parallel(ctx, "parallel", []func(*BranchContext) (int, error){func(b *BranchContext) (int, error) {
+						return RunWithBranch(b, "next", step)
+					}})
+				}
+				return Run(ctx, "next", step)
+			})
+			w.processJob(context.Background(), &jobAssignment{JobID: "run", RunID: "run", FunctionID: "fn"})
+			select {
+			case <-progress:
+			case <-time.After(time.Second):
+				t.Fatal("no checkpoint")
+			}
+			deadline := time.Now().Add(time.Second)
+			for heartbeatJobs.Load() != 0 && time.Now().Before(deadline) {
+				w.sendHeartbeat(context.Background())
+				time.Sleep(time.Millisecond)
+			}
+			if heartbeatJobs.Load() != 0 {
+				t.Fatal("stale execution remained in heartbeat")
+			}
+			// Release only after cancellation. The next step body must never run.
+			release <- struct{}{}
+			deadline = time.Now().Add(time.Second)
+			for w.jobCount.Load() != 0 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if w.jobCount.Load() != 0 {
+				t.Fatal("job did not settle")
+			}
+			if effects.Load() != 0 || reports.Load() != 0 || compensations.Load() != 0 {
+				t.Fatalf("effects=%d reports=%d compensations=%d", effects.Load(), reports.Load(), compensations.Load())
+			}
+		})
+	}
+}
+
+func TestPollingWorkerCheckpointFinishRace(t *testing.T) {
+	for _, tc := range []struct {
+		status      int
+		body        string
+		outcome     string
+		wantReports int32
+	}{
+		{409, `{"error":"STALE_EXECUTION"}`, "completed", 0},
+		{409, `{"error":"STALE_EXECUTION"}`, "failed", 0},
+		{409, `{"error":"STALE_EXECUTION"}`, "yielded", 0},
+		{409, `{"error":"RUN_NOT_RUNNING"}`, "completed", 1},
+		{409, `not json`, "completed", 1},
+		{500, `{"error":"STALE_EXECUTION"}`, "completed", 1},
+	} {
+		t.Run(fmt.Sprintf("%d/%s/%s", tc.status, tc.body, tc.outcome), func(t *testing.T) {
+			checkpoint := make(chan struct{})
+			checkpointStarted := sync.OnceFunc(func() { close(checkpoint) })
+			release := make(chan struct{})
+			releaseResponse := sync.OnceFunc(func() { close(release) })
+			defer releaseResponse()
+			handlerDone := make(chan struct{})
+			var reports atomic.Int32
+			w := newTestWorker("http://localhost")
+			w.executor.checkpointInterval = time.Millisecond
+			w.httpClient.Transport = &mockRoundTripper{roundTripFunc: func(req *http.Request) (*http.Response, error) {
+				var body struct {
+					Status string `json:"status"`
+				}
+				_ = json.NewDecoder(req.Body).Decode(&body)
+				if body.Status == "progress" {
+					checkpointStarted()
+					<-release
+					return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body))}, nil
+				}
+				reports.Add(1)
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+			}}
+			w.executor.functions["fn"] = CreateFunction(FunctionConfig{ID: "fn"}, func(ctx Context) (any, error) {
+				_, _ = Run(ctx, "first", func() (int, error) { return 1, nil })
+				<-checkpoint
+				defer close(handlerDone)
+				switch tc.outcome {
+				case "failed":
+					return nil, NewNonRetryableError("failure")
+				case "yielded":
+					return nil, Sleep(ctx, "sleep", time.Hour)
+				default:
+					return "done", nil
+				}
+			})
+			w.processJob(context.Background(), &jobAssignment{JobID: "run", RunID: "run", FunctionID: "fn"})
+			select {
+			case <-handlerDone:
+			case <-time.After(time.Second):
+				t.Fatal("handler did not finish")
+			}
+			releaseResponse()
+			deadline := time.Now().Add(time.Second)
+			for w.jobCount.Load() != 0 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if w.jobCount.Load() != 0 {
+				t.Fatal("job did not settle")
+			}
+			if reports.Load() != tc.wantReports {
+				t.Fatalf("reports=%d, want %d", reports.Load(), tc.wantReports)
+			}
+		})
+	}
+}
+
+func TestPollingExecutorDoesNotStartCanceledHandler(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var ran bool
+	fn := CreateFunction(FunctionConfig{ID: "fn"}, func(Context) (any, error) { ran = true; return nil, nil })
+	executor := &jobExecutor{functions: map[string]Function{"fn": fn}, logger: NewNoopLogger()}
+	if err := executor.execute(ctx, &jobAssignment{FunctionID: "fn"}, &checkpointTestReporter{}); err != nil {
+		t.Fatal(err)
+	}
+	if ran {
+		t.Fatal("canceled job started the handler")
+	}
+}
+
+func TestCompensationsStopOnJobCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var effects int
+	exec := &executionContext{ctx: ctx, stepCounters: make(map[string]int), compensations: []compensationEntry{
+		{stepName: "later", fn: func() error { effects++; return nil }},
+		{stepName: "in-flight", fn: func() error { cancel(); return nil }},
+	}}
+	exec.executeCompensations()
+	if effects != 0 {
+		t.Fatal("started another compensation after cancellation")
+	}
+}
+
+func TestHTTPJobReporterStaleFinalUpdate(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		body   string
+		stale  bool
+	}{
+		{409, `{"error":"STALE_EXECUTION"}`, true},
+		{409, `{"error":"RUN_NOT_RUNNING"}`, false},
+		{409, `not json`, false},
+		{500, `{"error":"STALE_EXECUTION"}`, false},
+	} {
+		t.Run(fmt.Sprintf("%d/%s", tc.status, tc.body), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			w := newTestWorker("http://localhost")
+			w.httpClient.Transport = &mockRoundTripper{roundTripFunc: func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body))}, nil
+			}}
+			reporter := &httpJobReporter{worker: w, cancel: cancel}
+			err := reporter.ReportCompletedAt(ctx, "run", "done", nil, 0)
+			if tc.stale {
+				if err != nil || ctx.Err() != context.Canceled {
+					t.Fatalf("stale final update: err=%v cancellation=%v", err, ctx.Err())
+				}
+			} else if err == nil || ctx.Err() != nil {
+				t.Fatalf("other rejection: err=%v cancellation=%v", err, ctx.Err())
+			}
+		})
 	}
 }

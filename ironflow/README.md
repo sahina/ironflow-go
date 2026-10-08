@@ -22,6 +22,7 @@ Go SDK for [Ironflow](https://github.com/sahina/ironflow) -- an event-driven bac
 - [Event Schema Registry](#event-schema-registry)
 - [Command Idempotency](#command-idempotency)
 - [KV Store](#kv-store)
+- [File Storage](#file-storage)
 - [Config Management](#config-management)
 - [Auth Management](#auth-management)
 - [Audit Trail](#audit-trail)
@@ -198,7 +199,8 @@ var OrderHandler = ironflow.CreateHandler(ironflow.HandlerConfig[OrderData]{
 
 `ctx` here is a `*HandlerContext` with `Event`, `EventMeta`, `Run`, `Secrets`,
 `Step`, and `Logger` fields; `ctx.Step` is a `StepClient` exposing `Run`,
-`Sleep`, `SleepUntil`, `WaitForEvent`, `Parallel`, `Map`, and `Compensate`.
+`Sleep`, `SleepUntil`, `WaitForEvent`, `Parallel`, `Map`, `Compensate`, `Invoke`,
+`InvokeAsync`, and `Publish`.
 
 ---
 
@@ -1307,6 +1309,57 @@ defer watcher.Stop()
 
 ---
 
+## File Storage
+
+Buckets, files, signed URLs and file events. The `FilesClient` has no timeout on byte
+transfers: use the `context` to cancel.
+
+```go
+files := client.Files()               // Files() is a METHOD on *Client
+maxBytes, emit, signed := int64(10<<20), true, true
+_, err := files.CreateBucket(ctx, "inbox", ironflow.FileBucketConfig{
+    MaxObjectBytes: &maxBytes, EmitEvents: &emit, AllowSignedURLs: &signed,
+})
+
+inbox := files.Bucket("inbox")
+info, err := inbox.Put(ctx, "scans/a.pdf", f, size, ironflow.PutFileOptions{ContentType: "application/pdf"})
+
+obj, err := inbox.Get(ctx, "scans/a.pdf", ironflow.GetFileOptions{IfMatch: info.ETag})
+defer obj.Body.Close()
+```
+
+`FilesClient` methods:
+
+| Method | Description |
+| :--- | :--- |
+| `CreateBucket(ctx, name, FileBucketConfig)` | Create a bucket. A nil field takes the server default. |
+| `ListBuckets(ctx)` | List the buckets. |
+| `GetBucket(ctx, name)` | One bucket's configuration. |
+| `UpdateBucket(ctx, name, FileBucketConfig)` | Change the set fields. The change applies to new writes only. |
+| `DeleteBucket(ctx, name)` | Delete an empty bucket. A bucket with files returns `ErrConflict`. |
+| `Bucket(name)` | A `*FileBucket` handle. |
+
+`FileBucket` methods:
+
+| Method | Description |
+| :--- | :--- |
+| `Put(ctx, path, body, size, PutFileOptions)` | Upload `size` bytes. `ContentType` is required. `IfMatch` and `IfNoneMatch` make the write conditional. An `io.ReadSeeker` body is retried. Any other reader is sent once. |
+| `Get(ctx, path, GetFileOptions)` | A `*FileObject` with `Body`, `ContentType`, `ETag` and `Size`. Close `Body`. `IfMatch` and `Range` are options. |
+| `Info(ctx, path)` | A file's metadata, without the bytes. |
+| `List(ctx, ListFilesOptions)` | A page of files. `NextCursor` is empty on the last page. |
+| `Delete(ctx, path)` | Delete a file. A missing path is not an error. |
+| `Move(ctx, from, to, MoveFileOptions)` | Rename one file. `ToBucket` and `IfMatch` are options. |
+| `Copy(ctx, from, to, CopyFileOptions)` | Copy one file. `ToBucket` is an option. |
+| `MovePrefix(ctx, from, to)` | Move every file under a prefix (both end in `/`). Returns the count. |
+| `SignUpload(ctx, path, SignUploadOptions)` | A `*SignedURL` for a credential-free upload. Set `CreateOnly` to make the PUT fail with `412` if the path exists. |
+| `SignDownload(ctx, path, ttl)` | A `*SignedURL` for a credential-free download. |
+
+Errors: `ErrPreconditionFailed` (412), `ErrPayloadTooLarge` (413), `ErrUnsupportedMediaType`
+(415) and `ErrConflict` (409). Use `errors.Is`. A 404 is an `*IronflowError` with
+`Code == "NOT_FOUND"`.
+
+---
+
 ## Config Management
 
 Server-side configuration store with revision tracking.
@@ -1820,6 +1873,12 @@ if ironflow.IsRetryable(err) {
     // Safe to retry
 }
 
+// For a REST error, the server's `retryable` flag wins. Without it, 408, 429 and
+// 5xx are retryable, except 501 and 507. Reads, including Connect reads sent as
+// POST, are resent on any retryable error. A write (POST, PATCH) only on 429
+// (rate limiting), never after a 5xx or a network failure. It honors Retry-After
+// up to ClientRetryConfig.MaxDelay.
+
 // Mark an error as non-retryable (triggers compensations)
 return nil, ironflow.NewNonRetryableError("invalid input: missing field")
 
@@ -1861,7 +1920,7 @@ err := ironflow.NewStepTimeoutError("slow-step", 30*time.Second)
 | Variable                | Description                     | Default                    |
 |-------------------------|---------------------------------|----------------------------|
 | `IRONFLOW_SERVER_URL`   | Server URL                      | `http://localhost:9123`    |
-| `IRONFLOW_SIGNING_KEY`  | Webhook signing secret          | (none)                     |
+| `IRONFLOW_SIGNING_KEY`  | The Go SDK does not read this variable. Your code reads it and passes it to `Serve` as `SigningKey`. With no key, the handler does not verify requests. | (none)                     |
 | `IRONFLOW_API_KEY`      | API key for authentication      | (none)                     |
 | `IRONFLOW_LOG_LEVEL`    | Log level: debug, info, warn, error, silent | info           |
 

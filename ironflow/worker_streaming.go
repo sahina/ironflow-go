@@ -193,6 +193,12 @@ func (w *StreamingWorker) Run(ctx context.Context) error {
 				return err
 			}
 
+			if !IsRetryable(err) {
+				w.logger.Error(err.Error())
+				w.Stop()
+				return err
+			}
+
 			w.logger.Error("Stream connection error", "error", err)
 			w.logger.Info("Reconnecting", "delay", w.config.ReconnectDelay)
 

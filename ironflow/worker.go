@@ -139,6 +139,7 @@ type activeJob struct {
 	runID     string
 	startedAt time.Time
 	cancel    context.CancelFunc
+	ctx       context.Context
 }
 
 // NewWorker creates a new worker.
@@ -264,9 +265,9 @@ func (w *Worker) Run(ctx context.Context) error {
 				return runCtx.Err()
 			}
 
-			// An auth failure will not fix itself on the reconnect cadence
-			// (#1673): surface the actionable message once and stop.
-			if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrForbidden) {
+			// Credentials and terminal registration failures need operator action,
+			// not another attempt with the same configuration.
+			if !IsRetryable(err) {
 				w.logger.Error(err.Error())
 				w.Stop()
 				return err
@@ -489,7 +490,7 @@ func (w *Worker) startHeartbeat(ctx context.Context) {
 func (w *Worker) sendHeartbeat(ctx context.Context) {
 	jobs := make([]map[string]any, 0)
 	w.activeJobs.Range(func(key, value any) bool {
-		if job, ok := value.(*activeJob); ok {
+		if job, ok := value.(*activeJob); ok && (job.ctx == nil || job.ctx.Err() == nil) {
 			jobs = append(jobs, map[string]any{
 				"job_id":     job.jobID,
 				"started_at": job.startedAt.Format(time.RFC3339),
@@ -655,6 +656,7 @@ func (w *Worker) processJob(ctx context.Context, job *jobAssignment) {
 		runID:     job.RunID,
 		startedAt: time.Now(),
 		cancel:    cancel,
+		ctx:       jobCtx,
 	}
 
 	w.activeJobs.Store(job.JobID, aj)
@@ -666,7 +668,7 @@ func (w *Worker) processJob(ctx context.Context, job *jobAssignment) {
 	// rather than looked up from activeJobs at report time — immune to map state,
 	// mirroring the gRPC streamJobReporter and avoiding the chunk-3e cancel-race
 	// that produced tokenless (rejected) updates. Empty fence for legacy jobs.
-	reporter := &httpJobReporter{worker: w, executionSeq: job.ExecutionSeq, leaseToken: job.LeaseToken}
+	reporter := &httpJobReporter{worker: w, executionSeq: job.ExecutionSeq, leaseToken: job.LeaseToken, cancel: cancel}
 
 	go func() {
 		defer func() {
@@ -711,6 +713,7 @@ type httpJobReporter struct {
 	worker       *Worker
 	executionSeq int64
 	leaseToken   string
+	cancel       context.CancelFunc
 }
 
 // stampFence merges the execution-fence fields into an outbound update body when
@@ -779,7 +782,14 @@ func (r *httpJobReporter) ReportProgress(ctx context.Context, jobID string, step
 
 func (r *httpJobReporter) putUpdate(ctx context.Context, jobID string, body map[string]any) error {
 	r.stampFence(body)
-	return r.worker.httpPut(ctx, fmt.Sprintf("/api/v1/workers/%s/jobs/%s", r.worker.workerID, jobID), body, nil)
+	err := r.worker.httpPut(ctx, fmt.Sprintf("/api/v1/workers/%s/jobs/%s", r.worker.workerID, jobID), body, nil)
+	var serverErr *IronflowError
+	if errors.As(err, &serverErr) && serverErr.Code == "STALE_EXECUTION" && r.cancel != nil {
+		r.cancel()
+		r.worker.logger.Warn("Job execution is stale; abandoning its result", "jobId", jobID)
+		return nil
+	}
+	return err
 }
 
 // httpPut makes an HTTP PUT request.
@@ -811,6 +821,14 @@ func (w *Worker) httpPut(ctx context.Context, path string, body any, result any)
 			return authErr
 		}
 		respBody, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusConflict {
+			var body struct {
+				Error string `json:"error"`
+			}
+			if json.Unmarshal(respBody, &body) == nil && body.Error == "STALE_EXECUTION" {
+				return NewError("execution is stale", body.Error, false)
+			}
+		}
 		return fmt.Errorf("request failed: %s", string(respBody))
 	}
 

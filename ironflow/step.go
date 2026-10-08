@@ -24,6 +24,7 @@ type compensationEntry struct {
 
 // executionContext manages step execution state.
 type executionContext struct {
+	ctx          context.Context // polling job cancellation; nil in push/streaming mode
 	runID        string
 	functionID   string
 	attempt      int
@@ -90,6 +91,13 @@ type executionContext struct {
 	// existing tests build &executionContext{...} literals directly, and a nil
 	// plain map would panic on first write.
 	warnedUnscoped sync.Map
+}
+
+func (c *executionContext) cancellationErr() error {
+	if c == nil || c.ctx == nil {
+		return nil
+	}
+	return c.ctx.Err()
 }
 
 // warnLogger returns the logger SDK diagnostics should go to.
@@ -375,6 +383,9 @@ func runWithTimeout[T any](fn func() (T, error), timeout time.Duration, stepID, 
 func Run[T any](ctx Context, name string, fn func() (T, error), opts ...StepOption) (T, error) {
 	var zero T
 	exec := ctx.exec
+	if err := exec.cancellationErr(); err != nil {
+		return zero, err
+	}
 
 	if exec.testInterceptor != nil {
 		return testRunStep[T](exec, name)
@@ -646,6 +657,9 @@ func (exec *executionContext) executeCompensations() {
 
 	// Iterate in reverse order
 	for _, entry := range slices.Backward(compensations) {
+		if exec.cancellationErr() != nil {
+			return
+		}
 		compName := fmt.Sprintf("compensate:%s", entry.stepName)
 		stepID := exec.generateStepID(compName)
 
@@ -710,6 +724,9 @@ func (exec *executionContext) executeCompensations() {
 //	err := ironflow.Sleep(ctx, "wait-24h", 24*time.Hour)
 func Sleep(ctx Context, name string, duration time.Duration) error {
 	exec := ctx.exec
+	if err := exec.cancellationErr(); err != nil {
+		return err
+	}
 
 	if exec.testInterceptor != nil {
 		exec.testInterceptor.SleepStep(name)
@@ -786,6 +803,9 @@ func sleepUntilImpl(sc StepContext, name string, until time.Time) error {
 	sc.markScopedUsed()
 
 	exec := sc.execution()
+	if err := exec.cancellationErr(); err != nil {
+		return err
+	}
 
 	if exec.testInterceptor != nil {
 		exec.testInterceptor.SleepStep(name)
@@ -826,6 +846,9 @@ func sleepUntilImpl(sc StepContext, name string, until time.Time) error {
 //	})
 func WaitForEvent[T any](ctx Context, name string, filter EventFilter) (Event, error) {
 	exec := ctx.exec
+	if err := exec.cancellationErr(); err != nil {
+		return Event{}, err
+	}
 
 	if exec.testInterceptor != nil {
 		event, err := exec.testInterceptor.WaitForEventStep(name, filter)
@@ -917,6 +940,9 @@ func invokeImpl[T any](sc StepContext, functionID string, input any, opts ...Inv
 
 	var zero T
 	exec := sc.execution()
+	if err := exec.cancellationErr(); err != nil {
+		return zero, err
+	}
 
 	if exec.testInterceptor != nil {
 		return testInvokeStep[T](exec, functionID, input)
@@ -983,6 +1009,9 @@ func invokeAsyncImpl(sc StepContext, functionID string, input any) (InvokeAsyncR
 	sc.markScopedUsed()
 
 	exec := sc.execution()
+	if err := exec.cancellationErr(); err != nil {
+		return InvokeAsyncResult{}, err
+	}
 
 	if exec.testInterceptor != nil {
 		result, err := exec.testInterceptor.InvokeAsyncStep(functionID, input)

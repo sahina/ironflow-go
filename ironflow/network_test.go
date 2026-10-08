@@ -78,7 +78,7 @@ func TestConnectionRefused(t *testing.T) {
 
 		ctx := context.Background()
 		var result map[string]string
-		err := client.request(ctx, "POST", "/test", nil, &result)
+		err := client.request(ctx, "GET", "/test", nil, &result)
 
 		if err != nil {
 			t.Fatalf("Expected success after retries, got: %v", err)
@@ -232,7 +232,7 @@ func TestServerErrors(t *testing.T) {
 
 		ctx := context.Background()
 		var result map[string]string
-		err := client.request(ctx, "POST", "/test", nil, &result)
+		err := client.request(ctx, "GET", "/test", nil, &result)
 
 		if err != nil {
 			t.Fatalf("Expected success after retries, got: %v", err)
@@ -277,7 +277,7 @@ func TestServerErrors(t *testing.T) {
 
 		ctx := context.Background()
 		var result map[string]string
-		err := client.request(ctx, "POST", "/test", nil, &result)
+		err := client.request(ctx, "GET", "/test", nil, &result)
 
 		if err != nil {
 			t.Fatalf("Expected success, got: %v", err)
@@ -357,7 +357,7 @@ func TestRetryCallback(t *testing.T) {
 
 		ctx := context.Background()
 		var result map[string]string
-		_ = client.request(ctx, "POST", "/test", nil, &result)
+		_ = client.request(ctx, "GET", "/test", nil, &result)
 
 		// Should have 2 retry events (attempts 1 and 2, not 3 since that's the last)
 		if len(retryEvents) != 2 {
@@ -560,7 +560,7 @@ func TestExponentialBackoff(t *testing.T) {
 
 		ctx := context.Background()
 		var result map[string]string
-		_ = client.request(ctx, "POST", "/test", nil, &result)
+		_ = client.request(ctx, "GET", "/test", nil, &result)
 
 		if len(requestTimes) < 3 {
 			t.Fatalf("Expected at least 3 requests, got %d", len(requestTimes))
@@ -601,7 +601,7 @@ func TestExponentialBackoff(t *testing.T) {
 
 		ctx := context.Background()
 		var result map[string]string
-		_ = client.request(ctx, "POST", "/test", nil, &result)
+		_ = client.request(ctx, "GET", "/test", nil, &result)
 
 		if len(requestTimes) < 4 {
 			t.Fatalf("Expected at least 4 requests, got %d", len(requestTimes))

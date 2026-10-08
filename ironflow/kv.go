@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -209,11 +210,15 @@ func (b *KVBucket) putWithHeaders(ctx context.Context, key string, value []byte,
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
+		errBody, _ := io.ReadAll(resp.Body)
 		var errResp struct {
 			Error string `json:"error"`
 		}
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
-		return 0, NewError(errResp.Error, fmt.Sprintf("HTTP_%d", resp.StatusCode), resp.StatusCode >= 500)
+		_ = json.Unmarshal(errBody, &errResp)
+		retryable, retryAfter := restRetrySignal(resp.StatusCode, resp.Header, errBody)
+		ife := NewError(errResp.Error, fmt.Sprintf("HTTP_%d", resp.StatusCode), retryable)
+		ife.RetryAfter = retryAfter
+		return 0, ife
 	}
 
 	var result struct {
@@ -424,6 +429,11 @@ func (b *KVBucket) Watch(ctx context.Context, callbacks KVWatchCallbacks, opts .
 
 // restRequest makes a REST API request with the standard auth/timeout handling.
 func (c *Client) restRequest(ctx context.Context, method, path string, body any, result any) error {
+	return c.restRequestWithHeaders(ctx, method, path, body, result, nil)
+}
+
+// restRequestWithHeaders is restRequest with extra request headers, such as If-Match.
+func (c *Client) restRequestWithHeaders(ctx context.Context, method, path string, body any, result any, headers map[string]string) error {
 	reqURL := c.serverURL + path
 
 	var bodyReader *bytes.Reader
@@ -458,6 +468,9 @@ func (c *Client) restRequest(ctx context.Context, method, path string, body any,
 		// authenticated API key remains the authority for the actual scope.
 		req.Header.Set("X-Ironflow-Environment", "current")
 	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -466,15 +479,19 @@ func (c *Client) restRequest(ctx context.Context, method, path string, body any,
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
+		errBody, _ := io.ReadAll(resp.Body)
 		var errResp struct {
 			Error string `json:"error"`
 		}
-		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		_ = json.Unmarshal(errBody, &errResp)
 		msg := errResp.Error
 		if msg == "" {
 			msg = fmt.Sprintf("request failed with status %d", resp.StatusCode)
 		}
-		return NewError(msg, fmt.Sprintf("HTTP_%d", resp.StatusCode), resp.StatusCode >= 500)
+		retryable, retryAfter := restRetrySignal(resp.StatusCode, resp.Header, errBody)
+		ife := NewError(msg, fmt.Sprintf("HTTP_%d", resp.StatusCode), retryable)
+		ife.RetryAfter = retryAfter
+		return ife
 	}
 
 	if result != nil && resp.StatusCode != http.StatusNoContent {

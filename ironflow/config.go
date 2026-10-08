@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,8 +46,42 @@ func (c *Client) Config() *ConfigClient {
 
 // Set replaces a config entirely (full document replacement).
 func (cc *ConfigClient) Set(ctx context.Context, name string, data map[string]any) (*ConfigSetResult, error) {
+	return cc.write(ctx, "POST", "/api/v1/config/"+url.PathEscape(name), data, nil)
+}
+
+// Create stores a config only if the name does not exist.
+// Returns an error with code HTTP_412 if it exists.
+func (cc *ConfigClient) Create(ctx context.Context, name string, data map[string]any) (*ConfigSetResult, error) {
+	return cc.write(ctx, "POST", "/api/v1/config/"+url.PathEscape(name), data, map[string]string{"If-None-Match": "*"})
+}
+
+// Update replaces a config only if revision is its current revision (compare-and-swap).
+// Returns an error with code HTTP_412 if the config changed or was deleted.
+func (cc *ConfigClient) Update(ctx context.Context, name string, data map[string]any, revision uint64) (*ConfigSetResult, error) {
+	return cc.write(ctx, "POST", "/api/v1/config/"+url.PathEscape(name), data, ifRevision(revision))
+}
+
+// PatchIf applies a shallow merge only if revision is the config's current revision.
+// Returns an error with code HTTP_412 if the config changed or was deleted.
+func (cc *ConfigClient) PatchIf(ctx context.Context, name string, data map[string]any, revision uint64) (*ConfigSetResult, error) {
+	return cc.write(ctx, "PATCH", "/api/v1/config/"+url.PathEscape(name), data, ifRevision(revision))
+}
+
+// DeleteIf removes a config only if revision is its current revision.
+// Returns an error with code HTTP_412 if the config changed or was deleted.
+func (cc *ConfigClient) DeleteIf(ctx context.Context, name string, revision uint64) error {
+	return cc.client.restRequestWithHeaders(ctx, "DELETE", "/api/v1/config/"+url.PathEscape(name), nil, nil, ifRevision(revision))
+}
+
+func ifRevision(revision uint64) map[string]string {
+	return map[string]string{"If-Match": strconv.FormatUint(revision, 10)}
+}
+
+// write takes the full path, not the name: scripts/sdkcoverage pairs the method
+// literal and the path within one call to derive sdk-coverage.json.
+func (cc *ConfigClient) write(ctx context.Context, method, path string, data map[string]any, headers map[string]string) (*ConfigSetResult, error) {
 	var result ConfigSetResult
-	if err := cc.client.restRequest(ctx, "POST", "/api/v1/config/"+url.PathEscape(name), data, &result); err != nil {
+	if err := cc.client.restRequestWithHeaders(ctx, method, path, data, &result, headers); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -63,11 +98,7 @@ func (cc *ConfigClient) Get(ctx context.Context, name string) (*ConfigResponse, 
 
 // Patch applies a shallow merge to a config.
 func (cc *ConfigClient) Patch(ctx context.Context, name string, data map[string]any) (*ConfigSetResult, error) {
-	var result ConfigSetResult
-	if err := cc.client.restRequest(ctx, "PATCH", "/api/v1/config/"+url.PathEscape(name), data, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
+	return cc.write(ctx, "PATCH", "/api/v1/config/"+url.PathEscape(name), data, nil)
 }
 
 // List returns all config entries (names and revisions, without full data).

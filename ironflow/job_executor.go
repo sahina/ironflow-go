@@ -109,6 +109,7 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 	}
 	checkpointer := newStepCheckpointer(ctx, job, exec, reporter, e.checkpointInterval)
 	if checkpointer != nil {
+		exec.ctx = ctx
 		defer checkpointer.stop()
 	}
 
@@ -184,14 +185,24 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 			}
 		}()
 
+		if execErr = exec.cancellationErr(); execErr != nil {
+			return
+		}
 		if execErr = validateEventInput(fn, fnCtx.Event); execErr == nil {
 			result, execErr = fn.Handler(fnCtx)
 		}
 	}()
 
+	if exec.cancellationErr() != nil {
+		return nil
+	}
+
 	// Handle yield signal
 	if signal, ok := isYieldSignal(execErr); ok {
 		steps, offset := checkpointer.finish()
+		if exec.cancellationErr() != nil {
+			return nil
+		}
 		return reportYielded(ctx, reporter, job.JobID, signal.info, steps, offset)
 	}
 
@@ -204,9 +215,15 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 			exec.executeCompensations()
 		}
 
+		if exec.cancellationErr() != nil {
+			return nil
+		}
 		e.callOnError(execErr, job)
 
 		steps, offset := checkpointer.finish()
+		if exec.cancellationErr() != nil {
+			return nil
+		}
 		if checkpointer == nil {
 			// Streaming has no checkpointer, and its regular steps already went
 			// out as StepCompleted/StepFailed; only compensations still need to
@@ -227,6 +244,9 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 
 	// Success - include executed steps
 	steps, offset := checkpointer.finish()
+	if exec.cancellationErr() != nil {
+		return nil
+	}
 	return reportCompleted(ctx, reporter, job.JobID, result, steps, offset)
 }
 
@@ -299,6 +319,9 @@ func (c *stepCheckpointer) run() {
 }
 
 func (c *stepCheckpointer) flush() error {
+	if err := c.ctx.Err(); err != nil {
+		return err
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.exec.executedStepsMu.Lock()

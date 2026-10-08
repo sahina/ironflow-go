@@ -32,7 +32,9 @@ type ServeConfig struct {
 	// no "default" fallback: a key scoped to another environment would get 403.
 	Environment string
 
-	// SigningKey is the secret for webhook signature verification.
+	// SigningKey is the secret for webhook signature verification. The SDK does
+	// not read IRONFLOW_SIGNING_KEY itself: pass it here. When empty, the handler
+	// accepts unsigned requests.
 	SigningKey string
 
 	// SkipVerification skips signature verification (dev only).
@@ -63,6 +65,10 @@ func Serve(config ServeConfig) http.Handler {
 			log.Printf("[ironflow-serve] WARNING: duplicate function ID %q — the later definition will overwrite the earlier one", fn.Config.ID)
 		}
 		functionMap[fn.Config.ID] = fn
+	}
+
+	if config.SigningKey == "" && !config.SkipVerification {
+		log.Printf("[ironflow-serve] WARNING: no signing key configured — requests will not be authenticated. Set SigningKey in ServeConfig for production use")
 	}
 
 	// Build webhook map

@@ -95,6 +95,8 @@ func connectError(err error) error {
 // that carries a Retry-After the caller should honor (`connectError` parses it
 // into IronflowError.RetryAfter).
 //
+// CodeUnimplemented is absent too: a missing route does not heal on a resend.
+//
 // CodeAborted is deliberately absent despite reading as transient: it is a lost
 // CAS race, so the caller must RE-READ before reissuing, not resend the stale
 // body. That is what the ErrContended sentinel above is for.
@@ -107,7 +109,6 @@ func isRetryableConnectCode(code connect.Code) bool {
 	switch code {
 	case connect.CodeUnknown, // 500
 		connect.CodeDeadlineExceeded,  // 504
-		connect.CodeUnimplemented,     // 501
 		connect.CodeInternal,          // 500
 		connect.CodeUnavailable,       // 503
 		connect.CodeDataLoss,          // 500
