@@ -80,7 +80,7 @@ func (m memoryClient) Get(opts ...MemoryGetOptions) (map[string]any, error) {
 
 	if runtime.memoryBackend == nil {
 		return nil, &ironflow.IronflowError{
-			Message:   "memory.Get requires a runtime backend — set IRONFLOW_URL (or IRONFLOW_SERVER_URL) so the agent can construct an IronflowClient, or inject a backend via the test harness",
+			Message:   "memory.Get requires a runtime backend — set IRONFLOW_SERVER_URL so the agent can construct an IronflowClient, or inject a backend via the test harness",
 			Code:      CodeMemoryNoBackend,
 			Retryable: false,
 		}
@@ -112,7 +112,7 @@ func (m memoryClient) Append(eventName string, data map[string]any, opts ...Memo
 	}
 	if runtime.memoryBackend == nil {
 		return &ironflow.IronflowError{
-			Message:   "memory.Append requires a runtime backend — set IRONFLOW_URL (or IRONFLOW_SERVER_URL) so the agent can construct an IronflowClient, or inject a backend via the test harness",
+			Message:   "memory.Append requires a runtime backend — set IRONFLOW_SERVER_URL so the agent can construct an IronflowClient, or inject a backend via the test harness",
 			Code:      CodeMemoryNoBackend,
 			Retryable: false,
 		}
@@ -224,10 +224,7 @@ func coerceProjectionState(cached any) map[string]any {
 // configured so makeMemory can surface a clear "no backend" error on first use.
 func defaultMemoryBackend(environment string) (MemoryBackend, error) {
 	discovery.Hydrate()
-	serverURL := os.Getenv("IRONFLOW_URL")
-	if serverURL == "" {
-		serverURL = os.Getenv("IRONFLOW_SERVER_URL")
-	}
+	serverURL := ironflow.ConfiguredServerURL()
 	if serverURL == "" {
 		return nil, fmt.Errorf("no server URL configured")
 	}

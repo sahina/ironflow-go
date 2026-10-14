@@ -42,20 +42,26 @@ const claimAttempts = 3
 //
 // Uses the claim-first pattern: TryClaim atomically reserves the commandId
 // before any handler work is done. The winner returns (nil, nil) and proceeds.
-// Losers receive the prior entry immediately without re-running the handler.
+// Later callers receive the prior entry, which may still be pending.
+// The application must distinguish completion and reconcile idempotent effects.
 //
 // Typical usage:
 //
 //	prior, err := dedup.TryClaim(ctx, commandId, claim)
-//	if err != nil { return err }
-//	if prior != nil { return prior, nil } // duplicate — return cached result
-//	defer func() {
-//	    if err != nil { _ = dedup.Release(ctx, commandId) }
-//	}()
-//	result, err := runHandler()
 //	if err != nil { return nil, err }
-//	if err = dedup.Finalize(ctx, commandId, result); err != nil { return nil, err }
-//	return result, nil
+//	if prior != nil {
+//	    // isCompleted is an application predicate, not an SDK method. The claim and
+//	    // the result are both T, so give T a status field that the predicate can read.
+//	    if !isCompleted(*prior) { return nil, errors.New("command pending: reconcile effects") }
+//	    return prior, nil
+//	}
+//	result, err := runHandler()
+//	if err != nil {
+//	    _ = dedup.Release(ctx, commandId) // only the claim winner reaches here
+//	    return nil, err
+//	}
+//	if err := dedup.Finalize(ctx, commandId, result); err != nil { return nil, err }
+//	return &result, nil
 //
 // IMPORTANT: Do not call Release after Finalize. Release must only be called
 // on handler failure, before Finalize succeeds. Calling Release after Finalize
@@ -114,8 +120,8 @@ func (d *CommandDedup[T]) ensureBucket(ctx context.Context) error {
 
 // TryClaim atomically claims commandId. Returns (nil, nil) if this caller wins
 // the race and should proceed with the handler. Returns (*T, nil) with the prior
-// entry if another caller already claimed this commandId (dedup hit — return the
-// prior result to your caller without re-running the handler).
+// entry if another caller already claimed this commandId. A pending prior entry
+// needs application recovery; only a completion marker permits a cached result.
 //
 // If the winner releases between the create and the read-back (404), the claim is
 // tried again, up to 3 times. After 3 lost rounds TryClaim returns an *IronflowError

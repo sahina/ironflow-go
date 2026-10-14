@@ -321,7 +321,7 @@ type ExposeMcpConfig struct {
 	CallbackURL string
 
 	// ServerURL is the Ironflow server URL. Falls back to
-	// IRONFLOW_URL or IRONFLOW_SERVER_URL env vars when empty.
+	// the IRONFLOW_SERVER_URL env var when empty.
 	ServerURL string
 
 	// APIKey authenticates the RegisterTool call. Must hold the

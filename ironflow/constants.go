@@ -113,9 +113,14 @@ const (
 	DefaultWorkerReconnectDelay = 5 * time.Second
 )
 
-// GetServerURL returns the server URL from environment variable or the default.
+// ConfiguredServerURL returns IRONFLOW_SERVER_URL, or "" when it is unset or blank.
+func ConfiguredServerURL() string {
+	return strings.TrimSpace(os.Getenv(EnvServerURL))
+}
+
+// GetServerURL returns ConfiguredServerURL, or the default when it is unset.
 func GetServerURL() string {
-	if url := os.Getenv(EnvServerURL); url != "" {
+	if url := ConfiguredServerURL(); url != "" {
 		return url
 	}
 	return DefaultServerURL

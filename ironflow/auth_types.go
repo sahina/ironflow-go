@@ -78,43 +78,86 @@ type UpdateRoleInput struct {
 }
 
 // ============================================================================
-// Policy Types
+// Policy Set Types
 // ============================================================================
 
-// PolicyInfo represents an authorization policy.
-type PolicyInfo struct {
-	ID        string    `json:"id"`
-	OrgID     string    `json:"org_id"`
-	Name      string    `json:"name"`
-	Effect    string    `json:"effect"`
-	Actions   string    `json:"actions"`
-	Resources string    `json:"resources"`
-	Condition string    `json:"condition,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+// Error codes the policy-set routes put in IronflowError.Code. A validation
+// failure (400) names the offending files and lines in IronflowError.Message.
+const (
+	PolicySetErrCompileError      = "policy_set_compile_error"
+	PolicySetErrV0Syntax          = "policy_set_v0_syntax"
+	PolicySetErrReservedNamespace = "policy_set_reserved_namespace"
+	PolicySetErrBuiltinForbidden  = "policy_set_builtin_forbidden"
+	PolicySetErrSchemaError       = "policy_set_schema_error"
+	PolicySetErrEntrypointType    = "policy_set_entrypoint_type"
+	PolicySetErrBadFileName       = "policy_set_bad_file_name"
+	PolicySetErrTooLarge          = "policy_set_too_large"
+	PolicySetErrCompileTimeout    = "policy_set_compile_timeout"
+	PolicySetErrBadMode           = "policy_set_bad_mode"
+	PolicySetErrBadDecision       = "policy_set_bad_decision"
+	PolicySetErrSprintfFormat     = "policy_set_sprintf_format"
+	PolicySetErrBadRequest        = "policy_set_bad_request"           // 400
+	PolicySetErrForbidden         = "policy_set_forbidden"             // 403
+	PolicySetErrNotFound          = "policy_set_not_found"             // 404
+	PolicySetErrVersionConflict   = "policy_set_version_conflict"      // 412
+	PolicySetErrIfMatchRequired   = "policy_set_precondition_required" // 428
+	PolicySetErrSelfLockout       = "policy_set_self_lockout"          // 422
+	PolicySetErrRateLimited       = "policy_set_rate_limited"          // 429, honor RetryAfter
+	PolicySetErrBusy              = "policy_set_busy"                  // 429, honor RetryAfter
+	// PolicySetErrNotPropagated (503, not retryable): the write committed as the version
+	// in the message. To finish propagation send the same request again with
+	// ifVersion = that version (a no-op); never resend with the old version.
+	PolicySetErrNotPropagated = "policy_set_not_propagated"
+)
 
-	// ResourcesValid is false when Resources has the wrong IRN arity and can
-	// never match a real resource (#2284). A server older than the flag omits
-	// the field, which unmarshals to false — read it together with Resources,
-	// not on its own.
-	ResourcesValid bool `json:"resources_valid"`
+// PolicySet is an org's Rego policy set.
+type PolicySet struct {
+	Version   int64             `json:"version"` // 0 when the org has no set
+	Modules   map[string]string `json:"modules"`
+	Decision  string            `json:"decision,omitempty"`
+	Mode      string            `json:"mode"` // "enforce" or "monitor"
+	UpdatedAt string            `json:"updated_at,omitempty"`
+	UpdatedBy string            `json:"updated_by,omitempty"`
+	// EnforcementActive is false when the server runs with policy enforcement
+	// off, so an "enforce" set is stored but not applied. Nil from a server
+	// that omits it.
+	EnforcementActive *bool `json:"enforcement_active,omitempty"`
 }
 
-// CreatePolicyInput is the input for creating a policy.
-type CreatePolicyInput struct {
-	Name      string `json:"name"`
-	Effect    string `json:"effect"`
-	Actions   string `json:"actions"`
-	Resources string `json:"resources"`
-	Condition string `json:"condition,omitempty"`
-	OrgID     string `json:"org_id,omitempty"`
+// PolicySetInput is the body of PutPolicySet and ValidatePolicySet.
+type PolicySetInput struct {
+	Modules map[string]string `json:"modules"`
+	// Decision nil keeps the current rule; a pointer to "" clears it.
+	Decision *string `json:"decision,omitempty"`
+	// Mode omitted keeps the current mode; a new set starts in "monitor".
+	Mode string `json:"mode,omitempty"`
 }
 
-// UpdatePolicyInput is the input for updating a policy.
-type UpdatePolicyInput struct {
-	Name      string `json:"name,omitempty"`
-	Effect    string `json:"effect,omitempty"`
-	Actions   string `json:"actions,omitempty"`
-	Resources string `json:"resources,omitempty"`
-	Condition string `json:"condition,omitempty"`
+// PolicySetVersion summarizes one stored version.
+type PolicySetVersion struct {
+	Version   int64  `json:"version"`
+	Mode      string `json:"mode"`
+	Decision  string `json:"decision,omitempty"`
+	CreatedAt string `json:"created_at"`
+	CreatedBy string `json:"created_by,omitempty"`
+}
+
+// PolicySetDryRunInput evaluates Input against Set, or against the active set when Set is nil.
+type PolicySetDryRunInput struct {
+	Set     *PolicySetInput `json:"set,omitempty"`
+	Input   map[string]any  `json:"input"`
+	Explain bool            `json:"explain,omitempty"`
+}
+
+// PolicySetDryRunResult is the set's own verdict, whatever its mode.
+type PolicySetDryRunResult struct {
+	Decision string   `json:"decision"`
+	Mode     string   `json:"mode"`
+	Version  int64    `json:"version,omitempty"`
+	Reasons  []string `json:"reasons,omitempty"`
+	// ReasonsOmitted counts reasons dropped beyond the first 100.
+	ReasonsOmitted int    `json:"reasons_omitted,omitempty"`
+	Entrypoint     string `json:"entrypoint,omitempty"`
+	Error          string `json:"error,omitempty"`
+	Explain        string `json:"explain,omitempty"`
 }

@@ -39,8 +39,12 @@ type ProjectionEvent struct {
 	// Name is the event name (e.g., "order.created").
 	Name string
 
-	// Data is the event payload.
+	// Data is the event payload when it is a JSON object.
 	Data map[string]any
+
+	// DataValue is the event payload when it is not a JSON object (a string,
+	// number, boolean or array). It is nil when Data holds the payload.
+	DataValue any
 
 	// Seq is the global sequence number of the event.
 	Seq int64
@@ -115,7 +119,7 @@ type ProjectionConfig struct {
 	// Required for managed mode, must be nil for external mode.
 	InitialState func() map[string]any
 
-	// PartitionKey is a JSONPath for partition key extraction (e.g., "$.data.customerId").
+	// PartitionKey is a JSONPath for partition key extraction (e.g., "$.customerId").
 	// When set, state is maintained per-partition.
 	PartitionKey string
 

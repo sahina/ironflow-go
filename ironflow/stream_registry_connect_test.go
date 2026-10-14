@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,5 +123,82 @@ func TestDeleteStream(t *testing.T) {
 	}
 	if version != 3 {
 		t.Fatalf("version=%d", version)
+	}
+}
+
+type pagedHistoryService struct {
+	ironflowv1connect.UnimplementedEntityStreamServiceHandler
+	seen  []*ironflowv1.GetEntityHistoryRequest
+	stuck bool
+}
+
+func (s *pagedHistoryService) GetEntityHistory(_ context.Context, r *connect.Request[ironflowv1.GetEntityHistoryRequest]) (*connect.Response[ironflowv1.GetEntityHistoryResponse], error) {
+	s.seen = append(s.seen, r.Msg)
+	entry := func(v int64) *ironflowv1.EntityHistoryEntry {
+		return &ironflowv1.EntityHistoryEntry{EventName: "order.updated", EntityVersion: v}
+	}
+	if s.stuck {
+		return connect.NewResponse(&ironflowv1.GetEntityHistoryResponse{Entries: []*ironflowv1.EntityHistoryEntry{entry(r.Msg.FromVersion)}, NextCursor: r.Msg.FromVersion}), nil
+	}
+	if r.Msg.FromVersion == 2 {
+		return connect.NewResponse(&ironflowv1.GetEntityHistoryResponse{Entries: []*ironflowv1.EntityHistoryEntry{entry(2), entry(3)}, NextCursor: 4}), nil
+	}
+	return connect.NewResponse(&ironflowv1.GetEntityHistoryResponse{Entries: []*ironflowv1.EntityHistoryEntry{entry(4)}}), nil
+}
+
+func TestGetEntityHistoryFollowsCursorWithWindow(t *testing.T) {
+	service := &pagedHistoryService{}
+	mux := http.NewServeMux()
+	mux.Handle(ironflowv1connect.NewEntityStreamServiceHandler(service))
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	client := NewClient(ClientConfig{ServerURL: server.URL, APIKey: "key"})
+	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+	history, err := client.GetEntityHistory(context.Background(), "order/1", EntityHistoryOpts{FromVersion: 2, From: from, To: to})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var versions []int64
+	for _, e := range history {
+		versions = append(versions, e.EntityVersion)
+	}
+	if !reflect.DeepEqual(versions, []int64{2, 3, 4}) {
+		t.Fatalf("versions=%v", versions)
+	}
+	if len(service.seen) != 2 {
+		t.Fatalf("requests=%d, want 2", len(service.seen))
+	}
+	for i, want := range []int64{2, 4} {
+		r := service.seen[i]
+		if r.FromVersion != want || r.Limit != entityHistoryPageSize || !r.FromTimestamp.AsTime().Equal(from) || !r.ToTimestamp.AsTime().Equal(to) {
+			t.Fatalf("request %d = %+v", i, r)
+		}
+	}
+}
+
+func TestGetEntityHistoryLimitAndStuckCursor(t *testing.T) {
+	service := &pagedHistoryService{}
+	mux := http.NewServeMux()
+	mux.Handle(ironflowv1connect.NewEntityStreamServiceHandler(service))
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	client := NewClient(ClientConfig{ServerURL: server.URL, APIKey: "key"})
+
+	history, err := client.GetEntityHistory(context.Background(), "order/1", EntityHistoryOpts{FromVersion: 2, Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 2 || len(service.seen) != 1 || service.seen[0].Limit != 2 {
+		t.Fatalf("entries=%d requests=%d first limit=%d, want 2 entries from one request with limit 2", len(history), len(service.seen), service.seen[0].Limit)
+	}
+
+	if _, err := client.GetEntityHistory(context.Background(), "order/1", EntityHistoryOpts{Limit: -1}); err == nil {
+		t.Fatal("negative limit: want error")
+	}
+
+	service.stuck = true
+	if _, err := client.GetEntityHistory(context.Background(), "order/1", EntityHistoryOpts{FromVersion: 4}); err == nil || !strings.Contains(err.Error(), "did not advance") {
+		t.Fatalf("stuck cursor: err=%v, want did not advance", err)
 	}
 }

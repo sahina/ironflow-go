@@ -2105,6 +2105,17 @@ var noSideEffectRPCs = func() map[string]bool {
 // caller. A POST that only reads or mints something (a signed URL) is safe to
 // resend, so it passes write=false.
 func (c *Client) requestAs(ctx context.Context, httpClient *http.Client, write bool, method, path string, body any, result any) error {
+	return c.requestAsWithHeaders(ctx, httpClient, write, method, path, nil, body, result)
+}
+
+// requestWithHeaders is request with extra request headers, such as If-Match.
+// Every non-GET counts as a write: a 5xx is not resent, because the first
+// attempt may have committed (a policy-set PUT that answers 503 has).
+func (c *Client) requestWithHeaders(ctx context.Context, method, path string, headers map[string]string, body any, result any) error {
+	return c.requestAsWithHeaders(ctx, c.httpClient, method != http.MethodGet, method, path, headers, body, result)
+}
+
+func (c *Client) requestAsWithHeaders(ctx context.Context, httpClient *http.Client, write bool, method, path string, headers map[string]string, body any, result any) error {
 	url := c.serverURL + path
 
 	// Marshal body once for reuse across retries
@@ -2118,7 +2129,7 @@ func (c *Client) requestAs(ctx context.Context, httpClient *http.Client, write b
 	}
 
 	return c.withRetry(ctx, write, func() error {
-		return c.executeRequest(ctx, httpClient, method, url, bodyBytes, result)
+		return c.executeRequest(ctx, httpClient, method, url, bodyBytes, headers, result)
 	})
 }
 
@@ -2222,7 +2233,7 @@ func isNetworkError(err error) bool {
 }
 
 // executeRequest performs a single HTTP request.
-func (c *Client) executeRequest(ctx context.Context, httpClient *http.Client, method, url string, bodyBytes []byte, result any) error {
+func (c *Client) executeRequest(ctx context.Context, httpClient *http.Client, method, url string, bodyBytes []byte, headers map[string]string, result any) error {
 	var bodyReader io.Reader
 	if bodyBytes != nil {
 		bodyReader = bytes.NewReader(bodyBytes)
@@ -2247,6 +2258,9 @@ func (c *Client) executeRequest(ctx context.Context, httpClient *http.Client, me
 	// emit edges (#1262). Matches the JS SDK's run-context propagation.
 	if rid := runIDFromContext(ctx); rid != "" {
 		req.Header.Set(HeaderRunID, rid)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
 	}
 
 	resp, err := httpClient.Do(req)
@@ -2339,6 +2353,8 @@ func (c *Client) errorFromResponse(resp *http.Response, respBody []byte) *Ironfl
 		}
 	case http.StatusPreconditionFailed:
 		ironflowErr.Cause = ErrPreconditionFailed
+	case http.StatusPreconditionRequired:
+		ironflowErr.Cause = ErrPreconditionRequired
 	case http.StatusRequestEntityTooLarge:
 		ironflowErr.Cause = ErrPayloadTooLarge
 	case http.StatusUnsupportedMediaType:

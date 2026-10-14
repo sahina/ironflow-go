@@ -2,7 +2,8 @@ package ironflow
 
 import (
 	"context"
-	"net/url"
+	"errors"
+	"strconv"
 )
 
 // ============================================================================
@@ -149,71 +150,84 @@ func (c *Client) DeleteRole(ctx context.Context, id string) error {
 	return c.request(ctx, "DELETE", "/api/v1/roles/"+id, nil, nil)
 }
 
-// AssignPolicyToRole assigns a policy to a role.
-func (c *Client) AssignPolicyToRole(ctx context.Context, roleID, policyID string) error {
-	return c.request(ctx, "POST", "/api/v1/roles/"+roleID+"/policies", map[string]string{"policy_id": policyID}, nil)
-}
-
-// RemovePolicyFromRole removes a policy assignment from a role.
-func (c *Client) RemovePolicyFromRole(ctx context.Context, roleID, policyID string) error {
-	return c.request(ctx, "DELETE", "/api/v1/roles/"+roleID+"/policies/"+policyID, nil, nil)
-}
-
-// ListRolePolicies lists every policy assigned to a role.
-func (c *Client) ListRolePolicies(ctx context.Context, roleID string) ([]PolicyInfo, error) {
-	var response struct {
-		Policies []PolicyInfo `json:"policies"`
-	}
-	if err := c.request(ctx, "GET", "/api/v1/roles/"+url.PathEscape(roleID)+"/policies", nil, &response); err != nil {
-		return nil, err
-	}
-	if response.Policies == nil {
-		return []PolicyInfo{}, nil
-	}
-	return response.Policies, nil
-}
-
 // ============================================================================
-// Policy Management
+// Policy Set
 // ============================================================================
 
-// CreatePolicy creates a new authorization policy.
-func (c *Client) CreatePolicy(ctx context.Context, input CreatePolicyInput) (*PolicyInfo, error) {
-	var result PolicyInfo
-	if err := c.request(ctx, "POST", "/api/v1/policies", input, &result); err != nil {
+// GetPolicySet returns the org's Rego policy set (version 0 when there is none).
+func (c *Client) GetPolicySet(ctx context.Context) (*PolicySet, error) {
+	var out PolicySet
+	if err := c.request(ctx, "GET", "/api/v1/policy-set", nil, &out); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	return &out, nil
 }
 
-// ListPolicies lists all policies for the current organization.
-func (c *Client) ListPolicies(ctx context.Context) ([]PolicyInfo, error) {
-	var result []PolicyInfo
-	if err := c.request(ctx, "GET", "/api/v1/policies", nil, &result); err != nil {
+// PutPolicySet replaces the set if its current version is ifVersion (0 for none).
+// A 412 means another writer won; IsVersionConflict reports it. A 503
+// policy_set_not_propagated is not retryable: the write committed as the version
+// named in the message. To finish propagation send the same request again with
+// ifVersion set to that version (a no-op); never resend with the old version.
+func (c *Client) PutPolicySet(ctx context.Context, in PolicySetInput, ifVersion int64) (*PolicySet, error) {
+	var out PolicySet
+	if err := c.requestWithHeaders(ctx, "PUT", "/api/v1/policy-set", ifMatch(ifVersion), in, &out); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return &out, nil
 }
 
-// GetPolicy returns a single policy by ID.
-func (c *Client) GetPolicy(ctx context.Context, id string) (*PolicyInfo, error) {
-	var result PolicyInfo
-	if err := c.request(ctx, "GET", "/api/v1/policies/"+id, nil, &result); err != nil {
+// ValidatePolicySet compiles the set without storing it.
+func (c *Client) ValidatePolicySet(ctx context.Context, in PolicySetInput) error {
+	return c.request(ctx, "POST", "/api/v1/policy-set/validate", in, nil)
+}
+
+// DryRunPolicySet evaluates an input against a candidate set or the active one.
+func (c *Client) DryRunPolicySet(ctx context.Context, in PolicySetDryRunInput) (*PolicySetDryRunResult, error) {
+	var out PolicySetDryRunResult
+	if err := c.request(ctx, "POST", "/api/v1/policy-set/dry-run", in, &out); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	return &out, nil
 }
 
-// UpdatePolicy updates a policy.
-func (c *Client) UpdatePolicy(ctx context.Context, id string, input UpdatePolicyInput) (*PolicyInfo, error) {
-	var result PolicyInfo
-	if err := c.request(ctx, "PATCH", "/api/v1/policies/"+id, input, &result); err != nil {
+// ListPolicySetVersions lists the stored versions.
+func (c *Client) ListPolicySetVersions(ctx context.Context) ([]PolicySetVersion, error) {
+	var out struct {
+		Versions []PolicySetVersion `json:"versions"`
+	}
+	if err := c.request(ctx, "GET", "/api/v1/policy-set/versions", nil, &out); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	return out.Versions, nil
 }
 
-// DeletePolicy deletes a policy.
-func (c *Client) DeletePolicy(ctx context.Context, id string) error {
-	return c.request(ctx, "DELETE", "/api/v1/policies/"+id, nil, nil)
+// GetPolicySetVersion returns one stored version, modules included.
+func (c *Client) GetPolicySetVersion(ctx context.Context, version int64) (*PolicySet, error) {
+	var out PolicySet
+	if err := c.request(ctx, "GET", "/api/v1/policy-set/versions/"+strconv.FormatInt(version, 10), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RollbackPolicySet stores a copy of an earlier version's modules as a new
+// version, if the current version is ifVersion. The active mode is kept, not
+// restored from the old version. A 503 policy_set_not_propagated means the
+// rollback committed: send it again with ifVersion set to the saved version
+// (a no-op that finishes propagation).
+func (c *Client) RollbackPolicySet(ctx context.Context, version, ifVersion int64) (*PolicySet, error) {
+	var out PolicySet
+	if err := c.requestWithHeaders(ctx, "POST", "/api/v1/policy-set/versions/"+strconv.FormatInt(version, 10)+"/rollback", ifMatch(ifVersion), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// IsVersionConflict reports a 412 from PutPolicySet or RollbackPolicySet.
+func IsVersionConflict(err error) bool {
+	return errors.Is(err, ErrPreconditionFailed)
+}
+
+func ifMatch(version int64) map[string]string {
+	return map[string]string{"If-Match": strconv.FormatInt(version, 10)}
 }

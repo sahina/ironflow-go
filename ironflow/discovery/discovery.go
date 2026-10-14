@@ -41,7 +41,7 @@ func Resolve(getenv func(string) string, dir string) map[string]string {
 	if getenv("IRONFLOW_NO_DISCOVERY") == "1" {
 		return nil
 	}
-	for _, k := range []string{"IRONFLOW_URL", "IRONFLOW_SERVER_URL", "IRONFLOW_API_KEY"} {
+	for _, k := range []string{"IRONFLOW_SERVER_URL", "IRONFLOW_API_KEY"} {
 		if getenv(k) != "" {
 			return nil
 		}
@@ -59,7 +59,7 @@ func Resolve(getenv func(string) string, dir string) map[string]string {
 	if json.Unmarshal(data, &f) != nil || f.Version != 1 || !loopbackHTTP(f.URL) {
 		return nil
 	}
-	out := map[string]string{"IRONFLOW_URL": f.URL, "IRONFLOW_SERVER_URL": f.URL}
+	out := map[string]string{"IRONFLOW_SERVER_URL": f.URL}
 	if f.APIKey != "" {
 		out["IRONFLOW_API_KEY"] = f.APIKey
 	}

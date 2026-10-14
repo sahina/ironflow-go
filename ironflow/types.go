@@ -823,6 +823,16 @@ type EntityHistoryEntry struct {
 	Metadata      any    `json:"metadata,omitempty"`
 }
 
+// EntityHistoryOpts filters GetEntityHistory. From and To are inclusive; a
+// zero time leaves that side of the window open. Limit caps the number of
+// entries returned; zero reads the whole history.
+type EntityHistoryOpts struct {
+	FromVersion int64
+	From        time.Time
+	To          time.Time
+	Limit       int
+}
+
 // StreamSnapshot represents a snapshot of an entity stream's state.
 type StreamSnapshot struct {
 	SnapshotID    string `json:"snapshot_id"`

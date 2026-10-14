@@ -224,7 +224,7 @@ func TestDefaultMemoryBackend_SendsRunEnvironment(t *testing.T) {
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
-	t.Setenv("IRONFLOW_URL", srv.URL)
+	t.Setenv("IRONFLOW_SERVER_URL", srv.URL)
 	t.Setenv("IRONFLOW_API_KEY", "")
 
 	b, err := defaultMemoryBackend("staging")
@@ -256,7 +256,7 @@ func TestAgent_MemoryBackendUsesRunEnvironment(t *testing.T) {
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
-	t.Setenv("IRONFLOW_URL", srv.URL)
+	t.Setenv("IRONFLOW_SERVER_URL", srv.URL)
 	t.Setenv("IRONFLOW_API_KEY", "")
 
 	fn := Agent(AgentConfig{

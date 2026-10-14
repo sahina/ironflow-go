@@ -122,14 +122,11 @@ func ExposeMcp(cfg ExposeMcpConfig) (*ExposeMcpHandle, error) {
 
 	serverURL := cfg.ServerURL
 	if serverURL == "" {
-		serverURL = os.Getenv("IRONFLOW_URL")
-	}
-	if serverURL == "" {
-		serverURL = os.Getenv("IRONFLOW_SERVER_URL")
+		serverURL = ironflow.ConfiguredServerURL()
 	}
 	if serverURL == "" {
 		return nil, &ironflow.IronflowError{
-			Message:   "ExposeMcp requires ServerURL (or IRONFLOW_URL / IRONFLOW_SERVER_URL env)",
+			Message:   "ExposeMcp requires ServerURL (or IRONFLOW_SERVER_URL env)",
 			Code:      CodeMcpMissingServerURL,
 			Retryable: false,
 		}

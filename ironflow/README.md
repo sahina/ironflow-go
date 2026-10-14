@@ -48,6 +48,14 @@ go get github.com/sahina/ironflow-go/ironflow
 
 Requires **Go 1.25+**.
 
+The canonical external import is `github.com/sahina/ironflow-go/ironflow`.
+The module at `github.com/sahina/ironflow/sdk/go/ironflow` is for development
+inside the engine repository. Its local `api/go` replacement does not apply to
+consuming applications, so installing that module can fail with
+`unknown revision 000000000000`. Use the public mirror, including when pinning
+to an engine release such as `@v0.43.1`. Setting `GOPRIVATE` does not resolve
+the placeholder API version.
+
 ---
 
 ## Quick Start
@@ -127,7 +135,7 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
 
     // Optional
     Name:     "My Function",          // display name (defaults to ID)
-    Timeout:  5 * time.Minute,        // function timeout (default: 10m)
+    Timeout:  5 * time.Minute,        // function timeout (unset: no per-function budget)
     StepTimeout: 30 * time.Second,    // default timeout for all steps (overridable per-step)
     Mode:     ironflow.PullMode,      // "push" or "pull" (default: "push"); a Worker registers every function as pull regardless
 
@@ -143,13 +151,23 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
         Key:   "customerId",            // grouping key, a path into the event data payload
     },
 
-    ActorKey: "event.data.userId",    // sticky routing JSON path
+    ActorKey: "event.data.userId",    // JSON path; stored by the server, not used for routing yet
     Secrets:  []string{"STRIPE_KEY"}, // secrets injected at runtime
     RecordingProfile:   ironflow.RecordingProfileSteps, // capture steps and compensations
     RecordingRetention: "30d",        // metadata only; global retention applies
+
+    Description: "Charges the card and sends the receipt", // human-readable summary
+    Metadata:    map[string]any{"team": "payments"},        // custom metadata
+    Debounce: &ironflow.DebounceConfig{Period: 5 * time.Second, Key: "userId"}, // async-only
+    CancelOn: []ironflow.CancelOnConfig{
+        {Event: "order.cancelled", Match: "data.orderId"}, // auto-cancel in-flight runs; OR across specs
+    },
+    Validate: func(data json.RawMessage) error { // local payload check; an error fails the run without retry
+        return nil
+    },
 }, func(ctx ironflow.Context) (any, error) {
     // ctx.Event  -- triggering event
-    // ctx.Run    -- run metadata (ID, FunctionID, Attempt, MaxAttempts, StartedAt)
+    // ctx.Run    -- run metadata (ID, FunctionID, Attempt, MaxAttempts, StartedAt, Environment)
     // ctx.Secrets -- resolved secrets
     return nil, nil
 })
@@ -171,11 +189,13 @@ The `Context` passed to handlers provides:
 
 | Field         | Type            | Description                          |
 |---------------|-----------------|--------------------------------------|
-| `ctx.Event`   | `Event`         | Triggering event (ID, Name, Version, RawData, Timestamp, Source, Metadata) |
-| `ctx.Run`     | `RunInfo`       | Run metadata (ID, FunctionID, Attempt, MaxAttempts, StartedAt) |
+| `ctx.Event`   | `Event`         | Triggering event (ID, Name, Version, RawData, Timestamp, IdempotencyKey, Source, Metadata) |
+| `ctx.Run`     | `RunInfo`       | Run metadata (ID, FunctionID, Attempt, MaxAttempts, StartedAt, Environment) |
 | `ctx.Secrets` | `SecretsReader` | Resolved secrets (see [Secrets](#secrets)) |
 
 Use `ctx.Event.Data(&target)` to unmarshal the event payload into a typed struct.
+
+Use `ctx.RunContext()` to get a `context.Context` tagged with the run ID. Pass it to `Client` methods so the events your function emits belong to the run.
 
 ### CreateHandler -- Typed Event Handlers
 
@@ -248,6 +268,8 @@ event, err := ironflow.WaitForEvent[ApprovalEvent](ctx, "wait-approval", ironflo
     Event:   "order.approved",          // event name to match
     Match:   "data.orderId",            // JSON path for correlation
     Timeout: 7 * 24 * time.Hour,        // default: 7 days
+    // MatchValue: "ord_123",           // optional literal compared at Match; empty snapshots Match from the triggering event (needs Match)
+    // Payload:    map[string]any{...}, // optional; stored as the waiting step's input, does not affect matching
 })
 if err != nil {
     return nil, err
@@ -312,6 +334,7 @@ With options:
 results, err := ironflow.Parallel(ctx, "checks", branches, ironflow.ParallelOptions{
     Concurrency: 5,           // limit concurrent branches (0 = unlimited)
     OnError:     "allSettled", // "failFast" (default) or "allSettled"
+    // SkipScopedClientCheck: true, // silence the unscoped-branch warning for a fan-out with nothing to memoize
 })
 ```
 
@@ -428,6 +451,7 @@ handler := ironflow.Serve(ironflow.ServeConfig{
     SigningKey:        os.Getenv("IRONFLOW_SIGNING_KEY"), // verify request signatures
     SkipVerification: false,   // skip signature check (dev only)
     ServerURL:        "http://localhost:9123", // for webhook event emission
+    Environment:      "staging", // scopes durable Publish steps (X-Ironflow-Environment); falls back to IRONFLOW_ENV
     Webhooks:         []ironflow.Webhook{stripeWebhook}, // webhook sources
     Upcasters:        registry, // event schema upcasting
 })
@@ -461,6 +485,12 @@ worker := ironflow.NewWorker(ironflow.WorkerConfig{
     Projections:       []ironflow.Projection{orderTotals},      // run alongside functions
     Upcasters:         registry,                // event schema upcasting
     Logger:            ironflow.NewNoopLogger(), // disable logging
+    Environment:        "staging",               // target environment; default: IRONFLOW_ENV env
+    CheckpointInterval: time.Second,             // default: 1s; debounce for reporting completed steps (polling worker only)
+    DrainTimeout:       30 * time.Second,        // default: 30s; wait in Drain before active jobs are cancelled
+    OnError: func(err error, ctx ironflow.ErrorContext) { // called after compensations, before the failure is reported; must not block
+        log.Printf("job failed: %v", err)
+    },
 })
 ```
 
@@ -509,6 +539,7 @@ The `Client` is used for server interaction: emitting events, managing runs, pub
 client := ironflow.NewClient(ironflow.ClientConfig{
     ServerURL: ironflow.GetServerURL(),     // default: http://localhost:9123
     APIKey:    "ifkey_...",                 // default: IRONFLOW_API_KEY env
+    Environment: "staging",                 // X-Ironflow-Environment; empty sends no header. IRONFLOW_ENV is not read.
     Timeout:   30 * time.Second,            // default: 30s
     HTTPClient: &http.Client{},             // optional custom HTTP client
 
@@ -869,7 +900,7 @@ You can also create a standalone `SubscriptionClient`:
 ```go
 subClient := ironflow.NewSubscriptionClient(ironflow.SubscriptionClientConfig{
     WSURL:             "ws://localhost:9123/ws",
-    AutoReconnect:     true,              // default: true
+    AutoReconnect:     true,              // default: false (client.CreateSubscriptionClient sets true)
     ReconnectDelay:    time.Second,       // default: 1s
     MaxReconnectDelay: 30 * time.Second,  // default: 30s
     ReconnectBackoff:  1.5,               // default: 1.5
@@ -1013,6 +1044,12 @@ fmt.Printf("Entity %s at version %d (%d events)\n", info.EntityID, info.Version,
 streams, err := client.ListStreams(ctx)
 history, err := client.GetEntityHistory(ctx, "order-123")
 
+// The events that make up the entity's state at a point in time. From and To
+// are inclusive; the SDK follows the page cursor, so the result is complete.
+// Limit caps the number of entries returned.
+endOfTuesday := time.Date(2026, 10, 6, 23, 59, 59, 999999999, time.UTC)
+asOf, err := client.GetEntityHistory(ctx, "order-123", ironflow.EntityHistoryOpts{To: endOfTuesday})
+
 // Delete a stream: appends a $stream.deleted tombstone and drops snapshots;
 // purge=true also deletes the event rows below it. Returns the tombstone
 // version. Irreversible; needs streams:delete.
@@ -1048,6 +1085,8 @@ Projections build read models from event streams. Two modes:
 - **Managed**: Pure reducer. Maintains state via `InitialState` + handler.
 - **External**: Side effects only (send email, call API). No maintained state.
 
+A runner holds an exclusive lease on its projection (ADR 0120), so only one replica reads events and the other replicas wait as standbys. Upgrade every replica of a runner at the same time: a replica on an older SDK runs without the lease and can take events from the lease holder. The server logs a warning when it sees this.
+
 ```go
 // Managed projection (state is maintained automatically)
 var orderTotals = ironflow.CreateProjection(ironflow.ProjectionConfig{
@@ -1066,7 +1105,7 @@ var orderTotals = ironflow.CreateProjection(ironflow.ProjectionConfig{
         }
         return state, nil
     },
-    PartitionKey: "$.data.customerId", // optional: per-partition state
+    PartitionKey: "$.customerId", // optional: per-partition state
     MaxRetries:   3,                    // default: 3
     BatchSize:    100,                  // default: 100
 })
@@ -1120,7 +1159,7 @@ err = p.Pause(ctx, "order-totals")
 err = p.Resume(ctx, "order-totals")
 err = p.Delete(ctx, "order-totals")
 
-// SQL projections (PostgreSQL backend)
+// Query SQL projection tables
 rows, err := p.ExecuteSQL(ctx, "SELECT * FROM proj_board WHERE status = 'OPEN'")
 
 // Partitions of a partitioned projection
@@ -1212,8 +1251,9 @@ out, err := schemas.TestUpcast(ctx, ironflow.TestUpcastInput{
 
 ## Command Idempotency
 
-Atomic claim-first dedup backed by NATS KV, for commands that must run exactly
-once across retries and duplicate submissions.
+Atomic command reservation and result caching backed by NATS KV. A reservation
+does not prove completion. Pending entries need application-specific reconciliation
+and idempotent effects before they can produce a successful result.
 
 ```go
 dedup, err := ironflow.NewCommandDedup[OrderResult](ctx, client.KV(), "order-commands",
@@ -1221,16 +1261,21 @@ dedup, err := ironflow.NewCommandDedup[OrderResult](ctx, client.KV(), "order-com
 
 prior, err := dedup.TryClaim(ctx, commandID, claim)
 if err != nil {
-    return err
+    return OrderResult{}, err
 }
 if prior != nil {
-    return *prior, nil // duplicate -- return the cached result
+    // isCompleted is an application predicate, not an SDK method. The claim and the
+    // result are both T, so give T a status field that the predicate can read.
+    if !isCompleted(*prior) {
+        return OrderResult{}, errors.New("command pending: reconcile effects")
+    }
+    return *prior, nil
 }
 
 result, err := runHandler()
 if err != nil {
-    _ = dedup.Release(ctx, commandID) // frees the claim for a genuine retry
-    return err
+    _ = dedup.Release(ctx, commandID) // only the claim winner reaches here
+    return OrderResult{}, err
 }
 return result, dedup.Finalize(ctx, commandID, result)
 ```
@@ -1384,6 +1429,14 @@ result, err = config.Patch(ctx, "app-settings", map[string]any{
     "maxRetries": 5, // only updates this field
 })
 
+// Create only if the name does not exist (fails with HTTP 412 if it exists)
+result, err = config.Create(ctx, "feature-flags", map[string]any{"darkMode": true})
+
+// Compare-and-swap with the revision from a prior Get (fails with HTTP 412 on mismatch)
+result, err = config.Update(ctx, "app-settings", map[string]any{"theme": "light"}, entry.Revision)
+result, err = config.PatchIf(ctx, "app-settings", map[string]any{"maxRetries": 4}, entry.Revision)
+err = config.DeleteIf(ctx, "app-settings", entry.Revision)
+
 // List all configs (names and revisions only, no data)
 all, err := config.List(ctx)
 for _, c := range all {
@@ -1453,31 +1506,37 @@ roles, err := client.ListRoles(ctx)
 role, err = client.GetRole(ctx, role.ID)
 role, err = client.UpdateRole(ctx, role.ID, ironflow.UpdateRoleInput{Name: "content-editor"})
 err = client.DeleteRole(ctx, role.ID)
-
-// Assign/remove policies
-err = client.AssignPolicyToRole(ctx, role.ID, policyID)
-err = client.RemovePolicyFromRole(ctx, role.ID, policyID)
-assigned, err := client.ListRolePolicies(ctx, role.ID)
 ```
 
-### Policies
+### Policy set
+
+The Rego policy set of the organization (authorization Layer 2, deny only). A new set starts in `monitor` mode.
 
 ```go
-policy, err := client.CreatePolicy(ctx, ironflow.CreatePolicyInput{
-    Name:      "read-only",
-    Effect:    "deny",        // writes accept "deny" only (#943, ADR 0016 T2)
-    Actions:   "read",         // comma-separated actions
-    Resources: "*",            // resource patterns
-    Condition: "",             // optional CEL expression
-    OrgID:     org.ID,         // optional
+current, err := client.GetPolicySet(ctx) // Version 0 when the org has no set
+
+saved, err := client.PutPolicySet(ctx, ironflow.PolicySetInput{
+    Modules:  map[string]string{"authz.rego": rego},
+    Decision: nil,       // nil keeps the current rule; a pointer to "" clears it, e.g. "data.envoy.authz.allow" sets it
+    Mode:     "monitor", // omit to keep the current mode
+}, current.Version) // ifVersion: the version you read (0 for a new set)
+if ironflow.IsVersionConflict(err) {
+    // 412: another admin wrote first; read the set again
+}
+
+err = client.ValidatePolicySet(ctx, input)
+result, err := client.DryRunPolicySet(ctx, ironflow.PolicySetDryRunInput{
+    Set:   &input, // nil evaluates the active set
+    Input: map[string]any{"request": map[string]any{"action": "runs:delete"}, "subject": map[string]any{"roles": []string{"member"}}},
 })
-policies, err := client.ListPolicies(ctx)
-policy, err = client.GetPolicy(ctx, policy.ID)
-policy, err = client.UpdatePolicy(ctx, policy.ID, ironflow.UpdatePolicyInput{
-    Actions: "read,write",
-})
-err = client.DeletePolicy(ctx, policy.ID)
+versions, err := client.ListPolicySetVersions(ctx)
+v3, err := client.GetPolicySetVersion(ctx, 3)
+restored, err := client.RollbackPolicySet(ctx, 3, saved.Version) // keeps the active mode
 ```
+
+`PolicySet.EnforcementActive` is `false` when the server stores the set but does not enforce it. Error codes are the `ironflow.PolicySetErr*` constants in `IronflowError.Code`.
+
+A 503 `PolicySetErrNotPropagated` is not retryable. The write committed as the version in the message. Send the same request again with `ifVersion` set to that version (a no-op that finishes propagation). Never send it again with the old version, because that fails with a 412.
 
 ### Password and Tenant Provisioning
 
@@ -1857,6 +1916,9 @@ errors.Is(err, ironflow.ErrInvalidSignature)
 errors.Is(err, ironflow.ErrSignatureExpired)
 errors.Is(err, ironflow.ErrMissingSignature)
 errors.Is(err, ironflow.ErrValidation)
+errors.Is(err, ironflow.ErrPreconditionFailed)    // HTTP 412 (file storage)
+errors.Is(err, ironflow.ErrPayloadTooLarge)        // HTTP 413 (file storage)
+errors.Is(err, ironflow.ErrUnsupportedMediaType)   // HTTP 415 (file storage)
 errors.Is(err, ironflow.ErrConflict)   // HTTP 409 / Connect AlreadyExists — an identical
                                         // request is already in flight; wait, do not retry
 errors.Is(err, ironflow.ErrContended)  // HTTP 409 / Connect Aborted — a concurrent write won
@@ -1923,11 +1985,16 @@ err := ironflow.NewStepTimeoutError("slow-step", 30*time.Second)
 | `IRONFLOW_SIGNING_KEY`  | The Go SDK does not read this variable. Your code reads it and passes it to `Serve` as `SigningKey`. With no key, the handler does not verify requests. | (none)                     |
 | `IRONFLOW_API_KEY`      | API key for authentication      | (none)                     |
 | `IRONFLOW_LOG_LEVEL`    | Log level: debug, info, warn, error, silent | info           |
+| `IRONFLOW_ENV`          | Target environment for `Worker` and `Serve` (the `Client` does not read it) | (none) |
+| `IRONFLOW_NO_DISCOVERY` | Set to `1` to turn off the engine discovery file (ADR 0098) | (none) |
+
+When none of `IRONFLOW_SERVER_URL` and `IRONFLOW_API_KEY` is set, the client, worker, `Serve` and subscription constructors read the nearest `.ironflow/engine.json` (loopback `http` URLs only) to fill the unset variables. Environment values always win.
 
 Helper functions:
 
 ```go
-url := ironflow.GetServerURL()      // IRONFLOW_SERVER_URL or default
+url := ironflow.GetServerURL()      // IRONFLOW_SERVER_URL, then default
+cfgURL := ironflow.ConfiguredServerURL() // same, but "" when unset (no default)
 key := ironflow.GetSigningKey()      // IRONFLOW_SIGNING_KEY
 apiKey := ironflow.GetAPIKey()       // IRONFLOW_API_KEY
 wsURL := ironflow.GetWebSocketURL("") // converts server URL to ws:// + /ws
@@ -1950,6 +2017,8 @@ ironflow.EnvServerURL   // "IRONFLOW_SERVER_URL"
 ironflow.EnvSigningKey  // "IRONFLOW_SIGNING_KEY"
 ironflow.EnvAPIKey      // "IRONFLOW_API_KEY"
 ironflow.EnvLogLevel    // "IRONFLOW_LOG_LEVEL"
+ironflow.EnvEnvironment // "IRONFLOW_ENV"
+ironflow.HeaderEnvironment // "X-Ironflow-Environment"
 
 // Timeouts
 ironflow.DefaultClientTimeout       // 30s

@@ -65,7 +65,8 @@ var ReviewAgent = agent.Agent(agent.AgentConfig{
 	MaxTurns: 10,
 }, func(ctx agent.Context) (any, error) {
 	var ev struct{ PRNumber int `json:"prNumber"` }
-	if err := ctx.Event().Data(&ev); err != nil { return nil, err }
+	event := ctx.Event() // Data has a pointer receiver, so keep the value addressable
+	if err := event.Data(&ev); err != nil { return nil, err }
 
 	diff, err := agent.Tool(ctx, fetchDiff, fetchInput{PR: ev.PRNumber})
 	if err != nil { return nil, err }

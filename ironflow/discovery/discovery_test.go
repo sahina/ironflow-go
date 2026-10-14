@@ -31,18 +31,17 @@ func TestResolve(t *testing.T) {
 		want map[string]string
 	}{
 		{"valid", nil, good, map[string]string{
-			"IRONFLOW_URL": "http://127.0.0.1:52431", "IRONFLOW_SERVER_URL": "http://127.0.0.1:52431",
-			"IRONFLOW_API_KEY": "ifkey_x", "IRONFLOW_ENV": "dev"}},
+			"IRONFLOW_SERVER_URL": "http://127.0.0.1:52431",
+			"IRONFLOW_API_KEY":    "ifkey_x", "IRONFLOW_ENV": "dev"}},
 		{"api_key optional", nil, `{"version":1,"url":"http://localhost:9123"}`, map[string]string{
-			"IRONFLOW_URL": "http://localhost:9123", "IRONFLOW_SERVER_URL": "http://localhost:9123"}},
+			"IRONFLOW_SERVER_URL": "http://localhost:9123"}},
 		{"ipv6 loopback", nil, `{"version":1,"url":"http://[::1]:9123"}`, map[string]string{
-			"IRONFLOW_URL": "http://[::1]:9123", "IRONFLOW_SERVER_URL": "http://[::1]:9123"}},
+			"IRONFLOW_SERVER_URL": "http://[::1]:9123"}},
 		{"127.0.0.0/8", nil, `{"version":1,"url":"http://127.5.5.5:1"}`, map[string]string{
-			"IRONFLOW_URL": "http://127.5.5.5:1", "IRONFLOW_SERVER_URL": "http://127.5.5.5:1"}},
+			"IRONFLOW_SERVER_URL": "http://127.5.5.5:1"}},
 		{"env set when unset only", map[string]string{"IRONFLOW_ENV": "prod"}, good, map[string]string{
-			"IRONFLOW_URL": "http://127.0.0.1:52431", "IRONFLOW_SERVER_URL": "http://127.0.0.1:52431",
-			"IRONFLOW_API_KEY": "ifkey_x"}},
-		{"IRONFLOW_URL set", map[string]string{"IRONFLOW_URL": "http://a"}, good, nil},
+			"IRONFLOW_SERVER_URL": "http://127.0.0.1:52431",
+			"IRONFLOW_API_KEY":    "ifkey_x"}},
 		{"IRONFLOW_SERVER_URL set", map[string]string{"IRONFLOW_SERVER_URL": "http://a"}, good, nil},
 		{"IRONFLOW_API_KEY set", map[string]string{"IRONFLOW_API_KEY": "k"}, good, nil},
 		{"opt-out", map[string]string{"IRONFLOW_NO_DISCOVERY": "1"}, good, nil},
@@ -83,7 +82,7 @@ func TestResolveNearestParent(t *testing.T) {
 	}
 	write(t, root, `{"version":1,"url":"http://127.0.0.1:1"}`)
 	write(t, mid, `{"version":1,"url":"http://127.0.0.1:2"}`)
-	if got := Resolve(env(nil), leaf)["IRONFLOW_URL"]; got != "http://127.0.0.1:2" {
+	if got := Resolve(env(nil), leaf)["IRONFLOW_SERVER_URL"]; got != "http://127.0.0.1:2" {
 		t.Errorf("got %q, want nearest file (port 2)", got)
 	}
 	// An invalid nearest file hides farther valid ones.
@@ -98,21 +97,20 @@ func TestHydrateNeverOverwrites(t *testing.T) {
 	write(t, dir, good)
 	t.Chdir(dir)
 	t.Setenv("IRONFLOW_ENV", "keep")
-	t.Setenv("IRONFLOW_URL", "")
 	t.Setenv("IRONFLOW_SERVER_URL", "")
 	t.Setenv("IRONFLOW_API_KEY", "")
 	once = sync.Once{}
 	Hydrate()
-	if got := os.Getenv("IRONFLOW_URL"); got != "http://127.0.0.1:52431" {
-		t.Errorf("IRONFLOW_URL = %q", got)
+	if got := os.Getenv("IRONFLOW_SERVER_URL"); got != "http://127.0.0.1:52431" {
+		t.Errorf("IRONFLOW_SERVER_URL = %q", got)
 	}
 	if got := os.Getenv("IRONFLOW_ENV"); got != "keep" {
 		t.Errorf("IRONFLOW_ENV overwritten: %q", got)
 	}
 	// Second call is a no-op even though the environment now differs.
-	t.Setenv("IRONFLOW_URL", "http://changed")
+	t.Setenv("IRONFLOW_SERVER_URL", "http://changed")
 	Hydrate()
-	if got := os.Getenv("IRONFLOW_URL"); got != "http://changed" {
+	if got := os.Getenv("IRONFLOW_SERVER_URL"); got != "http://changed" {
 		t.Errorf("second Hydrate ran: %q", got)
 	}
 }

@@ -26,6 +26,16 @@ func TestGetServerURL(t *testing.T) {
 	})
 }
 
+func TestGetServerURL_Blank(t *testing.T) {
+	t.Setenv(EnvServerURL, "  ")
+	if got := GetServerURL(); got != DefaultServerURL {
+		t.Errorf("GetServerURL() = %q, want %q", got, DefaultServerURL)
+	}
+	if got := ConfiguredServerURL(); got != "" {
+		t.Errorf("ConfiguredServerURL() = %q, want empty", got)
+	}
+}
+
 func TestGetWebSocketURL(t *testing.T) {
 	t.Run("converts http to ws and appends /ws", func(t *testing.T) {
 		got := GetWebSocketURL("http://localhost:9123")

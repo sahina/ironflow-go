@@ -43,7 +43,6 @@ func TestExposeMcp_RejectsMissingCallbackURL(t *testing.T) {
 }
 
 func TestExposeMcp_RejectsMissingServerURL(t *testing.T) {
-	t.Setenv("IRONFLOW_URL", "")
 	t.Setenv("IRONFLOW_SERVER_URL", "")
 	_, err := ExposeMcp(ExposeMcpConfig{
 		Name:        "x",
@@ -204,7 +203,7 @@ func TestExposeMcp_FallsBackToEnv(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Setenv("IRONFLOW_URL", server.URL)
+	t.Setenv("IRONFLOW_SERVER_URL", server.URL)
 	t.Setenv("IRONFLOW_API_KEY", testAPIKey)
 	handle, err := ExposeMcp(ExposeMcpConfig{
 		Name:        "x",

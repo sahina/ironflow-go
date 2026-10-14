@@ -46,6 +46,10 @@ var (
 	// fails again.
 	ErrPreconditionFailed = errors.New("ironflow: precondition failed")
 
+	// ErrPreconditionRequired is returned when a write needs an If-Match header
+	// and carried none (HTTP 428). Never Retryable.
+	ErrPreconditionRequired = errors.New("ironflow: precondition required")
+
 	// ErrPayloadTooLarge is returned when a file exceeds the server, bucket or
 	// signed-URL size cap (HTTP 413).
 	ErrPayloadTooLarge = errors.New("ironflow: payload too large")

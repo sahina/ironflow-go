@@ -2,15 +2,328 @@ package ironflow
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/types/known/structpb"
+
+	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
 )
+
+func TestProjectionRunner_ManagedPartitionsResumeAcrossBatches(t *testing.T) {
+	states := map[string]map[string]any{
+		"a": {"count": 40.0}, "b": {"count": 90.0}, "__global__": {"count": 10.0},
+	}
+	loads := map[string]int{}
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		var body map[string]any
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		if body["name"] != "counter" || req.Header.Get("X-Test") != "partition" {
+			t.Errorf("missing projection name or headers: %v", body)
+		}
+		switch strings.TrimPrefix(req.URL.Path, projectionServicePath) {
+		case "PollProjectionEvents":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"currentState": states["__global__"],
+				"events": []map[string]any{
+					{"id": "a1", "seq": 1, "metadata": map[string]any{"__partition": "a"}},
+					{"id": "a2", "seq": 2, "metadata": map[string]any{"__partition": "a"}},
+					{"id": "b1", "seq": 3, "metadata": map[string]any{"__partition": "b"}},
+					{"id": "g1", "seq": 4},
+				},
+			})
+		case "GetProjection":
+			pk, _ := body["partition"].(string)
+			loads[pk]++
+			_ = json.NewEncoder(w).Encode(map[string]any{"state": states[pk]})
+		case "SaveProjectionState":
+			states[body["partitionKey"].(string)] = body["state"].(map[string]any)
+		default:
+			http.NotFound(w, req)
+		}
+	}))
+	defer server.Close()
+	proj := CreateProjection(ProjectionConfig{
+		Name: "counter", Events: []string{"inc"},
+		InitialState: func() map[string]any { return map[string]any{"count": 0.0} },
+		Handler: func(state map[string]any, _ ProjectionEvent, _ ProjectionContext) (map[string]any, error) {
+			return map[string]any{"count": state["count"].(float64) + 1}, nil
+		},
+	})
+	for range 2 {
+		runner := NewProjectionRunner(proj, server.URL, map[string]string{"X-Test": "partition"}, nil)
+		if n, err := runner.poll(); err != nil || n != 4 {
+			t.Fatalf("poll = (%d, %v), want (4, nil)", n, err)
+		}
+	}
+	want := map[string]map[string]any{
+		"a": {"count": 44.0}, "b": {"count": 92.0}, "__global__": {"count": 12.0},
+	}
+	if !reflect.DeepEqual(states, want) {
+		t.Fatalf("saved states = %v, want %v", states, want)
+	}
+	if !reflect.DeepEqual(loads, map[string]int{"a": 2, "b": 2}) {
+		t.Errorf("partition loads = %v, want two per non-global partition", loads)
+	}
+}
+
+func TestProjectionRunner_ManagedPartitionMissingAndEmptyState(t *testing.T) {
+	for _, tc := range []struct {
+		name, response string
+		global         bool
+		want           float64
+	}{
+		{"missing", `{}`, false, 11},
+		{"empty", `{"state":{}}`, false, 11},
+		{"global missing", `{}`, true, 11},
+		{"global empty", `{"state":{}}`, true, 11},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var saved map[string]any
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if strings.HasSuffix(req.URL.Path, "/GetProjection") {
+					_, _ = w.Write([]byte(tc.response))
+					return
+				}
+				_ = json.NewDecoder(req.Body).Decode(&saved)
+			}))
+			defer server.Close()
+			proj := CreateProjection(ProjectionConfig{
+				Name: "counter", Events: []string{"inc"},
+				InitialState: func() map[string]any { return map[string]any{"count": 10.0} },
+				Handler: func(state map[string]any, _ ProjectionEvent, _ ProjectionContext) (map[string]any, error) {
+					count, _ := state["count"].(float64)
+					return map[string]any{"count": count + 1}, nil
+				},
+			})
+			runner := NewProjectionRunner(proj, server.URL, nil, nil)
+			resp := pollResponse{Events: []pollEvent{{ID: "e1", Metadata: map[string]any{"__partition": "a"}}}}
+			if tc.global {
+				// The global state arrives as currentState in the poll response.
+				var r struct {
+					State map[string]any `json:"state"`
+				}
+				_ = json.Unmarshal([]byte(tc.response), &r)
+				resp = pollResponse{Events: []pollEvent{{ID: "e1"}}, CurrentState: r.State}
+			}
+			_, err := runner.processManaged(proj.Config, resp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := saved["state"].(map[string]any)["count"]; got != tc.want {
+				t.Errorf("saved count = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestProjectionRunner_ManagedSavesRunsInSeqOrder(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		failAt int // 1-based save that fails; 0 = none
+		want   []string
+	}{
+		{"all saved", 0, []string{"a@1=1", "b@2=1", "a@3=2"}},
+		// The cursor stops at seq 1, so b@2 and a@3 are redelivered.
+		{"second save fails", 2, []string{"a@1=1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var saves []string
+			attempts := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if strings.HasSuffix(req.URL.Path, "/GetProjection") {
+					_, _ = w.Write([]byte(`{}`))
+					return
+				}
+				attempts++
+				if attempts == tc.failAt {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				var body map[string]any
+				_ = json.NewDecoder(req.Body).Decode(&body)
+				saves = append(saves, fmt.Sprintf("%s@%v=%v", body["partitionKey"], body["lastEventSeq"], body["state"].(map[string]any)["count"]))
+			}))
+			defer server.Close()
+			proj := CreateProjection(ProjectionConfig{
+				Name: "counter", Events: []string{"inc"},
+				InitialState: func() map[string]any { return map[string]any{"count": 0.0} },
+				Handler: func(state map[string]any, _ ProjectionEvent, _ ProjectionContext) (map[string]any, error) {
+					return map[string]any{"count": state["count"].(float64) + 1}, nil
+				},
+			})
+			runner := NewProjectionRunner(proj, server.URL, nil, nil)
+			// Delivered out of order on purpose: the runner sorts by seq.
+			_, err := runner.processManaged(proj.Config, pollResponse{Events: []pollEvent{
+				{ID: "a3", Seq: 3, Metadata: map[string]any{"__partition": "a"}},
+				{ID: "a1", Seq: 1, Metadata: map[string]any{"__partition": "a"}},
+				{ID: "b2", Seq: 2, Metadata: map[string]any{"__partition": "b"}},
+			}})
+			if (err != nil) != (tc.failAt != 0) {
+				t.Fatalf("err = %v, failAt = %d", err, tc.failAt)
+			}
+			if !reflect.DeepEqual(saves, tc.want) {
+				t.Errorf("saves = %v, want %v", saves, tc.want)
+			}
+		})
+	}
+}
+
+func TestProjectionRunner_ManagedPartitionNonObjectStateIsNotOverwritten(t *testing.T) {
+	saved := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if strings.HasSuffix(req.URL.Path, "/GetProjection") {
+			_, _ = w.Write([]byte(`{"stateValue":[1,2]}`))
+			return
+		}
+		saved++
+	}))
+	defer server.Close()
+	proj := CreateProjection(ProjectionConfig{
+		Name: "counter", Events: []string{"inc"},
+		InitialState: func() map[string]any { return map[string]any{} },
+		Handler: func(state map[string]any, _ ProjectionEvent, _ ProjectionContext) (map[string]any, error) {
+			return state, nil
+		},
+	})
+	runner := NewProjectionRunner(proj, server.URL, nil, nil)
+	_, err := runner.processManaged(proj.Config, pollResponse{Events: []pollEvent{{ID: "e1", Metadata: map[string]any{"__partition": "a"}}}})
+	if err == nil || !strings.Contains(err.Error(), "not a JSON object") {
+		t.Fatalf("err = %v, want non-object state error", err)
+	}
+	if saved != 0 {
+		t.Errorf("saved %d times over a non-object state", saved)
+	}
+}
+
+func TestProjectionRunner_ManagedGlobalNonObjectStateIsNotOverwritten(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		run     func(*ProjectionRunner) error
+		wantErr bool
+	}{
+		{"poll", func(r *ProjectionRunner) error { _, err := r.poll(); return err }, true},
+		{"stream", func(r *ProjectionRunner) error { return r.processBatch([]pollEvent{{ID: "e1", Seq: 1}}) }, true},
+		// The global state is not used, so a partition batch goes on.
+		{"stream, partition only", func(r *ProjectionRunner) error {
+			return r.processBatch([]pollEvent{{ID: "e1", Seq: 1, Metadata: map[string]any{"__partition": "a"}}})
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var saved atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				var body map[string]any
+				_ = json.NewDecoder(req.Body).Decode(&body)
+				switch strings.TrimPrefix(req.URL.Path, projectionServicePath) {
+				case "PollProjectionEvents":
+					_, _ = w.Write([]byte(`{"events":[{"id":"e1","seq":"1"}],"currentStateValue":5}`))
+				case "GetProjection":
+					if body["partition"] == "a" {
+						_, _ = w.Write([]byte(`{}`))
+					} else {
+						_, _ = w.Write([]byte(`{"stateValue":5}`))
+					}
+				case "SaveProjectionState":
+					saved.Add(1)
+				}
+			}))
+			defer server.Close()
+			runner := NewProjectionRunner(counterProjection(0), server.URL, nil, nil)
+			err := tc.run(runner)
+			if !tc.wantErr {
+				if err != nil || saved.Load() != 1 {
+					t.Fatalf("err = %v, saved = %d; want nil and 1", err, saved.Load())
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "not a JSON object") {
+				t.Fatalf("err = %v, want non-object state error", err)
+			}
+			if saved.Load() != 0 {
+				t.Errorf("saved %d times over a non-object global state", saved.Load())
+			}
+		})
+	}
+}
+
+func TestProjectionRunner_EventDataValue(t *testing.T) {
+	scalar, _ := structpb.NewValue("hello")
+	object, _ := structpb.NewValue(map[string]any{"a": 1.0})
+	var polled pollEvent
+	if err := json.Unmarshal([]byte(`{"id":"e3","dataValue":[1,2]}`), &polled); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name      string
+		evt       ProjectionEvent
+		wantData  map[string]any
+		wantValue any
+	}{
+		{"stream scalar", toProjectionEvent(toPollEvent(&ironflowv1.ProjectionEvent{Id: "e1", DataValue: scalar})), nil, "hello"},
+		{"stream object", toProjectionEvent(toPollEvent(&ironflowv1.ProjectionEvent{Id: "e2", DataValue: object})), map[string]any{"a": 1.0}, nil},
+		{"poll array", toProjectionEvent(polled), nil, []any{1.0, 2.0}},
+	} {
+		if !reflect.DeepEqual(tc.evt.Data, tc.wantData) || !reflect.DeepEqual(tc.evt.DataValue, tc.wantValue) {
+			t.Errorf("%s: Data = %v, DataValue = %v; want %v and %v", tc.name, tc.evt.Data, tc.evt.DataValue, tc.wantData, tc.wantValue)
+		}
+	}
+}
+
+func TestProjectionRunner_ManagedPartitionLoadFailureDoesNotSave(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusServiceUnavailable, http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var handled, saved atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if strings.HasSuffix(req.URL.Path, "/GetProjection") {
+					var body map[string]any
+					_ = json.NewDecoder(req.Body).Decode(&body)
+					if body["partition"] == "b" {
+						w.WriteHeader(status)
+					} else {
+						_, _ = w.Write([]byte(`{}`))
+					}
+					return
+				}
+				saved.Add(1)
+			}))
+			defer server.Close()
+			proj := CreateProjection(ProjectionConfig{
+				Name: "counter", Events: []string{"inc"},
+				Handler: func(state map[string]any, _ ProjectionEvent, _ ProjectionContext) (map[string]any, error) {
+					handled.Add(1)
+					return state, nil
+				},
+			})
+			runner := NewProjectionRunner(proj, server.URL, nil, nil)
+			// Partition a loads fine; b fails. No partition may be saved, or
+			// the server cursor would skip b's unsaved events.
+			_, err := runner.processManaged(proj.Config, pollResponse{Events: []pollEvent{
+				{ID: "e1", Seq: 1, Metadata: map[string]any{"__partition": "a"}},
+				{ID: "e2", Seq: 2, Metadata: map[string]any{"__partition": "b"}},
+			}})
+			if err == nil {
+				t.Fatal("partition load failure must fail the batch")
+			}
+			if handled.Load() != 0 || saved.Load() != 0 {
+				t.Errorf("handled=%d saved=%d after failed load", handled.Load(), saved.Load())
+			}
+		})
+	}
+}
 
 // ============================================================================
 // Registration sends correct payload
@@ -665,34 +978,30 @@ func TestProjectionRunner_Stop_TerminatesPollLoop(t *testing.T) {
 	}
 }
 
-// ============================================================================
-// Start() fails if registration fails
-// ============================================================================
+// Other register errors are retried (TestProjectionRunner_Start_RetriesRegistration).
+func TestProjectionRunner_Start_FailsOnAuthRegistrationError(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var registers atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				registers.Add(1)
+				w.WriteHeader(status)
+			}))
+			defer server.Close()
 
-func TestProjectionRunner_Start_FailsOnRegistrationError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(`server error`))
-	}))
-	defer server.Close()
-
-	proj := CreateProjection(ProjectionConfig{
-		Name:   "fail-register",
-		Events: []string{"test.event"},
-		Handler: func(state map[string]any, event ProjectionEvent, ctx ProjectionContext) (map[string]any, error) {
-			return nil, nil
-		},
-	})
-
-	runner := NewProjectionRunner(proj, server.URL, nil, NewNoopLogger())
-	defer runner.Stop()
-
-	err := runner.Start()
-	if err == nil {
-		t.Fatal("expected error when registration fails")
-	}
-	if !strings.Contains(err.Error(), "register projection") {
-		t.Errorf("expected 'register projection' in error, got %q", err.Error())
+			runner := NewProjectionRunner(counterProjection(0), server.URL, nil, nil)
+			defer runner.Stop()
+			err := runner.Start()
+			if err == nil || !strings.Contains(err.Error(), "register projection") {
+				t.Fatalf("Start = %v, want a register projection error", err)
+			}
+			if !errors.Is(err, ErrUnauthorized) && !errors.Is(err, ErrForbidden) {
+				t.Errorf("Start = %v, want ErrUnauthorized or ErrForbidden", err)
+			}
+			if registers.Load() != 1 {
+				t.Errorf("registers = %d, want 1: an auth error is not retried", registers.Load())
+			}
+		})
 	}
 }
 

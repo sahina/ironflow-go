@@ -427,9 +427,13 @@ func (w *Worker) stopProjectionRunners() {
 	w.projectionRunners = nil
 	w.projMu.Unlock()
 
+	// Concurrently: each Stop can wait projectionStopTimeout, and the other
+	// runners must stop taking batches meanwhile.
+	var wg sync.WaitGroup
 	for _, runner := range runners {
-		runner.Stop()
+		wg.Go(runner.Stop)
 	}
+	wg.Wait()
 }
 
 // getHeaders returns the headers for HTTP requests (API key, environment).

@@ -73,23 +73,6 @@ func TestCreateAPIKey(t *testing.T) {
 	})
 }
 
-func TestListRolePolicies(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/api/v1/roles/role%2F1/policies" {
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.EscapedPath())
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"policies": []map[string]any{{"id": "policy-1", "name": "reader"}},
-		})
-	}))
-	defer server.Close()
-
-	policies, err := newAuthTestClient(server).ListRolePolicies(context.Background(), "role/1")
-	if err != nil || len(policies) != 1 || policies[0].ID != "policy-1" {
-		t.Fatalf("ListRolePolicies = %#v, %v", policies, err)
-	}
-}
-
 func TestListAPIKeys(t *testing.T) {
 	t.Run("sends GET and parses array response", func(t *testing.T) {
 		var receivedMethod, receivedPath string
@@ -533,238 +516,6 @@ func TestDeleteRole(t *testing.T) {
 	})
 }
 
-func TestAssignPolicyToRole(t *testing.T) {
-	t.Run("sends POST with policy_id in body", func(t *testing.T) {
-		var receivedMethod, receivedPath string
-		var receivedBody map[string]any
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			receivedMethod = r.Method
-			receivedPath = r.URL.Path
-
-			body, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(body, &receivedBody)
-
-			w.WriteHeader(http.StatusNoContent)
-		}))
-		defer server.Close()
-
-		client := newAuthTestClient(server)
-		err := client.AssignPolicyToRole(context.Background(), "role_abc", "pol_xyz")
-
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if receivedMethod != "POST" {
-			t.Errorf("expected POST, got %s", receivedMethod)
-		}
-		if receivedPath != "/api/v1/roles/role_abc/policies" {
-			t.Errorf("expected /api/v1/roles/role_abc/policies, got %s", receivedPath)
-		}
-		if receivedBody["policy_id"] != "pol_xyz" {
-			t.Errorf("expected policy_id 'pol_xyz', got %v", receivedBody["policy_id"])
-		}
-	})
-}
-
-func TestRemovePolicyFromRole(t *testing.T) {
-	t.Run("sends DELETE with role and policy IDs in path", func(t *testing.T) {
-		var receivedMethod, receivedPath string
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			receivedMethod = r.Method
-			receivedPath = r.URL.Path
-			w.WriteHeader(http.StatusNoContent)
-		}))
-		defer server.Close()
-
-		client := newAuthTestClient(server)
-		err := client.RemovePolicyFromRole(context.Background(), "role_abc", "pol_xyz")
-
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if receivedMethod != "DELETE" {
-			t.Errorf("expected DELETE, got %s", receivedMethod)
-		}
-		if receivedPath != "/api/v1/roles/role_abc/policies/pol_xyz" {
-			t.Errorf("expected /api/v1/roles/role_abc/policies/pol_xyz, got %s", receivedPath)
-		}
-	})
-}
-
-// ============================================================================
-// Policy Tests
-// ============================================================================
-
-func TestCreatePolicy(t *testing.T) {
-	t.Run("sends correct request and parses response", func(t *testing.T) {
-		var receivedMethod, receivedPath string
-		var receivedBody map[string]any
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			receivedMethod = r.Method
-			receivedPath = r.URL.Path
-
-			body, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(body, &receivedBody)
-
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"id":"pol_abc","org_id":"org_default","name":"allow-emit","effect":"deny","actions":"emit","resources":"*","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}`))
-		}))
-		defer server.Close()
-
-		client := newAuthTestClient(server)
-		result, err := client.CreatePolicy(context.Background(), CreatePolicyInput{
-			Name:      "allow-emit",
-			Effect:    "deny",
-			Actions:   "emit",
-			Resources: "*",
-		})
-
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if receivedMethod != "POST" {
-			t.Errorf("expected POST, got %s", receivedMethod)
-		}
-		if receivedPath != "/api/v1/policies" {
-			t.Errorf("expected /api/v1/policies, got %s", receivedPath)
-		}
-		if receivedBody["name"] != "allow-emit" {
-			t.Errorf("expected name 'allow-emit', got %v", receivedBody["name"])
-		}
-		if receivedBody["effect"] != "deny" {
-			t.Errorf("expected effect 'deny', got %v", receivedBody["effect"])
-		}
-		if result.ID != "pol_abc" {
-			t.Errorf("expected ID 'pol_abc', got %s", result.ID)
-		}
-		if result.Effect != "deny" {
-			t.Errorf("expected effect 'deny', got %s", result.Effect)
-		}
-	})
-}
-
-func TestListPolicies(t *testing.T) {
-	t.Run("sends GET and parses array response", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`[{"id":"pol_1","org_id":"org_default","name":"pol-1","effect":"deny","actions":"*","resources":"*","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}]`))
-		}))
-		defer server.Close()
-
-		client := newAuthTestClient(server)
-		result, err := client.ListPolicies(context.Background())
-
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(result) != 1 {
-			t.Fatalf("expected 1 policy, got %d", len(result))
-		}
-		if result[0].Name != "pol-1" {
-			t.Errorf("expected name 'pol-1', got %s", result[0].Name)
-		}
-	})
-}
-
-func TestGetPolicy(t *testing.T) {
-	t.Run("sends GET with ID in path", func(t *testing.T) {
-		var receivedPath string
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			receivedPath = r.URL.Path
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"pol_abc","org_id":"org_default","name":"my-policy","effect":"deny","actions":"delete","resources":"*","condition":"request.time.getHours() < 9","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}`))
-		}))
-		defer server.Close()
-
-		client := newAuthTestClient(server)
-		result, err := client.GetPolicy(context.Background(), "pol_abc")
-
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if receivedPath != "/api/v1/policies/pol_abc" {
-			t.Errorf("expected /api/v1/policies/pol_abc, got %s", receivedPath)
-		}
-		if result.Effect != "deny" {
-			t.Errorf("expected effect 'deny', got %s", result.Effect)
-		}
-		if result.Condition != "request.time.getHours() < 9" {
-			t.Errorf("expected condition, got %s", result.Condition)
-		}
-	})
-}
-
-func TestUpdatePolicy(t *testing.T) {
-	t.Run("sends PATCH with body", func(t *testing.T) {
-		var receivedMethod, receivedPath string
-		var receivedBody map[string]any
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			receivedMethod = r.Method
-			receivedPath = r.URL.Path
-
-			body, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(body, &receivedBody)
-
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"id":"pol_abc","org_id":"org_default","name":"updated-policy","effect":"deny","actions":"*","resources":"*","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-02T00:00:00Z"}`))
-		}))
-		defer server.Close()
-
-		client := newAuthTestClient(server)
-		result, err := client.UpdatePolicy(context.Background(), "pol_abc", UpdatePolicyInput{
-			Name:   "updated-policy",
-			Effect: "deny",
-		})
-
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if receivedMethod != "PATCH" {
-			t.Errorf("expected PATCH, got %s", receivedMethod)
-		}
-		if receivedPath != "/api/v1/policies/pol_abc" {
-			t.Errorf("expected /api/v1/policies/pol_abc, got %s", receivedPath)
-		}
-		if receivedBody["name"] != "updated-policy" {
-			t.Errorf("expected name 'updated-policy', got %v", receivedBody["name"])
-		}
-		if result.Name != "updated-policy" {
-			t.Errorf("expected name 'updated-policy', got %s", result.Name)
-		}
-	})
-}
-
-func TestDeletePolicy(t *testing.T) {
-	t.Run("sends DELETE with ID in path", func(t *testing.T) {
-		var receivedMethod, receivedPath string
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			receivedMethod = r.Method
-			receivedPath = r.URL.Path
-			w.WriteHeader(http.StatusNoContent)
-		}))
-		defer server.Close()
-
-		client := newAuthTestClient(server)
-		err := client.DeletePolicy(context.Background(), "pol_abc")
-
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if receivedMethod != "DELETE" {
-			t.Errorf("expected DELETE, got %s", receivedMethod)
-		}
-		if receivedPath != "/api/v1/policies/pol_abc" {
-			t.Errorf("expected /api/v1/policies/pol_abc, got %s", receivedPath)
-		}
-	})
-}
-
 // ============================================================================
 // Error Handling Tests
 // ============================================================================
@@ -826,7 +577,7 @@ func TestAuthMethodsErrorHandling(t *testing.T) {
 			logger: NewNoopLogger(),
 		}
 
-		_, _ = client.ListPolicies(context.Background())
+		_, _ = client.ListRoles(context.Background())
 
 		if receivedAuth != "Bearer ifk_test_key" {
 			t.Errorf("expected 'Bearer ifk_test_key', got %q", receivedAuth)
@@ -921,5 +672,111 @@ func TestAuthErrorIs_Forbidden(t *testing.T) {
 	}
 	if !errors.Is(err, ErrForbidden) {
 		t.Errorf("expected errors.Is(err, ErrForbidden), got: %v", err)
+	}
+}
+
+func TestPolicySet_K01_K02_GoSDK(t *testing.T) {
+	var gotMethod, gotPath, gotIfMatch string
+	var gotBody map[string]any
+	status := 200
+	hits := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		gotMethod, gotPath, gotIfMatch = r.Method, r.URL.Path, r.Header.Get("If-Match")
+		gotBody = nil
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(`{"version":2,"modules":{"a.rego":"package p\n"},"mode":"monitor","enforcement_active":true,"versions":[{"version":2,"mode":"monitor","created_at":"x"}],"decision":"deny","reasons_omitted":3}`))
+	}))
+	defer ts.Close()
+	c := newAuthTestClient(ts)
+	ctx := context.Background()
+
+	if ps, err := c.GetPolicySet(ctx); err != nil || gotMethod != "GET" || gotPath != "/api/v1/policy-set" || ps.Version != 2 || ps.EnforcementActive == nil || !*ps.EnforcementActive {
+		t.Fatalf("get: %v %s %s %+v", err, gotMethod, gotPath, ps)
+	}
+	if _, err := c.PutPolicySet(ctx, PolicySetInput{Modules: map[string]string{"a.rego": "package p\n"}, Mode: "enforce"}, 1); err != nil || gotMethod != "PUT" || gotIfMatch != "1" || gotBody["mode"] != "enforce" {
+		t.Fatalf("put: %v %s %q %v", err, gotMethod, gotIfMatch, gotBody)
+	}
+	if err := c.ValidatePolicySet(ctx, PolicySetInput{Modules: map[string]string{}}); err != nil || gotPath != "/api/v1/policy-set/validate" {
+		t.Fatalf("validate: %v %s", err, gotPath)
+	}
+	if dr, err := c.DryRunPolicySet(ctx, PolicySetDryRunInput{Input: map[string]any{"request": map[string]any{}, "subject": map[string]any{}}}); err != nil || gotPath != "/api/v1/policy-set/dry-run" || dr.ReasonsOmitted != 3 {
+		t.Fatalf("dry-run: %v %s %+v", err, gotPath, dr)
+	}
+	if vs, err := c.ListPolicySetVersions(ctx); err != nil || gotPath != "/api/v1/policy-set/versions" || len(vs) != 1 {
+		t.Fatalf("versions: %v %s %v", err, gotPath, vs)
+	}
+	if _, err := c.GetPolicySetVersion(ctx, 1); err != nil || gotPath != "/api/v1/policy-set/versions/1" {
+		t.Fatalf("version: %v %s", err, gotPath)
+	}
+	if _, err := c.RollbackPolicySet(ctx, 1, 2); err != nil || gotPath != "/api/v1/policy-set/versions/1/rollback" || gotIfMatch != "2" {
+		t.Fatalf("rollback: %v %s %q", err, gotPath, gotIfMatch)
+	}
+
+	for _, st := range []int{412, 428} { // K02
+		status = st
+		_, err := c.PutPolicySet(ctx, PolicySetInput{}, 0)
+		want := ErrPreconditionFailed
+		if st == 428 {
+			want = ErrPreconditionRequired
+		}
+		if !errors.Is(err, want) {
+			t.Fatalf("status %d: err = %v", st, err)
+		}
+		if IsVersionConflict(err) != (st == 412) {
+			t.Fatalf("IsVersionConflict(%d) wrong", st)
+		}
+	}
+}
+
+// The write committed: a resend of the same PUT would fail with 412, so a 5xx is never retried.
+func TestPolicySet_NotPropagatedSurfacesItsCodeAndIsNotResent(t *testing.T) {
+	hits := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"saved as version 3 but not yet active on all nodes","code":"policy_set_not_propagated","retryable":false}`))
+	}))
+	defer ts.Close()
+	c := newAuthTestClient(ts)
+	c.retryConfig = &ClientRetryConfig{MaxAttempts: 3}
+
+	_, err := c.PutPolicySet(context.Background(), PolicySetInput{}, 2)
+	var ife *IronflowError
+	if !errors.As(err, &ife) || ife.Code != PolicySetErrNotPropagated || !strings.Contains(ife.Message, "version 3") || hits != 1 || IsRetryable(err) {
+		t.Fatalf("err = %v, code = %v, hits = %d", err, ife, hits)
+	}
+}
+
+// The strings are the server's wire contract (internal/auth/policyset/errors.go and internal/server/policy_set_*.go).
+func TestPolicySet_ErrorCodeConstantsMatchServer(t *testing.T) {
+	for got, want := range map[string]string{
+		PolicySetErrCompileError:      "policy_set_compile_error",
+		PolicySetErrV0Syntax:          "policy_set_v0_syntax",
+		PolicySetErrReservedNamespace: "policy_set_reserved_namespace",
+		PolicySetErrBuiltinForbidden:  "policy_set_builtin_forbidden",
+		PolicySetErrSchemaError:       "policy_set_schema_error",
+		PolicySetErrEntrypointType:    "policy_set_entrypoint_type",
+		PolicySetErrBadFileName:       "policy_set_bad_file_name",
+		PolicySetErrTooLarge:          "policy_set_too_large",
+		PolicySetErrCompileTimeout:    "policy_set_compile_timeout",
+		PolicySetErrBadMode:           "policy_set_bad_mode",
+		PolicySetErrBadDecision:       "policy_set_bad_decision",
+		PolicySetErrSprintfFormat:     "policy_set_sprintf_format",
+		PolicySetErrBadRequest:        "policy_set_bad_request",
+		PolicySetErrForbidden:         "policy_set_forbidden",
+		PolicySetErrNotFound:          "policy_set_not_found",
+		PolicySetErrVersionConflict:   "policy_set_version_conflict",
+		PolicySetErrIfMatchRequired:   "policy_set_precondition_required",
+		PolicySetErrSelfLockout:       "policy_set_self_lockout",
+		PolicySetErrRateLimited:       "policy_set_rate_limited",
+		PolicySetErrBusy:              "policy_set_busy",
+		PolicySetErrNotPropagated:     "policy_set_not_propagated",
+	} {
+		if got != want {
+			t.Errorf("constant = %q, want %q", got, want)
+		}
 	}
 }

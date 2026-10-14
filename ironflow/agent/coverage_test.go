@@ -9,7 +9,6 @@ import (
 )
 
 func TestDefaultMemoryBackend_NoServerURL(t *testing.T) {
-	t.Setenv("IRONFLOW_URL", "")
 	t.Setenv("IRONFLOW_SERVER_URL", "")
 	backend, err := defaultMemoryBackend("")
 	if err == nil {
@@ -131,7 +130,6 @@ func TestContext_Accessors(t *testing.T) {
 }
 
 func TestAgent_HandlerRunsWithMemory(t *testing.T) {
-	t.Setenv("IRONFLOW_URL", "")
 	t.Setenv("IRONFLOW_SERVER_URL", "")
 
 	called := false

@@ -158,7 +158,7 @@ func restJSON[T any](ctx context.Context, c *Client, method, path string, body a
 		if b, err = json.Marshal(body); err != nil {
 			return nil, WrapError(err, "failed to marshal request body", "MARSHAL_ERROR", false)
 		}
-		err = c.executeRequest(ctx, c.httpClient, method, c.serverURL+path, b, &out)
+		err = c.executeRequest(ctx, c.httpClient, method, c.serverURL+path, b, nil, &out)
 	} else {
 		err = c.RestRequest(ctx, method, path, body, &out)
 	}

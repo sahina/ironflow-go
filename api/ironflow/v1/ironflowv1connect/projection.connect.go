@@ -57,6 +57,15 @@ const (
 	// ProjectionServiceAckProjectionEventsProcedure is the fully-qualified name of the
 	// ProjectionService's AckProjectionEvents RPC.
 	ProjectionServiceAckProjectionEventsProcedure = "/ironflow.v1.ProjectionService/AckProjectionEvents"
+	// ProjectionServiceAcquireProjectionLeaseProcedure is the fully-qualified name of the
+	// ProjectionService's AcquireProjectionLease RPC.
+	ProjectionServiceAcquireProjectionLeaseProcedure = "/ironflow.v1.ProjectionService/AcquireProjectionLease"
+	// ProjectionServiceRenewProjectionLeaseProcedure is the fully-qualified name of the
+	// ProjectionService's RenewProjectionLease RPC.
+	ProjectionServiceRenewProjectionLeaseProcedure = "/ironflow.v1.ProjectionService/RenewProjectionLease"
+	// ProjectionServiceReleaseProjectionLeaseProcedure is the fully-qualified name of the
+	// ProjectionService's ReleaseProjectionLease RPC.
+	ProjectionServiceReleaseProjectionLeaseProcedure = "/ironflow.v1.ProjectionService/ReleaseProjectionLease"
 	// ProjectionServiceGetProjectionProcedure is the fully-qualified name of the ProjectionService's
 	// GetProjection RPC.
 	ProjectionServiceGetProjectionProcedure = "/ironflow.v1.ProjectionService/GetProjection"
@@ -125,6 +134,11 @@ type ProjectionServiceClient interface {
 	SaveProjectionState(context.Context, *connect.Request[v1.SaveProjectionStateRequest]) (*connect.Response[v1.SaveProjectionStateResponse], error)
 	// Cursor advance (external mode)
 	AckProjectionEvents(context.Context, *connect.Request[v1.AckProjectionEventsRequest]) (*connect.Response[v1.AckProjectionEventsResponse], error)
+	// Exclusive runner lease (ADR 0120). One runner holds the lease; the other
+	// replicas wait as standbys. Requests that carry the lease are fenced.
+	AcquireProjectionLease(context.Context, *connect.Request[v1.AcquireProjectionLeaseRequest]) (*connect.Response[v1.AcquireProjectionLeaseResponse], error)
+	RenewProjectionLease(context.Context, *connect.Request[v1.RenewProjectionLeaseRequest]) (*connect.Response[v1.RenewProjectionLeaseResponse], error)
+	ReleaseProjectionLease(context.Context, *connect.Request[v1.ReleaseProjectionLeaseRequest]) (*connect.Response[v1.ReleaseProjectionLeaseResponse], error)
 	// Query API
 	GetProjection(context.Context, *connect.Request[v1.GetProjectionRequest]) (*connect.Response[v1.GetProjectionResponse], error)
 	ListProjections(context.Context, *connect.Request[v1.ListProjectionsRequest]) (*connect.Response[v1.ListProjectionsResponse], error)
@@ -216,6 +230,24 @@ func NewProjectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+ProjectionServiceAckProjectionEventsProcedure,
 			connect.WithSchema(projectionServiceMethods.ByName("AckProjectionEvents")),
+			connect.WithClientOptions(opts...),
+		),
+		acquireProjectionLease: connect.NewClient[v1.AcquireProjectionLeaseRequest, v1.AcquireProjectionLeaseResponse](
+			httpClient,
+			baseURL+ProjectionServiceAcquireProjectionLeaseProcedure,
+			connect.WithSchema(projectionServiceMethods.ByName("AcquireProjectionLease")),
+			connect.WithClientOptions(opts...),
+		),
+		renewProjectionLease: connect.NewClient[v1.RenewProjectionLeaseRequest, v1.RenewProjectionLeaseResponse](
+			httpClient,
+			baseURL+ProjectionServiceRenewProjectionLeaseProcedure,
+			connect.WithSchema(projectionServiceMethods.ByName("RenewProjectionLease")),
+			connect.WithClientOptions(opts...),
+		),
+		releaseProjectionLease: connect.NewClient[v1.ReleaseProjectionLeaseRequest, v1.ReleaseProjectionLeaseResponse](
+			httpClient,
+			baseURL+ProjectionServiceReleaseProjectionLeaseProcedure,
+			connect.WithSchema(projectionServiceMethods.ByName("ReleaseProjectionLease")),
 			connect.WithClientOptions(opts...),
 		),
 		getProjection: connect.NewClient[v1.GetProjectionRequest, v1.GetProjectionResponse](
@@ -326,6 +358,9 @@ type projectionServiceClient struct {
 	streamProjectionEvents      *connect.Client[v1.StreamProjectionEventsRequest, v1.ProjectionEvent]
 	saveProjectionState         *connect.Client[v1.SaveProjectionStateRequest, v1.SaveProjectionStateResponse]
 	ackProjectionEvents         *connect.Client[v1.AckProjectionEventsRequest, v1.AckProjectionEventsResponse]
+	acquireProjectionLease      *connect.Client[v1.AcquireProjectionLeaseRequest, v1.AcquireProjectionLeaseResponse]
+	renewProjectionLease        *connect.Client[v1.RenewProjectionLeaseRequest, v1.RenewProjectionLeaseResponse]
+	releaseProjectionLease      *connect.Client[v1.ReleaseProjectionLeaseRequest, v1.ReleaseProjectionLeaseResponse]
 	getProjection               *connect.Client[v1.GetProjectionRequest, v1.GetProjectionResponse]
 	listProjections             *connect.Client[v1.ListProjectionsRequest, v1.ListProjectionsResponse]
 	getProjectionStatus         *connect.Client[v1.GetProjectionStatusRequest, v1.GetProjectionStatusResponse]
@@ -381,6 +416,21 @@ func (c *projectionServiceClient) SaveProjectionState(ctx context.Context, req *
 // AckProjectionEvents calls ironflow.v1.ProjectionService.AckProjectionEvents.
 func (c *projectionServiceClient) AckProjectionEvents(ctx context.Context, req *connect.Request[v1.AckProjectionEventsRequest]) (*connect.Response[v1.AckProjectionEventsResponse], error) {
 	return c.ackProjectionEvents.CallUnary(ctx, req)
+}
+
+// AcquireProjectionLease calls ironflow.v1.ProjectionService.AcquireProjectionLease.
+func (c *projectionServiceClient) AcquireProjectionLease(ctx context.Context, req *connect.Request[v1.AcquireProjectionLeaseRequest]) (*connect.Response[v1.AcquireProjectionLeaseResponse], error) {
+	return c.acquireProjectionLease.CallUnary(ctx, req)
+}
+
+// RenewProjectionLease calls ironflow.v1.ProjectionService.RenewProjectionLease.
+func (c *projectionServiceClient) RenewProjectionLease(ctx context.Context, req *connect.Request[v1.RenewProjectionLeaseRequest]) (*connect.Response[v1.RenewProjectionLeaseResponse], error) {
+	return c.renewProjectionLease.CallUnary(ctx, req)
+}
+
+// ReleaseProjectionLease calls ironflow.v1.ProjectionService.ReleaseProjectionLease.
+func (c *projectionServiceClient) ReleaseProjectionLease(ctx context.Context, req *connect.Request[v1.ReleaseProjectionLeaseRequest]) (*connect.Response[v1.ReleaseProjectionLeaseResponse], error) {
+	return c.releaseProjectionLease.CallUnary(ctx, req)
 }
 
 // GetProjection calls ironflow.v1.ProjectionService.GetProjection.
@@ -479,6 +529,11 @@ type ProjectionServiceHandler interface {
 	SaveProjectionState(context.Context, *connect.Request[v1.SaveProjectionStateRequest]) (*connect.Response[v1.SaveProjectionStateResponse], error)
 	// Cursor advance (external mode)
 	AckProjectionEvents(context.Context, *connect.Request[v1.AckProjectionEventsRequest]) (*connect.Response[v1.AckProjectionEventsResponse], error)
+	// Exclusive runner lease (ADR 0120). One runner holds the lease; the other
+	// replicas wait as standbys. Requests that carry the lease are fenced.
+	AcquireProjectionLease(context.Context, *connect.Request[v1.AcquireProjectionLeaseRequest]) (*connect.Response[v1.AcquireProjectionLeaseResponse], error)
+	RenewProjectionLease(context.Context, *connect.Request[v1.RenewProjectionLeaseRequest]) (*connect.Response[v1.RenewProjectionLeaseResponse], error)
+	ReleaseProjectionLease(context.Context, *connect.Request[v1.ReleaseProjectionLeaseRequest]) (*connect.Response[v1.ReleaseProjectionLeaseResponse], error)
 	// Query API
 	GetProjection(context.Context, *connect.Request[v1.GetProjectionRequest]) (*connect.Response[v1.GetProjectionResponse], error)
 	ListProjections(context.Context, *connect.Request[v1.ListProjectionsRequest]) (*connect.Response[v1.ListProjectionsResponse], error)
@@ -566,6 +621,24 @@ func NewProjectionServiceHandler(svc ProjectionServiceHandler, opts ...connect.H
 		ProjectionServiceAckProjectionEventsProcedure,
 		svc.AckProjectionEvents,
 		connect.WithSchema(projectionServiceMethods.ByName("AckProjectionEvents")),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectionServiceAcquireProjectionLeaseHandler := connect.NewUnaryHandler(
+		ProjectionServiceAcquireProjectionLeaseProcedure,
+		svc.AcquireProjectionLease,
+		connect.WithSchema(projectionServiceMethods.ByName("AcquireProjectionLease")),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectionServiceRenewProjectionLeaseHandler := connect.NewUnaryHandler(
+		ProjectionServiceRenewProjectionLeaseProcedure,
+		svc.RenewProjectionLease,
+		connect.WithSchema(projectionServiceMethods.ByName("RenewProjectionLease")),
+		connect.WithHandlerOptions(opts...),
+	)
+	projectionServiceReleaseProjectionLeaseHandler := connect.NewUnaryHandler(
+		ProjectionServiceReleaseProjectionLeaseProcedure,
+		svc.ReleaseProjectionLease,
+		connect.WithSchema(projectionServiceMethods.ByName("ReleaseProjectionLease")),
 		connect.WithHandlerOptions(opts...),
 	)
 	projectionServiceGetProjectionHandler := connect.NewUnaryHandler(
@@ -681,6 +754,12 @@ func NewProjectionServiceHandler(svc ProjectionServiceHandler, opts ...connect.H
 			projectionServiceSaveProjectionStateHandler.ServeHTTP(w, r)
 		case ProjectionServiceAckProjectionEventsProcedure:
 			projectionServiceAckProjectionEventsHandler.ServeHTTP(w, r)
+		case ProjectionServiceAcquireProjectionLeaseProcedure:
+			projectionServiceAcquireProjectionLeaseHandler.ServeHTTP(w, r)
+		case ProjectionServiceRenewProjectionLeaseProcedure:
+			projectionServiceRenewProjectionLeaseHandler.ServeHTTP(w, r)
+		case ProjectionServiceReleaseProjectionLeaseProcedure:
+			projectionServiceReleaseProjectionLeaseHandler.ServeHTTP(w, r)
 		case ProjectionServiceGetProjectionProcedure:
 			projectionServiceGetProjectionHandler.ServeHTTP(w, r)
 		case ProjectionServiceListProjectionsProcedure:
@@ -750,6 +829,18 @@ func (UnimplementedProjectionServiceHandler) SaveProjectionState(context.Context
 
 func (UnimplementedProjectionServiceHandler) AckProjectionEvents(context.Context, *connect.Request[v1.AckProjectionEventsRequest]) (*connect.Response[v1.AckProjectionEventsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.ProjectionService.AckProjectionEvents is not implemented"))
+}
+
+func (UnimplementedProjectionServiceHandler) AcquireProjectionLease(context.Context, *connect.Request[v1.AcquireProjectionLeaseRequest]) (*connect.Response[v1.AcquireProjectionLeaseResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.ProjectionService.AcquireProjectionLease is not implemented"))
+}
+
+func (UnimplementedProjectionServiceHandler) RenewProjectionLease(context.Context, *connect.Request[v1.RenewProjectionLeaseRequest]) (*connect.Response[v1.RenewProjectionLeaseResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.ProjectionService.RenewProjectionLease is not implemented"))
+}
+
+func (UnimplementedProjectionServiceHandler) ReleaseProjectionLease(context.Context, *connect.Request[v1.ReleaseProjectionLeaseRequest]) (*connect.Response[v1.ReleaseProjectionLeaseResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.ProjectionService.ReleaseProjectionLease is not implemented"))
 }
 
 func (UnimplementedProjectionServiceHandler) GetProjection(context.Context, *connect.Request[v1.GetProjectionRequest]) (*connect.Response[v1.GetProjectionResponse], error) {
