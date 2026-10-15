@@ -1687,7 +1687,7 @@ func TestStreamingAssignment_ScalarOutputValueReachesMemo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := job.CompletedSteps[0].Output; got != float64(42) {
+	if got := string(job.CompletedSteps[0].Output); got != "42" {
 		t.Fatalf("output = %#v, want 42", got)
 	}
 }

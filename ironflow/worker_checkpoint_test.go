@@ -42,7 +42,8 @@ func (r *checkpointTestReporter) ReportProgress(_ context.Context, _ string, ste
 	r.updates = append(r.updates, checkpointTestUpdate{status: "progress", steps: steps, offset: offset})
 	for _, step := range steps {
 		if step.Status == "completed" {
-			r.completed = append(r.completed, completedStep{StepID: step.ID, Name: step.Name, Output: step.Output})
+			out, _ := json.Marshal(step.Output)
+			r.completed = append(r.completed, completedStep{StepID: step.ID, Name: step.Name, Output: out})
 		}
 	}
 	r.mu.Unlock()

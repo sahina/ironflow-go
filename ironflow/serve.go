@@ -143,6 +143,11 @@ func (h *serveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Execute function
 	response := h.executeHandler(fn, &req)
+	if pushErr, kept := encodeFailure(response.Result, response.Steps); pushErr != nil {
+		// Report the failure with the steps that encode, rather than a 200
+		// with an empty body the engine retries as a transport error (#2873).
+		response = &PushResponse{Status: "failed", Steps: kept, Error: pushErr}
+	}
 	h.sendJSON(w, http.StatusOK, response)
 }
 
@@ -213,6 +218,15 @@ func (h *serveHandler) executeHandler(fn Function, req *PushRequest) *PushRespon
 			result, execErr = fn.Handler(ctx)
 		}
 	}()
+
+	// A result or step output JSON cannot encode is a non-retryable failure,
+	// so it takes the failure path below and runs compensations (#2873).
+	// ServeHTTP then drops the steps JSON cannot encode.
+	if _, yielded := isYieldSignal(execErr); execErr == nil || yielded {
+		if pushErr, _ := encodeFailure(result, exec.executedSteps); pushErr != nil {
+			execErr = NewError(pushErr.Message, pushErr.Code, false)
+		}
+	}
 
 	// Handle yield signal
 	if signal, ok := isYieldSignal(execErr); ok {
@@ -346,7 +360,14 @@ func (h *serveHandler) handleWebhook(w http.ResponseWriter, r *http.Request, pro
 }
 
 func (h *serveHandler) sendJSON(w http.ResponseWriter, status int, data any) {
+	// Encode before writing the header: a failed encode after it sent a 200
+	// with an empty body.
+	body, err := json.Marshal(data)
+	if err != nil {
+		body, _ = json.Marshal(map[string]any{"error": "response is not JSON-encodable: " + err.Error()})
+		status = http.StatusInternalServerError
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+	_, _ = w.Write(append(body, '\n'))
 }

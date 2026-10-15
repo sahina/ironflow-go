@@ -1272,7 +1272,7 @@ func TestWorker_RequestJob_ReturnsJob(t *testing.T) {
 				Timestamp: "2024-06-15T10:30:00Z",
 			},
 			CompletedSteps: []completedStep{
-				{StepID: "step-1", Name: "validate", Output: "ok"},
+				{StepID: "step-1", Name: "validate", Output: json.RawMessage(`"ok"`)},
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -1670,8 +1670,8 @@ func TestWorker_ExecuteJob_WithCompletedSteps(t *testing.T) {
 						Timestamp: "2024-01-01T00:00:00Z",
 					},
 					CompletedSteps: []completedStep{
-						{StepID: "step-1", Name: "validate", Output: "valid"},
-						{StepID: "step-2", Name: "enrich", Output: map[string]any{"enriched": true}},
+						{StepID: "step-1", Name: "validate", Output: json.RawMessage(`"valid"`)},
+						{StepID: "step-2", Name: "enrich", Output: json.RawMessage(`{"enriched":true}`)},
 					},
 				}
 				w.Header().Set("Content-Type", "application/json")

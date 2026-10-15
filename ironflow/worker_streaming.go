@@ -1080,10 +1080,16 @@ func protoToJobAssignment(pa *ironflowv1.JobAssignment) (*jobAssignment, error) 
 	// Convert completed steps
 	completedSteps := make([]completedStep, 0, len(pa.GetCompletedSteps()))
 	for _, cs := range pa.GetCompletedSteps() {
-		var output any
-		// A non-object output arrives only in output_value (#1963).
-		if cs.GetOutput() != nil || cs.GetOutputValue() != nil {
-			output = payloadAny(cs.GetOutput(), cs.GetOutputValue())
+		// output_json carries the exact bytes (#2873); output and output_value
+		// round integers above 2^53, so they are only the fallback for an
+		// older server. A non-object output arrives only in output_value (#1963).
+		var output json.RawMessage
+		if len(cs.GetOutputJson()) > 0 {
+			output = json.RawMessage(cs.GetOutputJson())
+		} else if cs.GetOutput() != nil || cs.GetOutputValue() != nil {
+			if b, err := json.Marshal(payloadAny(cs.GetOutput(), cs.GetOutputValue())); err == nil {
+				output = b
+			}
 		}
 		var stepErr any
 		if len(cs.GetErrorJson()) > 0 {

@@ -3,6 +3,7 @@ package ironflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -99,13 +100,16 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 		if status == "" {
 			status = "completed"
 		}
-		exec.completedSteps[step.StepID] = &CompletedStep{
+		cs := &CompletedStep{
 			ID:     step.StepID,
 			Name:   step.Name,
 			Status: status,
-			Output: step.Output,
 			Error:  step.Error,
 		}
+		if len(step.Output) > 0 {
+			cs.Output = step.Output
+		}
+		exec.completedSteps[step.StepID] = cs
 	}
 	checkpointer := newStepCheckpointer(ctx, job, exec, reporter, e.checkpointInterval)
 	if checkpointer != nil {
@@ -197,6 +201,20 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 		return nil
 	}
 
+	// A result or step output JSON cannot encode never reaches the server:
+	// the report failed silently and the lease expired into a full re-run
+	// (#2873). Treat it as a non-retryable failure, so compensations run. A
+	// yield is checked too: the streaming worker already sent the step, and
+	// the server stored null for it, which the resumed run would replay.
+	if _, yielded := isYieldSignal(execErr); execErr == nil || yielded {
+		exec.executedStepsMu.Lock()
+		executed := append([]*StepResult(nil), exec.executedSteps...)
+		exec.executedStepsMu.Unlock()
+		if pushErr, _ := encodeFailure(result, executed); pushErr != nil {
+			execErr = NewError(pushErr.Message, pushErr.Code, false)
+		}
+	}
+
 	// Handle yield signal
 	if signal, ok := isYieldSignal(execErr); ok {
 		steps, offset := checkpointer.finish()
@@ -236,10 +254,20 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 			}
 			exec.executedStepsMu.Unlock()
 		}
-		return reportFailed(ctx, reporter, job.JobID, &PushError{
-			Message:   execErr.Error(),
-			Retryable: retryable,
-		}, steps, offset)
+		pushErr := &PushError{Message: execErr.Error(), Retryable: retryable}
+		var ironErr *IronflowError
+		if errors.As(execErr, &ironErr) && ironErr.Code == codeSerializationError {
+			pushErr.Code = codeSerializationError
+		}
+		// Steps JSON cannot encode are dropped from the report; the ones
+		// before them are kept.
+		if kept, stepErr := encodableSteps(steps); stepErr != nil {
+			steps = kept
+			if pushErr.Code == "" {
+				pushErr = stepErr
+			}
+		}
+		return reportFailed(ctx, reporter, job.JobID, pushErr, steps, offset)
 	}
 
 	// Success - include executed steps
@@ -330,6 +358,9 @@ func (c *stepCheckpointer) flush() error {
 	if len(steps) > maxCheckpointSteps {
 		steps = steps[:maxCheckpointSteps]
 	}
+	// Checkpoint only what JSON can encode: one bad step failed every later
+	// checkpoint, so no step after it was ever saved (#2873).
+	steps, _ = encodableSteps(steps)
 	if len(steps) == 0 {
 		return nil
 	}
@@ -428,7 +459,9 @@ type jobEvent struct {
 type completedStep struct {
 	StepID string `json:"step_id"`
 	Name   string `json:"name"`
-	Output any    `json:"output"`
+	// Output stays raw: decoding it into any rounds integers above 2^53, and a
+	// replayed step then returns a different value than it first did (#2873).
+	Output json.RawMessage `json:"output"`
 	// Status and Error are set only on a failed invoke row (#2385).
 	Status string `json:"status,omitempty"`
 	Error  any    `json:"error,omitempty"`

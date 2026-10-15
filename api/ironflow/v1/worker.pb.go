@@ -2266,7 +2266,11 @@ type CompletedStep struct {
 	// completed rows.
 	Status string `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
 	// The step's stored error JSON. Set only when status is "failed".
-	ErrorJson     []byte `protobuf:"bytes,6,opt,name=error_json,json=errorJson,proto3" json:"error_json,omitempty"`
+	ErrorJson []byte `protobuf:"bytes,6,opt,name=error_json,json=errorJson,proto3" json:"error_json,omitempty"`
+	// The step's stored output, as its exact JSON bytes. output and
+	// output_value pass numbers through float64, which rounds integers above
+	// 2^53; readers that know this field take it first (#2873).
+	OutputJson    []byte `protobuf:"bytes,7,opt,name=output_json,json=outputJson,proto3" json:"output_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2339,6 +2343,13 @@ func (x *CompletedStep) GetStatus() string {
 func (x *CompletedStep) GetErrorJson() []byte {
 	if x != nil {
 		return x.ErrorJson
+	}
+	return nil
+}
+
+func (x *CompletedStep) GetOutputJson() []byte {
+	if x != nil {
+		return x.OutputJson
 	}
 	return nil
 }
@@ -2844,7 +2855,7 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	" \x01(\tR\n" +
 	"leaseToken\x12D\n" +
 	"\x10lease_expires_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\x12!\n" +
-	"\fmax_attempts\x18\f \x01(\x05R\vmaxAttempts\"\xdf\x01\n" +
+	"\fmax_attempts\x18\f \x01(\x05R\vmaxAttempts\"\x80\x02\n" +
 	"\rCompletedStep\x12\x17\n" +
 	"\astep_id\x18\x01 \x01(\tR\x06stepId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12/\n" +
@@ -2852,7 +2863,9 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	"\foutput_value\x18\x04 \x01(\v2\x16.google.protobuf.ValueR\voutputValue\x12\x16\n" +
 	"\x06status\x18\x05 \x01(\tR\x06status\x12\x1d\n" +
 	"\n" +
-	"error_json\x18\x06 \x01(\fR\terrorJson\"\xa3\x02\n" +
+	"error_json\x18\x06 \x01(\fR\terrorJson\x12\x1f\n" +
+	"\voutput_json\x18\a \x01(\fR\n" +
+	"outputJson\"\xa3\x02\n" +
 	"\n" +
 	"JobContext\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12A\n" +

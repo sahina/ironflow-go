@@ -17,7 +17,8 @@ import (
 // several of these dropped it, which surfaced as a 401 far from the cause.
 
 type recordingReporter struct {
-	failed *PushError
+	failed  *PushError
+	yielded *YieldInfo
 }
 
 func (r *recordingReporter) ReportCompleted(context.Context, string, any, []*StepResult, int) error {
@@ -27,7 +28,8 @@ func (r *recordingReporter) ReportFailed(_ context.Context, _ string, e *PushErr
 	r.failed = e
 	return nil
 }
-func (r *recordingReporter) ReportYielded(context.Context, string, *YieldInfo, []*StepResult, int) error {
+func (r *recordingReporter) ReportYielded(_ context.Context, _ string, y *YieldInfo, _ []*StepResult, _ int) error {
+	r.yielded = y
 	return nil
 }
 

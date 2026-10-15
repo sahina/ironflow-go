@@ -428,6 +428,30 @@ type StepResult struct {
 	CompensationFor string         `json:"compensation_for,omitempty"`
 }
 
+// MarshalJSON adds started_at, ended_at (RFC 3339) and duration_ms to the wire
+// form, as the push protocol documents and the JS and Python SDKs send.
+// Without them the engine took the receipt time as the start and left the
+// duration empty (#2873).
+func (s StepResult) MarshalJSON() ([]byte, error) {
+	type plain StepResult
+	out := struct {
+		plain
+		StartedAt string `json:"started_at,omitempty"`
+		EndedAt   string `json:"ended_at,omitempty"`
+	}{plain: plain(s)}
+	if !s.StartedAt.IsZero() {
+		out.StartedAt = s.StartedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if s.EndedAt != nil {
+		out.EndedAt = s.EndedAt.UTC().Format(time.RFC3339Nano)
+		if out.DurationMs == nil && !s.StartedAt.IsZero() {
+			d := int(s.EndedAt.Sub(s.StartedAt).Milliseconds())
+			out.DurationMs = &d
+		}
+	}
+	return json.Marshal(out)
+}
+
 // StepErrorInfo contains step error details.
 type StepErrorInfo struct {
 	Message   string `json:"message"`
@@ -435,13 +459,35 @@ type StepErrorInfo struct {
 	Stack     string `json:"stack,omitempty"`
 }
 
-// CompletedStep represents a completed step from previous execution.
+// CompletedStep represents a completed step from previous execution. When it is
+// decoded from JSON, Output holds a json.RawMessage with the step's exact
+// output bytes (#2873).
 type CompletedStep struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	Output any    `json:"output,omitempty"`
 	Error  any    `json:"error,omitempty"`
+}
+
+// UnmarshalJSON keeps Output as its exact JSON bytes (a json.RawMessage).
+// Decoding it into any rounds integers above 2^53, and a replayed step then
+// returns a different value than it first did (#2873).
+func (c *CompletedStep) UnmarshalJSON(data []byte) error {
+	type plain CompletedStep
+	var raw struct {
+		plain
+		Output json.RawMessage `json:"output,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*c = CompletedStep(raw.plain)
+	c.Output = nil
+	if len(raw.Output) > 0 && string(raw.Output) != "null" {
+		c.Output = raw.Output
+	}
+	return nil
 }
 
 // PushRequest is the request from engine to SDK in push mode.

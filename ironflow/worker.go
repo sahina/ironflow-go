@@ -93,6 +93,7 @@ type Worker struct {
 	runMu             sync.Mutex
 	cancelRun         context.CancelFunc
 	heartbeatWg       sync.WaitGroup
+	heartbeatGen      atomic.Int64 // a reconnect retires the previous heartbeat loop
 	projMu            sync.Mutex
 	projectionRunners []*ProjectionRunner
 }
@@ -465,6 +466,7 @@ func (w *Worker) registerWorker(ctx context.Context) error {
 
 // startHeartbeat starts the heartbeat goroutine.
 func (w *Worker) startHeartbeat(ctx context.Context) {
+	gen := w.heartbeatGen.Add(1)
 	w.heartbeatWg.Add(1)
 	go func() {
 		defer w.heartbeatWg.Done()
@@ -482,6 +484,9 @@ func (w *Worker) startHeartbeat(ctx context.Context) {
 			case <-ticker.C:
 				if s := w.state.Load(); s != int32(stateConnected) && s != int32(stateDraining) {
 					return
+				}
+				if w.heartbeatGen.Load() != gen {
+					return // a reconnect started a newer loop
 				}
 
 				w.sendHeartbeat(hbCtx)
@@ -510,7 +515,26 @@ func (w *Worker) sendHeartbeat(ctx context.Context) {
 	}
 
 	if err := w.httpPut(ctx, fmt.Sprintf("/api/v1/workers/%s/heartbeat", w.workerID), body, nil); err != nil {
+		if errors.Is(err, errNotFound) {
+			w.lostRegistration()
+			return
+		}
 		w.logger.Warn("Heartbeat failed", "error", err)
+	}
+}
+
+// errNotFound marks a 404 from the server. From the poll or heartbeat
+// endpoint it means the server no longer knows this worker: its REST registry
+// is in memory, so a restart or a node that never saw the register call
+// forgets it (#2873).
+var errNotFound = errors.New("not found")
+
+// lostRegistration moves a connected worker back to connecting, so its poll
+// loop returns and Run registers again. Without it the worker polled a 404
+// every 5s forever and claimed no job.
+func (w *Worker) lostRegistration() {
+	if w.state.CompareAndSwap(int32(stateConnected), int32(stateConnecting)) {
+		w.logger.Warn("Server lost the worker registration; registering again", "workerId", w.workerID)
 	}
 }
 
@@ -546,6 +570,15 @@ func (w *Worker) pollForJobs(ctx context.Context) error {
 		}
 
 		jobs, err := w.requestJobs(ctx, free)
+		if errors.Is(err, errNotFound) {
+			w.lostRegistration()
+			// Wait before registering again: behind a load balancer the next
+			// poll can reach another node that never saw the register call.
+			if waitErr := w.wait(ctx, w.config.ReconnectDelay); waitErr != nil {
+				return waitErr
+			}
+			return nil // connect returns; Run registers again
+		}
 		if err != nil {
 			// Key revoked mid-run: let it out to Run, which stops the worker
 			// rather than polling a 401 every 5s (#1673).
@@ -626,6 +659,9 @@ func (w *Worker) requestJobs(ctx context.Context, available int) ([]*jobAssignme
 	if resp.StatusCode != http.StatusOK {
 		if authErr := authError(resp, "failed to get job"); authErr != nil {
 			return nil, authErr
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("%w: worker not registered", errNotFound)
 		}
 		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
@@ -832,6 +868,9 @@ func (w *Worker) httpPut(ctx context.Context, path string, body any, result any)
 			if json.Unmarshal(respBody, &body) == nil && body.Error == "STALE_EXECUTION" {
 				return NewError("execution is stale", body.Error, false)
 			}
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("%w: %s", errNotFound, string(respBody))
 		}
 		return fmt.Errorf("request failed: %s", string(respBody))
 	}

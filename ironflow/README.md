@@ -135,7 +135,7 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
 
     // Optional
     Name:     "My Function",          // display name (defaults to ID)
-    Timeout:  5 * time.Minute,        // function timeout (unset: no per-function budget)
+    Timeout:  5 * time.Minute,        // function timeout (default: 10m)
     StepTimeout: 30 * time.Second,    // default timeout for all steps (overridable per-step)
     Mode:     ironflow.PullMode,      // "push" or "pull" (default: "push"); a Worker registers every function as pull regardless
 
