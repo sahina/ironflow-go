@@ -4309,3 +4309,21 @@ func TestIsRedacted(t *testing.T) {
 		})
 	}
 }
+
+// The server's Connect JSON (protojson) sends 64-bit integers as strings; the
+// numeric form must keep decoding too.
+func TestWaitResultDecodesProtoJSONStrings(t *testing.T) {
+	for _, raw := range []string{
+		`{"caughtUp":true,"currentSeq":"42","targetSeq":"40","behindByEvents":"-2","mode":"event"}`,
+		`{"caughtUp":true,"currentSeq":42,"targetSeq":40,"behindByEvents":-2,"mode":"event"}`,
+	} {
+		var got WaitResult
+		if err := json.Unmarshal([]byte(raw), &got); err != nil {
+			t.Fatalf("decode %s: %v", raw, err)
+		}
+		want := WaitResult{CaughtUp: true, CurrentSeq: 42, TargetSeq: 40, BehindByEvents: -2, Mode: "event"}
+		if got != want {
+			t.Fatalf("decode %s = %+v, want %+v", raw, got, want)
+		}
+	}
+}

@@ -1521,8 +1521,7 @@ type JoinConsumerGroupOptions struct {
 	// ConsumerID is the optional consumer identifier.
 	ConsumerID string
 
-	// Transport is "websocket" (the default) or "grpc". Only WebSocket can
-	// ack, nak or term events.
+	// Transport is "websocket" (the default) or "grpc". Both can ack, nak and term.
 	Transport string
 }
 
@@ -1544,9 +1543,7 @@ func WithJoinConsumerID(consumerID string) JoinConsumerGroupOption {
 }
 
 // WithJoinTransport sets the transport for JoinConsumerGroup.
-// Valid values: "websocket" (default), "grpc". The "grpc" HTTP-stream path
-// receives events but cannot ack, nak or term them; keep it only for
-// receive-only use.
+// Valid values: "websocket" (default), "grpc". Both can ack, nak and term.
 func WithJoinTransport(transport string) JoinConsumerGroupOption {
 	return func(o *JoinConsumerGroupOptions) {
 		o.Transport = transport
@@ -1555,8 +1552,8 @@ func WithJoinTransport(transport string) JoinConsumerGroupOption {
 
 // JoinConsumerGroup connects to a consumer group for load-balanced event delivery.
 //
-// Joins over WebSocket unless WithJoinTransport("grpc") says otherwise; only
-// WebSocket supports Ack/Nak/Term. Use the Events() channel to receive events.
+// Joins over WebSocket unless WithJoinTransport("grpc") says otherwise.
+// Use the Events() channel to receive events.
 //
 // Example:
 //
@@ -1582,7 +1579,7 @@ func (c *Client) JoinConsumerGroup(ctx context.Context, groupName string, opts .
 	}
 
 	// No capabilities auto-detect: servers advertise grpc-bidirectional
-	// everywhere, and that path cannot ack, so it must be opt-in.
+	// everywhere, and WebSocket stays the default join transport.
 	if options.Transport == "grpc" {
 		return c.joinConsumerGroupGrpc(ctx, groupName, options)
 	}
@@ -1643,18 +1640,26 @@ func (c *Client) joinConsumerGroupGrpc(ctx context.Context, groupName string, op
 		return nil, err
 	}
 
-	// Wrap in AckableSubscription interface
-	bridgeSub := &Subscription{
-		ID:      grpcSub.ID,
-		Pattern: grpcSub.Pattern,
-		events:  grpcSub.events,
-		errors:  grpcSub.errors,
-		done:    grpcSub.done,
-	}
+	return grpcJoinSubscription(grpcClient, grpcSub), nil
+}
 
+// grpcJoinSubscription adapts a ConnectRPC group subscription to the
+// AckableSubscription that JoinConsumerGroup returns. The adapter owns client.
+func grpcJoinSubscription(client *GrpcSubscriptionClient, sub *GrpcAckableSubscription) *AckableSubscription {
 	return &AckableSubscription{
-		Subscription: bridgeSub,
-	}, nil
+		Subscription: &Subscription{
+			ID:      sub.ID,
+			Pattern: sub.Pattern,
+			events:  sub.events,
+			errors:  sub.errors,
+			done:    make(chan struct{}),
+			stop: func() {
+				sub.Unsubscribe()
+				client.Close()
+			},
+		},
+		grpc: sub,
+	}
 }
 
 // DetectTransport auto-detects the best available transport for subscriptions.

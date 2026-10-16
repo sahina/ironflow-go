@@ -2730,7 +2730,7 @@ func TestSubscriptionClient_SubscribeEntityStream(t *testing.T) {
 }
 
 // A server that advertises grpc-bidirectional (every normal one does) must not
-// pull JoinConsumerGroup off WebSocket: the HTTP-stream path cannot ack.
+// pull JoinConsumerGroup off WebSocket: WebSocket stays the default join transport.
 func TestJoinConsumerGroup_DefaultsToWebSocketAndAcks(t *testing.T) {
 	server := newMockWSServer()
 	defer server.Close()

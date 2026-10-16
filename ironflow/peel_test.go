@@ -12,7 +12,7 @@ import (
 // Wire fixtures are copied verbatim from a real Ironflow server response
 // (`internal/server/server.go:2531` ProjectionResponse). If these tests
 // break in CI, either the server contract drifted or peel logic regressed.
-// See issue #610 / CHANGELOG 0.20.0.
+// See issue #610 (removed in v0.20.0).
 
 const happyWire = `{
   "name": "doc-processor-memory",

@@ -782,10 +782,9 @@ group, err := client.CreateConsumerGroup(ctx, ironflow.ConsumerGroupConfig{
     RedeliverDelayMs: 5000,
 })
 
-// Join a consumer group over WebSocket, the default. Only WebSocket can ack,
-// nak or term. Options: WithJoinNamespace, WithJoinConsumerID (accepted but not
-// sent today -- the server mints the ack identity), WithJoinTransport ("websocket" | "grpc";
-// a grpc join receives events but cannot acknowledge them).
+// Join a consumer group over WebSocket, the default. Both transports can ack,
+// nak and term. Options: WithJoinNamespace, WithJoinConsumerID (accepted but not
+// sent today -- the server mints the ack identity), WithJoinTransport ("websocket" | "grpc").
 sub, err := client.JoinConsumerGroup(ctx, "order-processors")
 defer sub.Unsubscribe()
 
@@ -991,10 +990,9 @@ for event := range ackSub.Events() {
 }
 ```
 
-The gRPC transport cannot acknowledge. `grpcClient.SubscribeAckable` delivers
-events, but its `Ack`, `Nak` and `Term` post to `PubSubService/Ack`, which the
-server does not serve. Use the WebSocket client above, or `client.JoinConsumerGroup`
-(WebSocket by default), for manual acknowledgment.
+`grpcClient.SubscribeAckable` with a `ConsumerGroup` acks, naks and terms through
+the `AckEvent` RPC. It uses the consumer ID the server sends on each event.
+Manual ack applies to consumer groups only.
 
 ---
 

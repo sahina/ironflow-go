@@ -799,6 +799,24 @@ type WaitResult struct {
 	Mode       string `json:"mode,omitempty"`
 }
 
+// UnmarshalJSON accepts the 64-bit fields as strings, which is how the
+// server's Connect JSON (protojson) sends them, or as numbers.
+func (w *WaitResult) UnmarshalJSON(data []byte) error {
+	type plain WaitResult
+	var wire struct {
+		plain
+		CurrentSeq     ProtoUint64 `json:"currentSeq"`
+		TargetSeq      ProtoUint64 `json:"targetSeq"`
+		BehindByEvents ProtoInt64  `json:"behindByEvents"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*w = WaitResult(wire.plain)
+	w.CurrentSeq, w.TargetSeq, w.BehindByEvents = uint64(wire.CurrentSeq), uint64(wire.TargetSeq), int64(wire.BehindByEvents)
+	return nil
+}
+
 // WaitItemResult is one entry in a batch wait response. When the wait
 // item failed (projection not found, etc.), Error is set and Result
 // is zero-valued. Otherwise Error is empty and Result holds the outcome.
@@ -1065,7 +1083,7 @@ type SQLQueryResult struct {
 
 // ProjectionStateResult is the current materialized state of a projection
 // after the SDK strips the server REST envelope. The lossy ProjectionState
-// type was removed in v0.20.0 — see CHANGELOG and issue #610.
+// type was removed in v0.20.0 — see issue #610.
 //
 // Field provenance:
 //   - Name, Version, Mode, Status, LastEventSeq, UpdatedAt, ErrorMessage:

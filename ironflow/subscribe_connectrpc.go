@@ -1,11 +1,9 @@
 package ironflow
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -46,7 +44,7 @@ type GrpcSubscriptionClientConfig struct {
 // GrpcSubscriptionClient is a client for streaming subscriptions using ConnectRPC.
 //
 // This uses the generated ConnectRPC PubSubServiceClient for server-streaming
-// subscriptions and plain HTTP POST for acknowledgments.
+// subscriptions and the AckEvent RPC for consumer-group acknowledgments.
 //
 // Example:
 //
@@ -117,6 +115,11 @@ type GrpcSubscription struct {
 	// done signals subscription closure
 	done chan struct{}
 	once sync.Once
+
+	// consumerID is the server-minted subscription_id of a consumer-group
+	// stream: the only identity AckEvent accepts for its events (ADR 0094).
+	consumerMu sync.Mutex
+	consumerID string
 }
 
 // Events returns a channel for receiving subscription events.
@@ -136,6 +139,18 @@ func (s *GrpcSubscription) Unsubscribe() {
 		s.cancel()
 		s.client.removeSubscription(s.ID)
 	})
+}
+
+func (s *GrpcSubscription) setConsumerID(id string) {
+	s.consumerMu.Lock()
+	s.consumerID = id
+	s.consumerMu.Unlock()
+}
+
+func (s *GrpcSubscription) currentConsumerID() string {
+	s.consumerMu.Lock()
+	defer s.consumerMu.Unlock()
+	return s.consumerID
 }
 
 // NewGrpcSubscriptionClient creates a new gRPC subscription client.
@@ -396,6 +411,9 @@ func (c *GrpcSubscriptionClient) streamSubscription(ctx context.Context, sub *Gr
 			for stream.Receive() {
 				msg := stream.Msg()
 				accepted = true
+				if id := msg.GetSubscriptionId(); id != "" {
+					sub.setConsumerID(id)
+				}
 
 				// Convert proto Struct data to json.RawMessage.
 				var dataJSON json.RawMessage
@@ -533,60 +551,41 @@ func (c *GrpcSubscriptionClient) removeSubscription(subID string) {
 type GrpcAckableSubscription struct {
 	*GrpcSubscription
 
-	// serverURL for sending ack requests
-	serverURL string
+	group     string
+	namespace string
 }
 
 // Ack acknowledges an event.
 func (s *GrpcAckableSubscription) Ack(eventID string) error {
-	return s.sendAck(eventID, "ACK_TYPE_ACK", 0)
+	return s.sendAck(eventID, ironflowv1.AckType_ACK_TYPE_ACK, 0)
 }
 
 // Nak negatively acknowledges an event, requesting redelivery.
 func (s *GrpcAckableSubscription) Nak(eventID string, delay time.Duration) error {
-	return s.sendAck(eventID, "ACK_TYPE_NAK", int(delay.Milliseconds()))
+	return s.sendAck(eventID, ironflowv1.AckType_ACK_TYPE_NAK, delay)
 }
 
 // Term terminates an event, preventing further redelivery.
 func (s *GrpcAckableSubscription) Term(eventID string) error {
-	return s.sendAck(eventID, "ACK_TYPE_TERM", 0)
+	return s.sendAck(eventID, ironflowv1.AckType_ACK_TYPE_TERM, 0)
 }
 
-// sendAck sends an acknowledgment to the server via HTTP POST.
-func (s *GrpcAckableSubscription) sendAck(eventID, ackType string, redeliverDelay int) error {
-	req := map[string]any{
-		"eventId": eventID,
-		"type":    ackType,
-	}
-	if redeliverDelay > 0 {
-		req["redeliverDelay"] = redeliverDelay
-	}
+// ackTimeout bounds one AckEvent call: the stream's HTTP client has no timeout.
+const ackTimeout = 30 * time.Second
 
-	body, err := json.Marshal(req)
-	if err != nil {
-		return err
-	}
-
-	url := s.serverURL + "/ironflow.v1.PubSubService/Ack"
-	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(httpReq)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("ack failed: %s", string(bodyBytes))
-	}
-
-	return nil
+func (s *GrpcAckableSubscription) sendAck(eventID string, ackType ironflowv1.AckType, delay time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), ackTimeout)
+	defer cancel()
+	// sdkcoverage: POST /ironflow.v1.PubSubService/AckEvent
+	_, err := s.client.pubsubClient.AckEvent(ctx, connect.NewRequest(&ironflowv1.AckEventRequest{
+		Namespace:        s.namespace,
+		GroupName:        s.group,
+		ConsumerId:       s.currentConsumerID(),
+		EventId:          eventID,
+		AckType:          ackType,
+		RedeliverDelayMs: int32(delay.Milliseconds()),
+	}))
+	return err
 }
 
 // SubscribeAckable subscribes with manual acknowledgment support.
@@ -620,7 +619,8 @@ func (c *GrpcSubscriptionClient) SubscribeAckable(ctx context.Context, pattern s
 
 	return &GrpcAckableSubscription{
 		GrpcSubscription: sub,
-		serverURL:        c.config.ServerURL,
+		group:            opts.ConsumerGroup,
+		namespace:        opts.Namespace,
 	}, nil
 }
 

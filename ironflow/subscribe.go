@@ -182,6 +182,10 @@ type Subscription struct {
 	// done signals subscription closure
 	done chan struct{}
 	once sync.Once
+
+	// stop replaces the WebSocket unsubscribe when the subscription rides
+	// another transport (the grpc consumer-group join); client is nil then.
+	stop func()
 }
 
 // Events returns a channel for receiving subscription events.
@@ -196,6 +200,9 @@ func (s *Subscription) Errors() <-chan *SubscriptionError {
 
 // CurrentID returns the server subscription ID currently bound to this handle.
 func (s *Subscription) CurrentID() string {
+	if s.client == nil {
+		return s.ID
+	}
 	return s.client.currentSubscriptionID(s.Pattern, s.ID)
 }
 
@@ -203,6 +210,10 @@ func (s *Subscription) CurrentID() string {
 func (s *Subscription) Unsubscribe() {
 	s.once.Do(func() {
 		close(s.done)
+		if s.stop != nil {
+			s.stop()
+			return
+		}
 		s.client.unsubscribeByPattern(s.Pattern)
 	})
 }
@@ -213,6 +224,10 @@ func (s *Subscription) Unsubscribe() {
 // Events must be acknowledged, negatively acknowledged, or terminated.
 type AckableSubscription struct {
 	*Subscription
+
+	// grpc is set by JoinConsumerGroup with WithJoinTransport("grpc"): acks
+	// then go to the AckEvent RPC, because there is no WebSocket to frame them on.
+	grpc *GrpcAckableSubscription
 }
 
 // Ack acknowledges an event, confirming it was processed successfully.
@@ -229,6 +244,9 @@ type AckableSubscription struct {
 //	    sub.Ack(event.ID)
 //	}
 func (s *AckableSubscription) Ack(eventID string) error {
+	if s.grpc != nil {
+		return s.grpc.Ack(eventID)
+	}
 	req := wsAckRequest{
 		Type:           "ack",
 		AckType:        "ack",
@@ -243,6 +261,9 @@ func (s *AckableSubscription) Ack(eventID string) error {
 // The delay parameter specifies how long to wait before redelivery.
 // If delay is 0, the event is redelivered immediately.
 func (s *AckableSubscription) Nak(eventID string, delay time.Duration) error {
+	if s.grpc != nil {
+		return s.grpc.Nak(eventID, delay)
+	}
 	req := wsAckRequest{
 		Type:           "ack",
 		AckType:        "nak",
@@ -258,6 +279,9 @@ func (s *AckableSubscription) Nak(eventID string, delay time.Duration) error {
 // Use this when an event cannot be processed and should not be retried
 // (e.g., permanently invalid data).
 func (s *AckableSubscription) Term(eventID string) error {
+	if s.grpc != nil {
+		return s.grpc.Term(eventID)
+	}
 	req := wsAckRequest{
 		Type:           "ack",
 		AckType:        "term",
