@@ -102,6 +102,10 @@ var ReviewAgent = agent.Agent(agent.AgentConfig{
 | `ExposeMcp(cfg)` | Register agent tools with Ironflow's MCP server; the returned handle's `Unregister()` removes them | `AgentToolsService.RegisterTool` + HMAC callback |
 | `DispatchHandler()` / `HandleAgentToolDispatch(w, r)` | Serve the server's signed tool-dispatch callbacks | `net/http` + HMAC verify |
 
+`Agent`, `DefineTool`, `ExposeMcp`, `LLM`, `Memory`, `Spawn` and `Approve` are
+[Ready](https://docs.ironflow.run/explanation/readiness/): the contract is settled and no
+breaking change is planned.
+
 ### Mounting the dispatch callback
 
 `ExposeMcp` only registers the tools — the server then POSTs signed dispatch

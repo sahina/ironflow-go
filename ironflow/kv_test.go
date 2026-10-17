@@ -1382,3 +1382,31 @@ func TestKVWatch_StopIdempotent(t *testing.T) {
 	// Second Stop must not panic.
 	watcher.Stop()
 }
+
+// An idle watch must keep reading: a 1s read deadline used to fail the
+// connection and make gorilla panic on the next read (#2949).
+func TestKVWatch_IdleThenDelete(t *testing.T) {
+	const bucketName = "idle-bucket"
+	client, cleanup := setupMockWatchServer(t, bucketName, func(conn *websocket.Conn) {
+		time.Sleep(1500 * time.Millisecond)
+		_ = conn.WriteJSON(map[string]any{"type": "kv_update", "key": "k", "value": "", "revision": float64(3), "operation": "delete", "bucket": bucketName})
+		_, _, _ = conn.ReadMessage()
+	})
+	defer cleanup()
+
+	received := make(chan KVWatchEvent, 1)
+	watcher, err := client.KV().Bucket(bucketName).Watch(context.Background(), KVWatchCallbacks{OnUpdate: func(e KVWatchEvent) { received <- e }})
+	if err != nil {
+		t.Fatalf("Watch returned error: %v", err)
+	}
+	defer watcher.Stop()
+
+	select {
+	case e := <-received:
+		if e.Operation != "delete" || e.Value != nil {
+			t.Fatalf("event = %+v, want a delete with nil value", e)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no event after an idle gap")
+	}
+}

@@ -224,3 +224,30 @@ func TestConfigWatch_StopIdempotent(t *testing.T) {
 	// Second Stop must not panic.
 	watcher.Stop()
 }
+
+// An idle watch must keep reading (see TestKVWatch_IdleThenDelete, #2949).
+func TestConfigWatch_IdleThenUpdate(t *testing.T) {
+	const configName = "idle-settings"
+	client, cleanup := setupMockConfigWatchServer(t, configName, func(conn *websocket.Conn) {
+		time.Sleep(1500 * time.Millisecond)
+		_ = conn.WriteJSON(map[string]any{"type": "config_update", "name": configName, "data": map[string]any{"a": float64(1)}, "revision": float64(2), "updatedAt": "2026-10-16T00:00:00Z"})
+		_, _, _ = conn.ReadMessage()
+	})
+	defer cleanup()
+
+	received := make(chan ConfigWatchEvent, 1)
+	watcher, err := client.Config().Watch(context.Background(), configName, ConfigWatchCallbacks{OnUpdate: func(e ConfigWatchEvent) { received <- e }})
+	if err != nil {
+		t.Fatalf("Watch returned error: %v", err)
+	}
+	defer watcher.Stop()
+
+	select {
+	case e := <-received:
+		if e.Revision != 2 {
+			t.Fatalf("event = %+v, want revision 2", e)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no event after an idle gap")
+	}
+}

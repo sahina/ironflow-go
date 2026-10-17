@@ -35,8 +35,8 @@ func TestUpdateConsumerGroup(t *testing.T) {
 	if requestGroup["max_inflight"] != float64(0) || requestGroup["status"] != "CONSUMER_GROUP_STATUS_PAUSED" {
 		t.Fatalf("group request = %#v", requestGroup)
 	}
-	mask := body["update_mask"].(map[string]any)["paths"].([]any)
-	if len(mask) != 2 || mask[0] != "max_inflight" || mask[1] != "status" {
+	// protojson's FieldMask form: one comma-joined string of camelCase paths.
+	if mask := body["update_mask"]; mask != "maxInflight,status" {
 		t.Fatalf("update mask = %#v", mask)
 	}
 }

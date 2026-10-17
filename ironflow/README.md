@@ -764,10 +764,31 @@ fmt.Println(caps.Transports, caps.Features, caps.Version)
 // Auto-detect best subscription transport
 transport, err := client.DetectTransport(ctx) // "grpc" or "websocket"
 
+// Operations: capacity views need platform credentials (an ifplatform_ key)
+stats, err := client.CapacityStats(ctx)
+queue, err := client.ListCapacityQueue(ctx, ironflow.CapacityListOptions{Limit: 50})
+entries, err := client.ListDebounceEntries(ctx)
+err = client.CancelDebounce(ctx, "env_default", "process-search", "user-42") // raw key
+
 // Escape hatch for REST routes the client does not wrap
 var out map[string]any
-err = client.RestRequest(ctx, "GET", "/api/v1/capacity/stats", nil, &out)
+err = client.RestRequest(ctx, "GET", "/api/v1/circuit-breakers", nil, &out)
 ```
+
+Executable deployments and definition history have their own methods:
+
+```go
+res, err := client.Deployments().Register(ctx, ironflow.RegisterDeploymentInput{
+    FunctionID: "process-order", DeploymentID: "2026-10-16-a",
+    ArtifactDigest: "sha256:" + digestHex, Mode: ironflow.PullMode,
+})
+routing, err := client.Deployments().GetExecutionRouting(ctx, "process-order")
+
+page, err := client.Projections().ListHistory(ctx, "order-totals", ironflow.DefinitionHistoryOptions{Limit: 20})
+entry, err := client.Schemas().GetRevision(ctx, "order.placed", 2, 1)
+```
+
+See the [Go SDK reference](https://docs.ironflow.run/reference/api/go-sdk/#clientdeployments) for the full set.
 
 ### Consumer Groups
 
@@ -1484,6 +1505,8 @@ err = client.DeleteAPIKey(ctx, key.ID)
 ```
 
 ### Organizations
+
+`CreateOrganization` needs a platform credential (`ifplatform_` key or platform session). It calls `POST /api/v1/platform/orgs`. Get, list, update and delete work on the caller's own organization.
 
 ```go
 org, err := client.CreateOrganization(ctx, ironflow.CreateOrgInput{Name: "Acme Corp"})

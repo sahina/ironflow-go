@@ -3,12 +3,10 @@ package ironflow
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -127,7 +125,7 @@ type ConfigWatchEvent struct {
 	Type string `json:"type"`
 	// Name is the name of the config that changed.
 	Name string `json:"name"`
-	// Data is the new config data.
+	// Data is the new config data; nil after the config is deleted.
 	Data map[string]any `json:"data"`
 	// Revision is the new revision number.
 	Revision uint64 `json:"revision"`
@@ -147,6 +145,7 @@ type ConfigWatchCallbacks struct {
 
 // ConfigWatcher controls an active config watch connection.
 type ConfigWatcher struct {
+	conn   *websocket.Conn
 	stopCh chan struct{}
 	doneCh chan struct{}
 }
@@ -159,6 +158,7 @@ func (w *ConfigWatcher) Stop() {
 	default:
 		close(w.stopCh)
 	}
+	closeWatchConn(w.conn)
 	<-w.doneCh // wait for goroutine to finish
 }
 
@@ -201,6 +201,7 @@ func (cc *ConfigClient) Watch(ctx context.Context, name string, callbacks Config
 	}
 
 	watcher := &ConfigWatcher{
+		conn:   conn,
 		stopCh: make(chan struct{}),
 		doneCh: make(chan struct{}),
 	}
@@ -210,35 +211,21 @@ func (cc *ConfigClient) Watch(ctx context.Context, name string, callbacks Config
 		defer func() { _ = conn.Close() }()
 
 		for {
-			select {
-			case <-watcher.stopCh:
-				_ = conn.WriteMessage(websocket.CloseMessage,
-					websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-				return
-			default:
-			}
-
-			// Set a short read deadline so we can poll stopCh periodically.
-			_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
-
+			// Block on the read; Stop closes the socket to end it (see KVBucket.Watch).
 			var msg map[string]any
 			err := conn.ReadJSON(&msg)
 			if err != nil {
-				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-					if callbacks.OnClose != nil {
-						callbacks.OnClose()
-					}
-					return
-				}
-				// Timeout means no message yet; check stopCh and retry.
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					continue
-				}
 				// Check if we were asked to stop before reporting the error.
 				select {
 				case <-watcher.stopCh:
 					return
 				default:
+				}
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+					if callbacks.OnClose != nil {
+						callbacks.OnClose()
+					}
+					return
 				}
 				if callbacks.OnError != nil {
 					callbacks.OnError(err)

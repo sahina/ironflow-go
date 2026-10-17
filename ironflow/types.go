@@ -981,19 +981,19 @@ type PausedState struct {
 
 // TimeTravelStepSnapshot represents a step's state at a point in time.
 type TimeTravelStepSnapshot struct {
-	StepID         string `json:"stepId"`
-	Name           string `json:"name"`
-	Type           string `json:"type"`
-	Sequence       int    `json:"sequence"`
-	Status         string `json:"status"`
-	Output         string `json:"output,omitempty"`
-	Error          string `json:"error,omitempty"`
-	OriginalOutput string `json:"originalOutput,omitempty"`
-	StartedAt      string `json:"startedAt,omitempty"`
-	CompletedAt    string `json:"completedAt,omitempty"`
-	DurationMs     int    `json:"durationMs"`
-	Injected       bool   `json:"injected"`
-	Patched        bool   `json:"patched"`
+	StepID         string          `json:"stepId"`
+	Name           string          `json:"name"`
+	Type           string          `json:"type"`
+	Sequence       int             `json:"sequence"`
+	Status         string          `json:"status"`
+	Output         json.RawMessage `json:"output,omitempty"`
+	Error          json.RawMessage `json:"error,omitempty"`
+	OriginalOutput json.RawMessage `json:"originalOutput,omitempty"`
+	StartedAt      string          `json:"startedAt,omitempty"`
+	CompletedAt    string          `json:"completedAt,omitempty"`
+	DurationMs     int             `json:"durationMs"`
+	Injected       bool            `json:"injected"`
+	Patched        bool            `json:"patched"`
 }
 
 // TimeTravelRunStateSnapshot represents the reconstructed state of a run at a point in time.
@@ -1001,7 +1001,7 @@ type TimeTravelRunStateSnapshot struct {
 	RunID      string                   `json:"runId"`
 	FunctionID string                   `json:"functionId"`
 	Status     string                   `json:"status"`
-	Input      string                   `json:"input,omitempty"`
+	Input      json.RawMessage          `json:"input,omitempty"`
 	Steps      []TimeTravelStepSnapshot `json:"steps"`
 	Timestamp  string                   `json:"timestamp"`
 	CreatedAt  string                   `json:"createdAt,omitempty"`
@@ -1020,12 +1020,64 @@ type TimeTravelTimelineEvent struct {
 
 // TimeTravelStepOutputSnapshot represents a step's output at a point in time.
 type TimeTravelStepOutputSnapshot struct {
-	StepID         string `json:"stepId"`
-	Status         string `json:"status"`
-	Output         string `json:"output,omitempty"`
-	OriginalOutput string `json:"originalOutput,omitempty"`
-	Patched        bool   `json:"patched"`
-	Injected       bool   `json:"injected"`
+	StepID         string          `json:"stepId"`
+	Status         string          `json:"status"`
+	Output         json.RawMessage `json:"output,omitempty"`
+	OriginalOutput json.RawMessage `json:"originalOutput,omitempty"`
+	Patched        bool            `json:"patched"`
+	Injected       bool            `json:"injected"`
+}
+
+// The time-travel RPCs carry step and run payloads as proto bytes, which
+// protojson base64-encodes. These decoders hand callers the JSON itself, and
+// still accept plain JSON so a marshaled snapshot round-trips.
+
+func decodeProtoFields(fields ...*json.RawMessage) error {
+	for _, f := range fields {
+		if string(*f) == "null" {
+			*f = nil
+		}
+		if len(*f) == 0 || (*f)[0] != '"' {
+			continue // absent, or already plain JSON
+		}
+		var encoded string
+		if err := json.Unmarshal(*f, &encoded); err != nil {
+			return err
+		}
+		v, err := decodeProtoBytes(encoded)
+		if err != nil {
+			return err
+		}
+		*f = v
+	}
+	return nil
+}
+
+// UnmarshalJSON decodes the base64 payload fields.
+func (s *TimeTravelStepSnapshot) UnmarshalJSON(b []byte) error {
+	type alias TimeTravelStepSnapshot
+	if err := json.Unmarshal(b, (*alias)(s)); err != nil {
+		return err
+	}
+	return decodeProtoFields(&s.Output, &s.Error, &s.OriginalOutput)
+}
+
+// UnmarshalJSON decodes the base64 input field.
+func (s *TimeTravelRunStateSnapshot) UnmarshalJSON(b []byte) error {
+	type alias TimeTravelRunStateSnapshot
+	if err := json.Unmarshal(b, (*alias)(s)); err != nil {
+		return err
+	}
+	return decodeProtoFields(&s.Input)
+}
+
+// UnmarshalJSON decodes the base64 payload fields.
+func (s *TimeTravelStepOutputSnapshot) UnmarshalJSON(b []byte) error {
+	type alias TimeTravelStepOutputSnapshot
+	if err := json.Unmarshal(b, (*alias)(s)); err != nil {
+		return err
+	}
+	return decodeProtoFields(&s.Output, &s.OriginalOutput)
 }
 
 // ============================================================================
@@ -1227,6 +1279,16 @@ type UpcastResult struct {
 	Success bool   `json:"success"`
 	Data    any    `json:"data"`
 	Error   string `json:"error,omitempty"`
+	// StepsApplied is the version chain the server resolved. The server does not
+	// run SDK upcasters, so Data is the input unchanged.
+	StepsApplied []UpcastStep `json:"stepsApplied"`
+}
+
+// UpcastStep is one step of a TestUpcast version chain.
+type UpcastStep struct {
+	FromVersion int    `json:"fromVersion"`
+	ToVersion   int    `json:"toVersion"`
+	Description string `json:"description"`
 }
 
 // ============================================================================

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -275,6 +274,7 @@ func WithWatchKey(key string) KVWatchOption {
 
 // KVWatcher controls an active watch connection.
 type KVWatcher struct {
+	conn   *websocket.Conn
 	stopCh chan struct{}
 	doneCh chan struct{}
 }
@@ -287,7 +287,16 @@ func (w *KVWatcher) Stop() {
 	default:
 		close(w.stopCh)
 	}
+	closeWatchConn(w.conn)
 	<-w.doneCh // wait for goroutine to finish
+}
+
+// closeWatchConn sends a normal close frame and closes the socket, which ends
+// the watch goroutine's blocking read. Both calls are safe alongside a reader.
+func closeWatchConn(conn *websocket.Conn) {
+	_ = conn.WriteControl(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(time.Second))
+	_ = conn.Close()
 }
 
 // Watch connects to the server via WebSocket and calls callbacks when keys change.
@@ -336,6 +345,7 @@ func (b *KVBucket) Watch(ctx context.Context, callbacks KVWatchCallbacks, opts .
 	}
 
 	watcher := &KVWatcher{
+		conn:   conn,
 		stopCh: make(chan struct{}),
 		doneCh: make(chan struct{}),
 	}
@@ -345,35 +355,22 @@ func (b *KVBucket) Watch(ctx context.Context, callbacks KVWatchCallbacks, opts .
 		defer func() { _ = conn.Close() }()
 
 		for {
-			select {
-			case <-watcher.stopCh:
-				_ = conn.WriteMessage(websocket.CloseMessage,
-					websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-				return
-			default:
-			}
-
-			// Set a short read deadline so we can poll stopCh periodically.
-			_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
-
+			// Block on the read; Stop closes the socket to end it. A read deadline
+			// would not do: gorilla fails the connection on the first timeout (#2949).
 			var msg map[string]any
 			err := conn.ReadJSON(&msg)
 			if err != nil {
-				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-					if callbacks.OnClose != nil {
-						callbacks.OnClose()
-					}
-					return
-				}
-				// Timeout means no message yet; check stopCh and retry.
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					continue
-				}
 				// Check if we were asked to stop before reporting the error.
 				select {
 				case <-watcher.stopCh:
 					return
 				default:
+				}
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+					if callbacks.OnClose != nil {
+						callbacks.OnClose()
+					}
+					return
 				}
 				if callbacks.OnError != nil {
 					callbacks.OnError(err)
@@ -400,7 +397,8 @@ func (b *KVBucket) Watch(ctx context.Context, callbacks KVWatchCallbacks, opts .
 			}
 
 			// Value is base64-encoded when sent via JSON (Go's json.Marshal encodes []byte as base64).
-			if v, ok := msg["value"]; ok && v != nil {
+			// A delete carries "value":"", which stays nil; an empty put decodes to [].
+			if v, ok := msg["value"]; ok && v != nil && event.Operation != "delete" {
 				if s, ok := v.(string); ok {
 					decoded, err := base64.StdEncoding.DecodeString(s)
 					if err == nil {

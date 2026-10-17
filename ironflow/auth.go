@@ -64,10 +64,13 @@ func (c *Client) RotateAPIKey(ctx context.Context, id string) (*APIKeyWithSecret
 // Organization Management
 // ============================================================================
 
-// CreateOrganization creates a new organization.
+// CreateOrganization creates a new organization. It needs a platform
+// credential: a tenant credential cannot create an organization.
 func (c *Client) CreateOrganization(ctx context.Context, input CreateOrgInput) (*OrgInfo, error) {
 	var result OrgInfo
-	if err := c.request(ctx, "POST", "/api/v1/orgs", input, &result); err != nil {
+	// POST /api/v1/orgs always answers 403: tenants cannot create orgs, and a
+	// platform credential on a tenant route needs an X-Ironflow-Org header (#2945).
+	if err := c.request(ctx, "POST", "/api/v1/platform/orgs", input, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

@@ -38,6 +38,9 @@ func TestSchemaClient_TestUpcast_ServerShape(t *testing.T) {
 		if !result.Success || !reflect.DeepEqual(result.Data, data) {
 			t.Fatalf("result = %#v, want data %#v and success", result, data)
 		}
+		if want := []UpcastStep{{FromVersion: 1, ToVersion: 2, Description: "upcast to v2"}}; !reflect.DeepEqual(result.StepsApplied, want) {
+			t.Fatalf("steps = %#v, want %#v", result.StepsApplied, want)
+		}
 	}
 	_, err := client.Schemas().TestUpcast(context.Background(), TestUpcastInput{})
 	var sdkError *IronflowError

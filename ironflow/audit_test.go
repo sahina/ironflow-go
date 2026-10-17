@@ -124,25 +124,25 @@ func TestGetAuditTrail(t *testing.T) {
 				"events": [
 					{
 						"id": "ae-1",
-						"run_id": "run-1",
-						"function_id": "fn-1",
-						"event_type": "step.completed",
+						"runId": "run-1",
+						"functionId": "fn-1",
+						"eventType": "step.completed",
 						"payload": {"stepId": "s1", "durationMs": 150},
-						"created_at": "2026-02-27T00:00:00Z"
+						"createdAt": "2026-02-27T00:00:00Z"
 					},
 					{
 						"id": "ae-2",
-						"run_id": "run-1",
-						"function_id": "fn-1",
-						"step_id": "step-1",
-						"event_type": "step.started",
+						"runId": "run-1",
+						"functionId": "fn-1",
+						"stepId": "step-1",
+						"eventType": "step.started",
 						"payload": {},
 						"metadata": {"user": "test"},
-						"created_at": "2026-02-27T00:01:00Z"
+						"createdAt": "2026-02-27T00:01:00Z"
 					}
 				],
-				"total_count": 2,
-				"next_cursor": "cursor-next"
+				"totalCount": 2,
+				"nextCursor": "cursor-next"
 			}`
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(resp))

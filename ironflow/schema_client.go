@@ -132,5 +132,9 @@ func (sc *SchemaClient) TestUpcast(ctx context.Context, input TestUpcastInput) (
 	} else if resp.Msg.Data != nil {
 		result = resp.Msg.Data.AsMap()
 	}
-	return &UpcastResult{Success: true, Data: result}, nil
+	steps := make([]UpcastStep, 0, len(resp.Msg.StepsApplied))
+	for _, st := range resp.Msg.StepsApplied {
+		steps = append(steps, UpcastStep{FromVersion: int(st.FromVersion), ToVersion: int(st.ToVersion), Description: st.Description})
+	}
+	return &UpcastResult{Success: true, Data: result, StepsApplied: steps}, nil
 }

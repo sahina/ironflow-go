@@ -1454,11 +1454,11 @@ func (c *Client) UpdateConsumerGroup(ctx context.Context, name string, input Upd
 	}
 	if input.FilterExpr != nil {
 		group["filter_expr"] = *input.FilterExpr
-		paths = append(paths, "filter_expr")
+		paths = append(paths, "filterExpr")
 	}
 	if input.AckMode != nil {
 		group["ack_mode"] = mapAckModeToProto(*input.AckMode)
-		paths = append(paths, "ack_mode")
+		paths = append(paths, "ackMode")
 	}
 	if input.Backpressure != nil {
 		group["backpressure"] = mapBackpressureToProto(*input.Backpressure)
@@ -1466,15 +1466,15 @@ func (c *Client) UpdateConsumerGroup(ctx context.Context, name string, input Upd
 	}
 	if input.MaxInflight != nil {
 		group["max_inflight"] = *input.MaxInflight
-		paths = append(paths, "max_inflight")
+		paths = append(paths, "maxInflight")
 	}
 	if input.MaxRedeliveries != nil {
 		group["max_redeliveries"] = *input.MaxRedeliveries
-		paths = append(paths, "max_redeliveries")
+		paths = append(paths, "maxRedeliveries")
 	}
 	if input.RedeliverDelayMs != nil {
 		group["redeliver_delay_ms"] = *input.RedeliverDelayMs
-		paths = append(paths, "redeliver_delay_ms")
+		paths = append(paths, "redeliverDelayMs")
 	}
 	if input.Metadata != nil {
 		group["metadata"] = *input.Metadata
@@ -1490,8 +1490,9 @@ func (c *Client) UpdateConsumerGroup(ctx context.Context, name string, input Upd
 
 	var resp consumerGroupResponse
 	if err := c.request(ctx, "POST", "/ironflow.v1.PubSubService/UpdateConsumerGroup", map[string]any{
-		"group":       group,
-		"update_mask": map[string]any{"paths": paths},
+		"group": group,
+		// protojson encodes a FieldMask as one comma-joined string of camelCase paths.
+		"update_mask": strings.Join(paths, ","),
 	}, &resp); err != nil {
 		return nil, err
 	}
@@ -2055,12 +2056,31 @@ func (c *Client) GetAuditTrail(ctx context.Context, runID string, opts ...GetAud
 		}
 	}
 
-	var resp AuditTrailResult
+	// The Connect route answers in protojson camelCase; AuditEvent's snake_case
+	// tags match the REST /api/v1/audit route that ListAuditEvents reads.
+	var wire struct {
+		Events []struct {
+			ID         string            `json:"id"`
+			RunID      string            `json:"runId"`
+			FunctionID string            `json:"functionId"`
+			StepID     string            `json:"stepId"`
+			EventType  string            `json:"eventType"`
+			Payload    map[string]any    `json:"payload"`
+			Metadata   map[string]string `json:"metadata"`
+			CreatedAt  string            `json:"createdAt"`
+		} `json:"events"`
+		TotalCount int    `json:"totalCount"`
+		NextCursor string `json:"nextCursor"`
+	}
 
-	if err := c.request(ctx, "POST", "/ironflow.v1.AuditService/GetAuditTrail", req, &resp); err != nil {
+	if err := c.request(ctx, "POST", "/ironflow.v1.AuditService/GetAuditTrail", req, &wire); err != nil {
 		return nil, err
 	}
 
+	resp := AuditTrailResult{Events: make([]AuditEvent, len(wire.Events)), TotalCount: wire.TotalCount, NextCursor: wire.NextCursor}
+	for i, e := range wire.Events {
+		resp.Events[i] = AuditEvent(e)
+	}
 	return &resp, nil
 }
 

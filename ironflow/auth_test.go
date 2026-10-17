@@ -228,8 +228,8 @@ func TestCreateOrganization(t *testing.T) {
 		if receivedMethod != "POST" {
 			t.Errorf("expected POST, got %s", receivedMethod)
 		}
-		if receivedPath != "/api/v1/orgs" {
-			t.Errorf("expected /api/v1/orgs, got %s", receivedPath)
+		if receivedPath != "/api/v1/platform/orgs" {
+			t.Errorf("expected /api/v1/platform/orgs, got %s", receivedPath)
 		}
 		if receivedBody["name"] != "My Org" {
 			t.Errorf("expected name 'My Org', got %v", receivedBody["name"])

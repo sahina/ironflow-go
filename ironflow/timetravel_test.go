@@ -49,7 +49,7 @@ func TestTimeTravelTimelineEvent_Marshal(t *testing.T) {
 func TestTimeTravelStepOutputSnapshot_Marshal(t *testing.T) {
 	snap := TimeTravelStepOutputSnapshot{
 		StepID: "step-1", Status: "completed",
-		Output: `{"result":"ok"}`, OriginalOutput: `{"result":"old"}`,
+		Output: json.RawMessage(`{"result":"ok"}`), OriginalOutput: json.RawMessage(`{"result":"old"}`),
 		Patched: true, Injected: true,
 	}
 	data, err := json.Marshal(snap)
@@ -68,6 +68,30 @@ func TestTimeTravelStepOutputSnapshot_Marshal(t *testing.T) {
 	}
 	if decoded.StepID != "step-1" {
 		t.Errorf("got stepId %s", decoded.StepID)
+	}
+	if string(decoded.Output) != `{"result":"ok"}` {
+		t.Errorf("round-trip output = %s", decoded.Output)
+	}
+}
+
+// The server sends proto bytes base64-encoded; callers get the JSON (#2942).
+func TestTimeTravelSnapshots_DecodeProtoBytes(t *testing.T) {
+	var step TimeTravelStepOutputSnapshot
+	if err := json.Unmarshal([]byte(`{"stepId":"r:a:0","output":"eyJuIjo0Mn0=","originalOutput":null}`), &step); err != nil {
+		t.Fatal(err)
+	}
+	if string(step.Output) != `{"n":42}` || step.OriginalOutput != nil {
+		t.Errorf("output = %s, original = %s", step.Output, step.OriginalOutput)
+	}
+	var run TimeTravelRunStateSnapshot
+	if err := json.Unmarshal([]byte(`{"runId":"r","input":"e30=","steps":[{"stepId":"r:a:0","output":"eyJuIjo0Mn0=","error":"Ingi"}]}`), &run); err != nil {
+		t.Fatal(err)
+	}
+	if string(run.Input) != `{}` || string(run.Steps[0].Output) != `{"n":42}` || string(run.Steps[0].Error) != `"x"` {
+		t.Errorf("run = input %s, output %s, error %s", run.Input, run.Steps[0].Output, run.Steps[0].Error)
+	}
+	if err := json.Unmarshal([]byte(`{"output":"%%%"}`), &step); err == nil {
+		t.Error("bad base64 should fail")
 	}
 }
 
