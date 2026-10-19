@@ -111,6 +111,13 @@ const (
 
 	// DefaultWorkerReconnectDelay is the default reconnect delay.
 	DefaultWorkerReconnectDelay = 5 * time.Second
+
+	// DefaultWorkerPollWait is the default server-side hold on an idle job poll.
+	DefaultWorkerPollWait = 20 * time.Second
+
+	// maxWorkerPollWait is the server's cap on a held poll; the 30s HTTP
+	// timeout leaves a margin above it.
+	maxWorkerPollWait = 25 * time.Second
 )
 
 // ConfiguredServerURL returns IRONFLOW_SERVER_URL, or "" when it is unset or blank.

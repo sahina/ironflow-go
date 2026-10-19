@@ -51,8 +51,6 @@ func TestRunStatusSwitchesCoverTheProtoEnum(t *testing.T) {
 }
 
 // The public RunStatus constants must not claim statuses the wire cannot carry.
-// RunStatusPending is the deliberate exception: the proto reserves the name, so
-// it is deprecated but still exported for source compatibility.
 func TestRunStatusConstantsAreReachableOnTheWire(t *testing.T) {
 	all := []RunStatus{
 		RunStatusRunning, RunStatusCompleted, RunStatusFailed, RunStatusCancelled,
@@ -72,11 +70,11 @@ func TestRunStatusConstantsAreReachableOnTheWire(t *testing.T) {
 
 	// Retired: reserved in the proto, so it must stay unmappable rather than
 	// silently encode to a name the server discards.
-	if _, err := runStatusToWire(RunStatusPending); err == nil {
-		t.Error("RunStatusPending is reserved in the proto and must not encode")
+	if _, err := runStatusToWire(RunStatus("pending")); err == nil {
+		t.Error("\"pending\" is reserved in the proto and must not encode")
 	}
 	if _, ok := ironflowv1.RunStatus_value["RUN_STATUS_PENDING"]; ok {
-		t.Error("RUN_STATUS_PENDING is no longer reserved in the proto — revisit the deprecation")
+		t.Error("RUN_STATUS_PENDING is no longer reserved in the proto — revisit runStatusToWire rejecting pending")
 	}
 }
 

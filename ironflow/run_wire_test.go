@@ -84,7 +84,8 @@ func TestGetRunOmittedZeroFields(t *testing.T) {
 	}
 }
 
-// A status the SDK cannot name is an error, never a silently different status.
+// A status off the wire's spelling is an error, never a silently different
+// status. A new RUN_STATUS_* name passes through instead; see TestUnknownEnumPassesThrough.
 // RUN_STATUS_UNSPECIFIED reaches the client as an ABSENT key, because Connect
 // omits the zero enum value — so the empty-string case is the one that matters.
 func TestRunStatusStrictPolicy(t *testing.T) {
@@ -92,7 +93,6 @@ func TestRunStatusStrictPolicy(t *testing.T) {
 		{"absent status (UNSPECIFIED on the wire)", `{"id":"run-1","functionId":"fn-1"}`},
 		{"explicit unspecified", `{"id":"run-1","status":"RUN_STATUS_UNSPECIFIED"}`},
 		{"retired pending", `{"id":"run-1","status":"RUN_STATUS_PENDING"}`},
-		{"unknown future status", `{"id":"run-1","status":"RUN_STATUS_QUARANTINED"}`},
 		{"lowercase public value", `{"id":"run-1","status":"completed"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -114,7 +114,7 @@ func TestListRunsFailsOnBadStatusAndNamesTheRun(t *testing.T) {
 	client, closeFn := runWireClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"runs":[
 			{"id":"run-ok","functionId":"fn-1","status":"RUN_STATUS_COMPLETED"},
-			{"id":"run-bad","functionId":"fn-2","status":"RUN_STATUS_NONSENSE"}
+			{"id":"run-bad","functionId":"fn-2","status":"nonsense"}
 		],"totalCount":2}`))
 	})
 	defer closeFn()
@@ -135,7 +135,7 @@ func TestListRunsNamesTheIndexWhenTheRunIDIsEmpty(t *testing.T) {
 	client, closeFn := runWireClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"runs":[
 			{"id":"run-ok","functionId":"fn-1","status":"RUN_STATUS_COMPLETED"},
-			{"functionId":"fn-2","status":"RUN_STATUS_NONSENSE"}
+			{"functionId":"fn-2","status":"nonsense"}
 		],"totalCount":2}`))
 	})
 	defer closeFn()
@@ -153,7 +153,7 @@ func TestListRunsNamesTheIndexWhenTheRunIDIsEmpty(t *testing.T) {
 	}
 }
 
-// The status filter lands on a protobuf enum field. RunStatusPending has no
+// The status filter lands on a protobuf enum field. "pending" has no
 // wire equivalent (the proto reserves the name), so it must fail client-side
 // rather than reach the server as a value it silently discards.
 func TestListRunsStatusFilterEncoding(t *testing.T) {
@@ -191,8 +191,8 @@ func TestListRunsStatusFilterEncoding(t *testing.T) {
 		})
 		defer closeFn()
 
-		if _, err := client.ListRuns(context.Background(), &ListRunsOptions{Status: RunStatusPending}); err == nil {
-			t.Fatal("expected RunStatusPending to be rejected client-side")
+		if _, err := client.ListRuns(context.Background(), &ListRunsOptions{Status: RunStatus("pending")}); err == nil {
+			t.Fatal("expected \"pending\" to be rejected client-side")
 		}
 	})
 }
@@ -293,7 +293,7 @@ func TestCancelRunDecodesCanonicalStatus(t *testing.T) {
 // each one has to actually propagate it. GetRun and ListRuns are covered above;
 // these pin the other two.
 func TestCancelAndResumeRunPropagateStatusErrors(t *testing.T) {
-	const badStatus = `{"id":"run-1","functionId":"fn-1","status":"RUN_STATUS_NONSENSE"}`
+	const badStatus = `{"id":"run-1","functionId":"fn-1","status":"nonsense"}`
 
 	t.Run("CancelRun", func(t *testing.T) {
 		client, closeFn := runWireClient(t, func(w http.ResponseWriter, _ *http.Request) {

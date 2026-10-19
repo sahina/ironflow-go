@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -62,6 +63,13 @@ type WorkerConfig struct {
 	// while a job still runs (default: 1s). Polling worker only: the streaming
 	// worker reports each step over its stream.
 	CheckpointInterval time.Duration
+
+	// PollWait is how long the server may hold an idle job poll before it
+	// answers 204 (default: 20s; whole seconds, capped at 25s so the held
+	// request stays inside the 30s HTTP timeout). A negative value turns long
+	// polling off. Polling worker only; an older server ignores it and the
+	// worker keeps its 1s idle wait.
+	PollWait time.Duration
 
 	// DrainTimeout is how long Drain waits for active jobs before it cancels
 	// them (default: 30s). On an engine Shutdown, the streaming worker uses the
@@ -177,6 +185,9 @@ func NewWorker(config WorkerConfig) *Worker {
 	if config.ReconnectDelay == 0 {
 		config.ReconnectDelay = DefaultWorkerReconnectDelay
 	}
+	if config.PollWait == 0 {
+		config.PollWait = DefaultWorkerPollWait
+	}
 
 	// Initialize logger
 	logger := config.Logger
@@ -197,7 +208,7 @@ func NewWorker(config WorkerConfig) *Worker {
 		config:     config,
 		functions:  functions,
 		workerID:   generateWorkerID(),
-		httpClient: &http.Client{Timeout: DefaultClientTimeout},
+		httpClient: withSDKHeader(&http.Client{Timeout: DefaultClientTimeout}),
 		logger:     logger,
 		executor: &jobExecutor{
 			functions:          functions,
@@ -569,7 +580,7 @@ func (w *Worker) pollForJobs(ctx context.Context) error {
 			continue
 		}
 
-		jobs, err := w.requestJobs(ctx, free)
+		jobs, held, err := w.requestJobs(ctx, free)
 		if errors.Is(err, errNotFound) {
 			w.lostRegistration()
 			// Wait before registering again: behind a load balancer the next
@@ -580,6 +591,10 @@ func (w *Worker) pollForJobs(ctx context.Context) error {
 			return nil // connect returns; Run registers again
 		}
 		if err != nil {
+			// Stop and drain cancel ctx to abort a held poll; that is not a failure.
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			// Key revoked mid-run: let it out to Run, which stops the worker
 			// rather than polling a 401 every 5s (#1673).
 			if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrForbidden) {
@@ -593,7 +608,11 @@ func (w *Worker) pollForJobs(ctx context.Context) error {
 		}
 
 		if len(jobs) == 0 {
-			// No jobs available
+			// The server held this poll, so polling again at once is not a spin.
+			// Without the header (older server, or long polling off) keep the sleep.
+			if held {
+				continue
+			}
 			if err := w.wait(ctx, time.Second); err != nil {
 				return err
 			}
@@ -635,12 +654,25 @@ type jobPollResponse struct {
 	Jobs []*jobAssignment `json:"jobs"`
 }
 
-// requestJobs requests up to `available` jobs from the server.
-func (w *Worker) requestJobs(ctx context.Context, available int) ([]*jobAssignment, error) {
+// pollWaitSeconds is the wait param to send; 0 means omit it (long polling off).
+func (w *Worker) pollWaitSeconds() int {
+	d := min(w.config.PollWait, maxWorkerPollWait)
+	if d < 0 {
+		return 0
+	}
+	return max(int(d/time.Second), 1)
+}
+
+// requestJobs requests up to `available` jobs from the server. held reports
+// that the server applied a poll wait (Ironflow-Poll-Wait > 0) to an empty answer.
+func (w *Worker) requestJobs(ctx context.Context, available int) (jobs []*jobAssignment, held bool, err error) {
 	url := w.config.ServerURL + fmt.Sprintf("/api/v1/workers/%s/jobs?available=%d", w.workerID, available)
+	if wait := w.pollWaitSeconds(); wait > 0 {
+		url += fmt.Sprintf("&wait=%d", wait)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	for k, v := range w.getHeaders() {
 		req.Header.Set(k, v)
@@ -648,36 +680,37 @@ func (w *Worker) requestJobs(ctx context.Context, available int) ([]*jobAssignme
 
 	resp, err := w.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNoContent {
-		return nil, nil
+		n, _ := strconv.Atoi(resp.Header.Get("Ironflow-Poll-Wait"))
+		return nil, n > 0, nil
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		if authErr := authError(resp, "failed to get job"); authErr != nil {
-			return nil, authErr
+			return nil, false, authErr
 		}
 		if resp.StatusCode == http.StatusNotFound {
-			return nil, fmt.Errorf("%w: worker not registered", errNotFound)
+			return nil, false, fmt.Errorf("%w: worker not registered", errNotFound)
 		}
-		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+		return nil, false, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
 	var pr jobPollResponse
 	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if len(pr.Jobs) > 0 {
-		return pr.Jobs, nil // capacity batched response
+		return pr.Jobs, false, nil // capacity batched response
 	}
 	if pr.JobID != "" {
 		single := pr.jobAssignment
-		return []*jobAssignment{&single}, nil // legacy single-object response
+		return []*jobAssignment{&single}, false, nil // legacy single-object response
 	}
-	return nil, nil
+	return nil, false, nil
 }
 
 // processJob processes a job asynchronously.

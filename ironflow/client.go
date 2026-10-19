@@ -147,9 +147,9 @@ func NewClient(config ClientConfig) *Client {
 
 	httpClient := config.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{
-			Timeout: timeout,
-		}
+		httpClient = withSDKHeader(&http.Client{Timeout: timeout})
+	} else {
+		httpClient = withSDKHeader(httpClient)
 	}
 
 	// Set up retry configuration
@@ -368,6 +368,26 @@ func (r *runResultWire) toEmitSyncResult() (*EmitSyncResult, error) {
 	return result, nil
 }
 
+func isUpperSnake(s string) bool {
+	for _, r := range s {
+		if (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// futureEnumFromWire returns the lowercased name of an enum value a newer server
+// added, so the caller can log it or branch on it. Absent, UNSPECIFIED and a value
+// off the wire's spelling are not new values and return false.
+func futureEnumFromWire(value, prefix string) (string, bool) {
+	name, ok := strings.CutPrefix(value, prefix)
+	if !ok || name == "" || name == "UNSPECIFIED" || !isUpperSnake(name) {
+		return "", false
+	}
+	return strings.ToLower(name), true
+}
+
 func runStatusFromWire(status string) (RunStatus, error) {
 	switch status {
 	case "RUN_STATUS_RUNNING":
@@ -384,13 +404,19 @@ func runStatusFromWire(status string) (RunStatus, error) {
 		return RunStatusWaitingForCapacity, nil
 	case "RUN_STATUS_WAITING":
 		return RunStatusWaiting, nil
-	default:
-		return "", NewError(
-			fmt.Sprintf("invalid run status on the wire: %q", status),
-			"INVALID_RESPONSE",
-			false,
-		)
 	}
+	// A status a newer server added passes through, so the caller can log it or
+	// branch on it (ADR 0125: new enum values are allowed in a minor). Absent,
+	// UNSPECIFIED, the retired PENDING and a value off the wire's spelling are
+	// malformed, not new, and stay errors.
+	if name, ok := futureEnumFromWire(status, "RUN_STATUS_"); ok && name != "pending" {
+		return RunStatus(name), nil
+	}
+	return "", NewError(
+		fmt.Sprintf("invalid run status on the wire: %q", status),
+		"INVALID_RESPONSE",
+		false,
+	)
 }
 
 // encodeProtoBytes / decodeProtoBytes bridge a proto `bytes` field, which
@@ -421,16 +447,17 @@ func decodeProtoBytes(encoded string) (json.RawMessage, error) {
 	return json.RawMessage(decoded), nil
 }
 
-// runStatusToWire is the inverse of runStatusFromWire. Status filters land on a
-// protobuf enum field, so the canonical RUN_STATUS_* name is the only spelling
-// that survives the trip. An unmappable value is NOT rejected by the server:
+// runStatusToWire is the inverse of runStatusFromWire for the statuses this SDK
+// names; a status passed through from a newer server is rejected as a filter.
+// Status filters land on a protobuf enum field, so the canonical RUN_STATUS_*
+// name is the only spelling that survives the trip. An unmappable value is NOT rejected by the server:
 // Connect unmarshals with DiscardUnknown, which drops unrecognized enum values,
 // so the field is silently zeroed to RUN_STATUS_UNSPECIFIED and the handler
 // reads that as "no filter" — the caller gets unfiltered runs and no error
 // (#1919). This switch is the only place that mistake is ever caught.
 //
 // Written as an explicit switch rather than a string transform on purpose:
-// RunStatusPending has no wire equivalent (the proto reserves the name), and a
+// "pending" has no wire equivalent (the proto reserves the name), and a
 // transform would mint a plausible-looking value the server discards.
 func runStatusToWire(status RunStatus) (string, error) {
 	switch status {
@@ -1200,7 +1227,8 @@ func (c *Client) ListWorkers(ctx context.Context) ([]WorkerInfo, error) {
 // Consumer Group Management
 // ============================================================================
 
-// AckMode defines the acknowledgment mode for consumer groups.
+// AckMode defines the acknowledgment mode for consumer groups. A server newer than
+// this SDK can send a value not listed here; keep a default branch when you switch on it.
 type AckMode string
 
 const (
@@ -1210,7 +1238,8 @@ const (
 	AckModeManual AckMode = "manual"
 )
 
-// BackpressureMode defines how backpressure is handled.
+// BackpressureMode defines how backpressure is handled. A server newer than this SDK
+// can send a value not listed here; keep a default branch when you switch on it.
 type BackpressureMode string
 
 const (
@@ -1222,7 +1251,8 @@ const (
 	BackpressureBuffer BackpressureMode = "buffer"
 )
 
-// ConsumerGroupStatus defines the status of a consumer group.
+// ConsumerGroupStatus defines the status of a consumer group. A server newer than this
+// SDK can send a value not listed here; keep a default branch when you switch on it.
 type ConsumerGroupStatus string
 
 const (
@@ -1545,6 +1575,15 @@ func WithJoinConsumerID(consumerID string) JoinConsumerGroupOption {
 
 // WithJoinTransport sets the transport for JoinConsumerGroup.
 // Valid values: "websocket" (default), "grpc". Both can ack, nak and term.
+//
+// With "grpc" the subscription is one SubscribeBidirectional stream. It lives
+// until the ctx passed to JoinConsumerGroup is done or Unsubscribe is called.
+// A retryable disconnect, or 90 s with no frame from the server,
+// reconnects silently with backoff; Errors() carries only the error that ends
+// the subscription, CANCELED or DEADLINE_EXCEEDED when ctx ends it. Ack, nak and
+// term wait for the server's result. After a reconnect they return ErrStaleAck
+// for events of the old stream, which the server redelivers. On an AUTO group
+// they do nothing.
 func WithJoinTransport(transport string) JoinConsumerGroupOption {
 	return func(o *JoinConsumerGroupOptions) {
 		o.Transport = transport
@@ -1555,6 +1594,11 @@ func WithJoinTransport(transport string) JoinConsumerGroupOption {
 //
 // Joins over WebSocket unless WithJoinTransport("grpc") says otherwise.
 // Use the Events() channel to receive events.
+//
+// With the "grpc" transport, ctx bounds the subscription's whole life, not only
+// the join: the stream ends when ctx is done or Unsubscribe is called. A done
+// ctx is reported on Errors() as CANCELED or DEADLINE_EXCEEDED. Retryable
+// disconnects reconnect silently.
 //
 // Example:
 //
@@ -1614,53 +1658,6 @@ func (c *Client) joinConsumerGroupWebSocket(ctx context.Context, groupName strin
 	}
 
 	return sub, nil
-}
-
-// joinConsumerGroupGrpc joins a consumer group using HTTP streaming transport.
-func (c *Client) joinConsumerGroupGrpc(ctx context.Context, groupName string, options *JoinConsumerGroupOptions) (*AckableSubscription, error) {
-	// Get consumer group to find pattern
-	group, err := c.GetConsumerGroup(ctx, groupName, WithConsumerGroupNamespace(options.Namespace))
-	if err != nil {
-		return nil, fmt.Errorf("failed to get consumer group: %w", err)
-	}
-
-	// Create HTTP streaming subscription client
-	grpcClient := c.CreateGrpcSubscriptionClient()
-	if err := grpcClient.Connect(ctx); err != nil {
-		return nil, fmt.Errorf("failed to connect: %w", err)
-	}
-
-	// Subscribe with manual ack mode
-	grpcSub, err := grpcClient.SubscribeAckable(ctx, group.Pattern, &SubscribeOptions{
-		ConsumerGroup: groupName,
-		AckMode:       AckModeManual,
-		Namespace:     options.Namespace,
-	})
-	if err != nil {
-		grpcClient.Close()
-		return nil, err
-	}
-
-	return grpcJoinSubscription(grpcClient, grpcSub), nil
-}
-
-// grpcJoinSubscription adapts a ConnectRPC group subscription to the
-// AckableSubscription that JoinConsumerGroup returns. The adapter owns client.
-func grpcJoinSubscription(client *GrpcSubscriptionClient, sub *GrpcAckableSubscription) *AckableSubscription {
-	return &AckableSubscription{
-		Subscription: &Subscription{
-			ID:      sub.ID,
-			Pattern: sub.Pattern,
-			events:  sub.events,
-			errors:  sub.errors,
-			done:    make(chan struct{}),
-			stop: func() {
-				sub.Unsubscribe()
-				client.Close()
-			},
-		},
-		grpc: sub,
-	}
 }
 
 // DetectTransport auto-detects the best available transport for subscriptions.
@@ -1726,6 +1723,10 @@ func mapAckModeToProto(mode AckMode) string {
 	case AckModeManual:
 		return "ACK_MODE_MANUAL"
 	default:
+		// A value read from a newer server goes back as it came, not as the default.
+		if mode != "" {
+			return "ACK_MODE_" + strings.ToUpper(string(mode))
+		}
 		return "ACK_MODE_AUTO"
 	}
 }
@@ -1737,6 +1738,10 @@ func mapBackpressureToProto(mode BackpressureMode) string {
 	case BackpressureBlock:
 		return "BACKPRESSURE_MODE_BLOCK"
 	default:
+		// A value read from a newer server goes back as it came, not as the default.
+		if mode != "" {
+			return "BACKPRESSURE_MODE_" + strings.ToUpper(string(mode))
+		}
 		return "BACKPRESSURE_MODE_BUFFER"
 	}
 }
@@ -1746,6 +1751,9 @@ func mapAckModeFromProto(mode string) AckMode {
 	case "ACK_MODE_MANUAL":
 		return AckModeManual
 	default:
+		if name, ok := futureEnumFromWire(mode, "ACK_MODE_"); ok {
+			return AckMode(name)
+		}
 		return AckModeAuto
 	}
 }
@@ -1757,6 +1765,9 @@ func mapBackpressureFromProto(mode string) BackpressureMode {
 	case "BACKPRESSURE_MODE_BLOCK":
 		return BackpressureBlock
 	default:
+		if name, ok := futureEnumFromWire(mode, "BACKPRESSURE_MODE_"); ok {
+			return BackpressureMode(name)
+		}
 		return BackpressureBuffer
 	}
 }
@@ -1768,6 +1779,10 @@ func mapConsumerGroupStatusToProto(status ConsumerGroupStatus) string {
 	case ConsumerGroupStatusDeleted:
 		return "CONSUMER_GROUP_STATUS_DELETED"
 	default:
+		// A value read from a newer server goes back as it came, not as the default.
+		if status != "" {
+			return "CONSUMER_GROUP_STATUS_" + strings.ToUpper(string(status))
+		}
 		return "CONSUMER_GROUP_STATUS_ACTIVE"
 	}
 }
@@ -1779,6 +1794,9 @@ func mapConsumerGroupStatusFromProto(status string) ConsumerGroupStatus {
 	case "CONSUMER_GROUP_STATUS_DELETED":
 		return ConsumerGroupStatusDeleted
 	default:
+		if name, ok := futureEnumFromWire(status, "CONSUMER_GROUP_STATUS_"); ok {
+			return ConsumerGroupStatus(name)
+		}
 		return ConsumerGroupStatusActive
 	}
 }

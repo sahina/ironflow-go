@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -115,6 +116,11 @@ type GrpcSubscription struct {
 	// done signals subscription closure
 	done chan struct{}
 	once sync.Once
+
+	// sendMu is held across every send on events. Close closes the client's
+	// done first, then takes sendMu to close events, so a send never meets a
+	// closed channel.
+	sendMu sync.Mutex
 
 	// consumerID is the server-minted subscription_id of a consumer-group
 	// stream: the only identity AckEvent accepts for its events (ADR 0094).
@@ -295,7 +301,9 @@ func (c *GrpcSubscriptionClient) Close() {
 
 		// Close all subscriptions
 		for _, sub := range c.subscriptions {
+			sub.sendMu.Lock()
 			close(sub.events)
+			sub.sendMu.Unlock()
 			close(sub.errors)
 			sub.cancel()
 		}
@@ -415,43 +423,44 @@ func (c *GrpcSubscriptionClient) streamSubscription(ctx context.Context, sub *Gr
 					sub.setConsumerID(id)
 				}
 
-				// Convert proto Struct data to json.RawMessage.
-				var dataJSON json.RawMessage
-				if msg.GetData() != nil {
-					dataJSON, err = protojson.Marshal(msg.GetData())
-					if err != nil {
-						continue // Skip malformed messages.
-					}
+				event, convErr := subscriptionEventFromProto(msg)
+				if convErr != nil {
+					continue // Skip malformed messages.
 				}
 
-				event := &SubscriptionEvent{
-					ID:    msg.GetEventId(),
-					Topic: msg.GetTopic(),
-					Data:  dataJSON,
-				}
-
-				if meta := msg.GetMetadata(); meta != nil {
-					event.Meta = &EventMeta{
-						Sequence:      msg.GetSequence(),
-						SequenceExact: strconv.FormatUint(msg.GetSequence(), 10),
+				// Without a cursor a full channel drops the event. With one it
+				// waits: dropping this event and delivering the next would move
+				// the cursor past it. The stream is this subscription's own, so
+				// waiting holds back nothing else; if the server's buffer for it
+				// fills, the server ends the stream with Unavailable to resume.
+				delivered, ended := false, false
+				sub.sendMu.Lock()
+				if cursorEnabled {
+					select {
+					case sub.events <- event:
+						delivered = true
+					case <-sub.done:
+						ended = true
+					case <-c.done:
+						ended = true
+					case <-ctx.Done():
+						ended = true
 					}
-					if ts := meta.GetTimestamp(); ts != nil {
-						event.Meta.Timestamp = ts.AsTime().Format(time.RFC3339Nano)
+				} else {
+					select {
+					case sub.events <- event:
+						delivered = true
+					case <-sub.done:
+						ended = true
+					case <-c.done:
+						ended = true
+					default:
 					}
 				}
-
-				delivered := false
-				select {
-				case sub.events <- event:
-					delivered = true
-				case <-sub.done:
+				sub.sendMu.Unlock()
+				if ended {
 					_ = stream.Close()
 					return
-				case <-c.done:
-					_ = stream.Close()
-					return
-				default:
-					// Channel full, drop event without advancing the cursor.
 				}
 
 				if delivered && cursorEnabled && msg.GetSequence() > 0 {
@@ -476,6 +485,40 @@ func (c *GrpcSubscriptionClient) streamSubscription(ctx context.Context, sub *Gr
 		}
 		delay = nextSubscriptionReconnectDelay(delay, c.config.MaxReconnectDelay, c.config.ReconnectBackoff)
 	}
+}
+
+// subscriptionEventFromProto converts a streamed proto event to the SDK type.
+// The Subscribe and SubscribeBidirectional streams share it.
+func subscriptionEventFromProto(msg *ironflowv1.SubscriptionEvent) (*SubscriptionEvent, error) {
+	// data carries a JSON object; data_value carries any other payload.
+	var dataJSON json.RawMessage
+	var err error
+	switch {
+	case msg.GetData() != nil:
+		dataJSON, err = protojson.Marshal(msg.GetData())
+	case msg.GetDataValue() != nil:
+		dataJSON, err = protojson.Marshal(msg.GetDataValue())
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	event := &SubscriptionEvent{
+		ID:    msg.GetEventId(),
+		Topic: msg.GetTopic(),
+		Data:  dataJSON,
+	}
+
+	if meta := msg.GetMetadata(); meta != nil {
+		event.Meta = &EventMeta{
+			Sequence:      msg.GetSequence(),
+			SequenceExact: strconv.FormatUint(msg.GetSequence(), 10),
+		}
+		if ts := meta.GetTimestamp(); ts != nil {
+			event.Meta.Timestamp = ts.AsTime().Format(time.RFC3339Nano)
+		}
+	}
+	return event, nil
 }
 
 func (c *GrpcSubscriptionClient) reportSubscriptionError(sub *GrpcSubscription, err error) {
@@ -570,20 +613,36 @@ func (s *GrpcAckableSubscription) Term(eventID string) error {
 	return s.sendAck(eventID, ironflowv1.AckType_ACK_TYPE_TERM, 0)
 }
 
-// ackTimeout bounds one AckEvent call: the stream's HTTP client has no timeout.
-const ackTimeout = 30 * time.Second
+// ackTimeout bounds one ack: the stream's HTTP client has no timeout. A
+// variable so tests can shorten it.
+var ackTimeout = 30 * time.Second
+
+// nakDelayMs converts a NAK delay to the int32 milliseconds on the wire. A
+// delay out of range is refused, not wrapped.
+func nakDelayMs(eventID string, delay time.Duration) (int32, error) {
+	ms := delay.Milliseconds()
+	if ms < 0 || ms > math.MaxInt32 {
+		return 0, &AckError{EventID: eventID, Code: "invalid_argument",
+			Message: fmt.Sprintf("redeliver delay %s is outside 0 to %d ms", delay, math.MaxInt32)}
+	}
+	return int32(ms), nil
+}
 
 func (s *GrpcAckableSubscription) sendAck(eventID string, ackType ironflowv1.AckType, delay time.Duration) error {
+	delayMs, err := nakDelayMs(eventID, delay)
+	if err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ackTimeout)
 	defer cancel()
 	// sdkcoverage: POST /ironflow.v1.PubSubService/AckEvent
-	_, err := s.client.pubsubClient.AckEvent(ctx, connect.NewRequest(&ironflowv1.AckEventRequest{
+	_, err = s.client.pubsubClient.AckEvent(ctx, connect.NewRequest(&ironflowv1.AckEventRequest{
 		Namespace:        s.namespace,
 		GroupName:        s.group,
 		ConsumerId:       s.currentConsumerID(),
 		EventId:          eventID,
 		AckType:          ackType,
-		RedeliverDelayMs: int32(delay.Milliseconds()),
+		RedeliverDelayMs: delayMs,
 	}))
 	return err
 }

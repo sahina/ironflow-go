@@ -370,3 +370,139 @@ func TestGrpcSubscriptionClient_PreservesReplayUntilCursorRequestAccepted(t *tes
 		t.Fatalf("retry cursor = %v, want 400", requests[1].GetOptions().StartAfterSequence)
 	}
 }
+
+// floodPubSubServer sends every sequence from the request's cursor up to last,
+// then holds the stream open.
+type floodPubSubServer struct {
+	ironflowv1connect.UnimplementedPubSubServiceHandler
+	last uint64
+
+	mu    sync.Mutex
+	calls int
+	sent  bool
+}
+
+func (s *floodPubSubServer) Subscribe(
+	ctx context.Context,
+	req *connect.Request[ironflowv1.SubscribeRequest],
+	stream *connect.ServerStream[ironflowv1.SubscriptionEvent],
+) error {
+	s.mu.Lock()
+	s.calls++
+	s.mu.Unlock()
+	for seq := req.Msg.GetOptions().GetStartAfterSequence() + 1; seq <= s.last; seq++ {
+		if err := stream.Send(&ironflowv1.SubscriptionEvent{
+			SubscriptionId: "sub-1",
+			EventId:        "event",
+			Topic:          "orders.created",
+			Sequence:       seq,
+			Metadata:       &ironflowv1.EventMetadata{},
+		}); err != nil {
+			return err
+		}
+	}
+	s.mu.Lock()
+	s.sent = true
+	s.mu.Unlock()
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// TestGrpcSubscriptionClient_FullBufferWaitsInsteadOfSkipping: an app that
+// reads slower than events arrive must not lose events past a full buffer.
+// Dropping one and delivering the next would move the cursor past it.
+func TestGrpcSubscriptionClient_FullBufferWaitsInsteadOfSkipping(t *testing.T) {
+	service := &floodPubSubServer{last: 550}
+	path, handler := ironflowv1connect.NewPubSubServiceHandler(service)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+	server := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
+	server.Start()
+	defer server.Close()
+
+	client := NewGrpcSubscriptionClient(GrpcSubscriptionClientConfig{
+		ServerURL:         server.URL,
+		ReconnectDelay:    time.Millisecond,
+		MaxReconnectDelay: time.Millisecond,
+		ReconnectBackoff:  1,
+		Logger:            NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	cursor := uint64(400)
+	sub, err := client.Subscribe(context.Background(), "orders.*", &SubscribeOptions{
+		StartAfterSequence: &cursor,
+	})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	// Read nothing for a while, so the flood backs up against the buffer.
+	time.Sleep(500 * time.Millisecond)
+
+	for want := uint64(401); want <= service.last; want++ {
+		select {
+		case event := <-sub.Events():
+			if event.Meta == nil || event.Meta.Sequence != want {
+				t.Fatalf("event sequence = %v, want %d: a gap", event.Meta, want)
+			}
+		case err := <-sub.Errors():
+			t.Fatalf("subscription error before sequence %d: %v", want, err)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("sequence %d never arrived: the full buffer dropped it", want)
+		}
+	}
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if service.calls != 1 {
+		t.Fatalf("%d streams for one subscription; a full buffer should wait, not reconnect", service.calls)
+	}
+}
+
+// TestGrpcSubscriptionClient_CanceledContextEndsAWaitingCursorStream: a cursor
+// stream waiting for room in a full channel must still end when the ctx passed
+// to Subscribe is canceled.
+func TestGrpcSubscriptionClient_CanceledContextEndsAWaitingCursorStream(t *testing.T) {
+	service := &floodPubSubServer{last: 550}
+	path, handler := ironflowv1connect.NewPubSubServiceHandler(service)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+	server := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
+	server.Start()
+	defer server.Close()
+
+	client := NewGrpcSubscriptionClient(GrpcSubscriptionClientConfig{
+		ServerURL: server.URL,
+		Logger:    NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cursor := uint64(400)
+	sub, err := client.Subscribe(ctx, "orders.*", &SubscribeOptions{StartAfterSequence: &cursor})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond) // read nothing: the channel fills
+	cancel()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		client.mu.RLock()
+		_, live := client.subscriptions[sub.ID]
+		client.mu.RUnlock()
+		if !live {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the stream kept waiting on a full channel after its ctx was canceled")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

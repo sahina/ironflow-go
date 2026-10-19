@@ -269,16 +269,12 @@ func TestGetAuditTrail(t *testing.T) {
 func TestAuditEventTypes(t *testing.T) {
 	t.Run("FunctionConfig has recording fields", func(t *testing.T) {
 		config := FunctionConfig{
-			Recording:          true,
-			RecordingProfile:   RecordingProfileSteps,
-			RecordingRetention: "90d",
+			Recording:        true,
+			RecordingProfile: RecordingProfileSteps,
 		}
 
 		if !config.Recording {
 			t.Error("expected Recording to be true")
-		}
-		if config.RecordingRetention != "90d" {
-			t.Errorf("expected RecordingRetention '90d', got '%s'", config.RecordingRetention)
 		}
 		if config.RecordingProfile != RecordingProfileSteps {
 			t.Errorf("expected RecordingProfile %q, got %q", RecordingProfileSteps, config.RecordingProfile)

@@ -336,7 +336,7 @@ func (b *KVBucket) Watch(ctx context.Context, callbacks KVWatchCallbacks, opts .
 		header.Set(HeaderEnvironment, b.client.environment)
 	}
 
-	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, wsURL+path, header)
+	conn, resp, err := dialWS(ctx, wsURL+path, header)
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
 	}

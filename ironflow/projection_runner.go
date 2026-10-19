@@ -113,7 +113,7 @@ func NewProjectionRunner(proj Projection, baseURL string, headers map[string]str
 		baseURL:    baseURL,
 		headers:    headers,
 		logger:     logger,
-		httpClient: &http.Client{Timeout: DefaultClientTimeout},
+		httpClient: withSDKHeader(&http.Client{Timeout: DefaultClientTimeout}),
 		ctx:        ctx,
 		cancel:     cancel,
 		work:       work,
@@ -365,7 +365,7 @@ func (r *ProjectionRunner) withLease(body map[string]any) map[string]any {
 func (r *ProjectionRunner) streamLoop() error {
 	// No client timeout: the stream stays open. Server streaming works over
 	// HTTP/1.1, as the Node runner uses it.
-	client := ironflowv1connect.NewProjectionServiceClient(&http.Client{}, r.baseURL, connect.WithProtoJSON())
+	client := ironflowv1connect.NewProjectionServiceClient(withSDKHeader(&http.Client{}), r.baseURL, connect.WithProtoJSON())
 	failures := 0
 	for {
 		if r.leaseLost() {

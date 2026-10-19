@@ -3,12 +3,14 @@ package ironflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -183,9 +185,17 @@ type Subscription struct {
 	done chan struct{}
 	once sync.Once
 
+	// sendMu is held across every send on events. Closers close done (or the
+	// client's done) first, then take sendMu to close events, so a send never
+	// meets a closed channel.
+	sendMu sync.Mutex
+
 	// stop replaces the WebSocket unsubscribe when the subscription rides
 	// another transport (the grpc consumer-group join); client is nil then.
 	stop func()
+
+	// currentID replaces the SubscriptionClient lookup for the same reason.
+	currentID func() string
 }
 
 // Events returns a channel for receiving subscription events.
@@ -200,6 +210,9 @@ func (s *Subscription) Errors() <-chan *SubscriptionError {
 
 // CurrentID returns the server subscription ID currently bound to this handle.
 func (s *Subscription) CurrentID() string {
+	if s.currentID != nil {
+		return s.currentID()
+	}
 	if s.client == nil {
 		return s.ID
 	}
@@ -225,9 +238,9 @@ func (s *Subscription) Unsubscribe() {
 type AckableSubscription struct {
 	*Subscription
 
-	// grpc is set by JoinConsumerGroup with WithJoinTransport("grpc"): acks
-	// then go to the AckEvent RPC, because there is no WebSocket to frame them on.
-	grpc *GrpcAckableSubscription
+	// acker is set by JoinConsumerGroup with WithJoinTransport("grpc"): acks
+	// then ride the SubscribeBidirectional stream, because there is no WebSocket to frame them on.
+	acker groupAcker
 }
 
 // Ack acknowledges an event, confirming it was processed successfully.
@@ -244,8 +257,8 @@ type AckableSubscription struct {
 //	    sub.Ack(event.ID)
 //	}
 func (s *AckableSubscription) Ack(eventID string) error {
-	if s.grpc != nil {
-		return s.grpc.Ack(eventID)
+	if s.acker != nil {
+		return s.acker.Ack(eventID)
 	}
 	req := wsAckRequest{
 		Type:           "ack",
@@ -261,8 +274,8 @@ func (s *AckableSubscription) Ack(eventID string) error {
 // The delay parameter specifies how long to wait before redelivery.
 // If delay is 0, the event is redelivered immediately.
 func (s *AckableSubscription) Nak(eventID string, delay time.Duration) error {
-	if s.grpc != nil {
-		return s.grpc.Nak(eventID, delay)
+	if s.acker != nil {
+		return s.acker.Nak(eventID, delay)
 	}
 	req := wsAckRequest{
 		Type:           "ack",
@@ -279,8 +292,8 @@ func (s *AckableSubscription) Nak(eventID string, delay time.Duration) error {
 // Use this when an event cannot be processed and should not be retried
 // (e.g., permanently invalid data).
 func (s *AckableSubscription) Term(eventID string) error {
-	if s.grpc != nil {
-		return s.grpc.Term(eventID)
+	if s.acker != nil {
+		return s.acker.Term(eventID)
 	}
 	req := wsAckRequest{
 		Type:           "ack",
@@ -376,6 +389,10 @@ type SubscriptionClient struct {
 	// Channels for coordination
 	done      chan struct{}
 	closeOnce sync.Once
+
+	// fellBehind is set when a cursor subscription could not take an event;
+	// the read loop then drops the connection. See handleEvent.
+	fellBehind atomic.Bool
 }
 
 // subscribeResult is the result of a subscribe request
@@ -460,7 +477,7 @@ func (c *SubscriptionClient) Connect(ctx context.Context) error {
 	if c.apiKey != "" {
 		dialHeader = http.Header{"Authorization": []string{"Bearer " + c.apiKey}}
 	}
-	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, c.config.WSURL, dialHeader)
+	conn, resp, err := dialWS(ctx, c.config.WSURL, dialHeader)
 	if resp != nil && resp.Body != nil {
 		defer func() { _ = resp.Body.Close() }()
 	}
@@ -514,7 +531,9 @@ func (c *SubscriptionClient) Close() {
 
 		// Close all subscriptions
 		for _, sub := range c.subscriptions {
+			sub.sendMu.Lock()
 			close(sub.events)
+			sub.sendMu.Unlock()
 			close(sub.errors)
 		}
 		c.subscriptions = make(map[string]*Subscription)
@@ -844,7 +863,9 @@ func (c *SubscriptionClient) unsubscribeByPattern(pattern string) {
 	if exists {
 		delete(c.subscriptions, subscriptionID)
 		delete(c.subByPattern, pattern)
+		sub.sendMu.Lock()
 		close(sub.events)
+		sub.sendMu.Unlock()
 		close(sub.errors)
 	}
 	conn := c.conn
@@ -892,53 +913,61 @@ func (c *SubscriptionClient) readMessages() {
 		}
 
 		_, data, err := conn.ReadMessage()
-		if err != nil {
-			select {
-			case <-c.done:
-				return
-			default:
+		if err == nil {
+			c.handleMessage(data)
+			if !c.fellBehind.Swap(false) {
+				continue
 			}
-
-			c.mu.Lock()
-			wasConnected := c.state == StateConnected
-			c.state = StateDisconnected
-			c.conn = nil
-			callback := c.onConnectionChange
-			autoReconnect := c.config.AutoReconnect
-			if !autoReconnect {
-				for _, sub := range c.subscriptions {
-					if sub.options != nil && sub.options.StartAfterSequence != nil {
-						autoReconnect = true
-						break
-					}
-				}
-			}
-			c.mu.Unlock()
-			if !autoReconnect && c.hasPendingCursorSubscription() {
-				autoReconnect = true
-			}
-			if autoReconnect {
-				c.discardPendingResubscribeAttempts()
-			} else {
-				c.failPendingSubscribeAttempts(fmt.Errorf("connection lost: %w", err))
-			}
-
-			if wasConnected {
-				c.logger.Warn("Connection lost", "error", err)
-				if callback != nil {
-					callback(false)
-				}
-			}
-
-			if autoReconnect {
-				go c.scheduleReconnect()
-			}
+			// Do not read on past the lost event: frames already buffered
+			// would move the cursor beyond it. Resume from the cursor instead.
+			_ = conn.Close()
+			err = errSubscriberFellBehind
+		}
+		select {
+		case <-c.done:
 			return
+		default:
 		}
 
-		c.handleMessage(data)
+		c.mu.Lock()
+		wasConnected := c.state == StateConnected
+		c.state = StateDisconnected
+		c.conn = nil
+		callback := c.onConnectionChange
+		autoReconnect := c.config.AutoReconnect
+		if !autoReconnect {
+			for _, sub := range c.subscriptions {
+				if sub.options != nil && sub.options.StartAfterSequence != nil {
+					autoReconnect = true
+					break
+				}
+			}
+		}
+		c.mu.Unlock()
+		if !autoReconnect && c.hasPendingCursorSubscription() {
+			autoReconnect = true
+		}
+		if autoReconnect {
+			c.discardPendingResubscribeAttempts()
+		} else {
+			c.failPendingSubscribeAttempts(fmt.Errorf("connection lost: %w", err))
+		}
+
+		if wasConnected {
+			c.logger.Warn("Connection lost", "error", err)
+			if callback != nil {
+				callback(false)
+			}
+		}
+
+		if autoReconnect {
+			go c.scheduleReconnect()
+		}
+		return
 	}
 }
+
+var errSubscriberFellBehind = errors.New("subscriber fell behind; resuming from cursor")
 
 func (c *SubscriptionClient) failPendingSubscribeAttempts(err error) {
 	c.pendingMu.Lock()
@@ -1186,10 +1215,16 @@ func (c *SubscriptionClient) terminateWebSocketSubscription(
 	default:
 	}
 	sub.once.Do(func() { close(sub.done) })
+	sub.sendMu.Lock()
 	close(sub.events)
+	sub.sendMu.Unlock()
 	close(sub.errors)
 	c.mu.Unlock()
 }
+
+// resumeDeliverTimeout is how long an event for a subscription with a cursor
+// waits for room in its Events() channel.
+var resumeDeliverTimeout = 5 * time.Second
 
 // handleEvent handles event messages
 func (c *SubscriptionClient) handleEvent(data []byte) {
@@ -1213,20 +1248,49 @@ func (c *SubscriptionClient) handleEvent(data []byte) {
 		Meta:  msg.Meta,
 	}
 
-	select {
-	case sub.events <- event:
-		if event.Meta != nil && event.Meta.Sequence > 0 {
-			c.mu.Lock()
-			if sub.options != nil && sub.options.StartAfterSequence != nil {
-				cursor := event.Meta.Sequence
-				sub.options.StartAfterSequence = &cursor
-				sub.options.Replay = 0
-			}
-			c.mu.Unlock()
+	c.mu.RLock()
+	resuming := sub.options != nil && sub.options.StartAfterSequence != nil
+	c.mu.RUnlock()
+
+	// Without a cursor a full channel drops the event. With one it waits:
+	// dropping this event and delivering the next would move the cursor past
+	// it. Waiting holds back this connection's read loop, so it is bounded:
+	// after resumeDeliverTimeout the read loop drops the connection and the
+	// client resumes from its cursor.
+	sub.sendMu.Lock()
+	sent := false
+	if resuming {
+		timer := time.NewTimer(resumeDeliverTimeout)
+		select {
+		case sub.events <- event:
+			sent = true
+		case <-sub.done:
+		case <-c.done:
+		case <-timer.C:
+			c.fellBehind.Store(true)
 		}
-	case <-sub.done:
-	default:
-		// Channel full, drop event
+		timer.Stop()
+	} else {
+		select {
+		case sub.events <- event:
+			sent = true
+		case <-sub.done:
+		default: // Channel full, drop event
+		}
+	}
+	sub.sendMu.Unlock()
+	if !sent {
+		return
+	}
+
+	if event.Meta != nil && event.Meta.Sequence > 0 {
+		c.mu.Lock()
+		if sub.options != nil && sub.options.StartAfterSequence != nil {
+			cursor := event.Meta.Sequence
+			sub.options.StartAfterSequence = &cursor
+			sub.options.Replay = 0
+		}
+		c.mu.Unlock()
 	}
 }
 

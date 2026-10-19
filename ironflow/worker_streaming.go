@@ -1219,13 +1219,13 @@ func sdkStepTypeToProto(t string) ironflowv1.StepType {
 // For HTTPS URLs it falls back to standard TLS-based HTTP/2.
 func newH2CClient(serverURL string) *http.Client {
 	if strings.HasPrefix(serverURL, "https://") {
-		return &http.Client{
+		return withSDKHeader(&http.Client{
 			Timeout: 0, // streaming: no timeout on the client
-		}
+		})
 	}
 
 	// HTTP/2 cleartext transport
-	return &http.Client{
+	return withSDKHeader(&http.Client{
 		Timeout: 0,
 		Transport: &http2.Transport{
 			AllowHTTP: true,
@@ -1234,5 +1234,5 @@ func newH2CClient(serverURL string) *http.Client {
 				return d.DialContext(ctx, network, addr)
 			},
 		},
-	}
+	})
 }

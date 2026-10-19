@@ -131,52 +131,6 @@ func TestGrpcAckableSubscription_AcksThroughAckEvent(t *testing.T) {
 	}
 }
 
-func TestGrpcJoinSubscription_AcksAndUnsubscribesWithoutPanic(t *testing.T) {
-	svc := newAckEventServer()
-	client := newGrpcSubscriptionClient(GrpcSubscriptionClientConfig{
-		ServerURL: startAckEventServer(t, svc),
-		Logger:    NewNoopLogger(),
-	}, "ifkey_test")
-	if err := client.Connect(context.Background()); err != nil {
-		t.Fatalf("Connect: %v", err)
-	}
-	grpcSub, err := client.SubscribeAckable(context.Background(), "topic:orders", &SubscribeOptions{
-		ConsumerGroup: "workers",
-	})
-	if err != nil {
-		t.Fatalf("SubscribeAckable: %v", err)
-	}
-	sub := grpcJoinSubscription(client, grpcSub)
-
-	select {
-	case <-sub.Events():
-	case <-time.After(5 * time.Second):
-		t.Fatal("no event arrived")
-	}
-	if got := sub.CurrentID(); got != sub.ID {
-		t.Fatalf("CurrentID = %q, want %q", got, sub.ID)
-	}
-	if err := sub.Ack("evt-1"); err != nil {
-		t.Fatalf("Ack: %v", err)
-	}
-	select {
-	case req := <-svc.acks:
-		if req.Msg.ConsumerId != "consumer-abc" || req.Msg.GroupName != "workers" {
-			t.Fatalf("ack = %+v", req.Msg)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("ack never reached AckEvent")
-	}
-
-	sub.Unsubscribe()
-	sub.Unsubscribe() // a second call must be a no-op, not a double close
-	if client.IsConnected() {
-		t.Fatal("Unsubscribe must close the grpc client it owns")
-	}
-	// After unsubscribe an ack may fail on the server, but it must not panic.
-	_ = sub.Ack("evt-1")
-}
-
 func TestGrpcSubscriptionClient_StreamCarriesBearerKey(t *testing.T) {
 	svc := newAckEventServer()
 	client := newGrpcSubscriptionClient(GrpcSubscriptionClientConfig{

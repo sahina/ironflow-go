@@ -610,7 +610,7 @@ func doPublish(exec *executionContext, topic string, data any, opts ...PublishOp
 		req.Header.Set(HeaderEnvironment, exec.environment)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := sdkDefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

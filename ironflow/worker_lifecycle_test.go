@@ -1244,7 +1244,7 @@ func TestWorker_RequestJob_NoContent(t *testing.T) {
 		Logger:    NewNoopLogger(),
 	})
 
-	jobs, err := worker.requestJobs(context.Background(), 1)
+	jobs, _, err := worker.requestJobs(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1293,7 +1293,7 @@ func TestWorker_RequestJob_ReturnsJob(t *testing.T) {
 		Logger:    NewNoopLogger(),
 	})
 
-	jobs, err := worker.requestJobs(context.Background(), 1)
+	jobs, _, err := worker.requestJobs(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -1348,7 +1348,7 @@ func TestWorker_RequestJob_ErrorOnBadStatus(t *testing.T) {
 		Logger:    NewNoopLogger(),
 	})
 
-	jobs, err := worker.requestJobs(context.Background(), 1)
+	jobs, _, err := worker.requestJobs(context.Background(), 1)
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}

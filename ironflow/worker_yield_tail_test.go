@@ -40,7 +40,7 @@ func TestPullWorker_YieldReportsCompletedStepTail(t *testing.T) {
 				return nil, nil
 			})
 			worker := NewWorker(WorkerConfig{ServerURL: server.URL, Functions: []Function{fn}, Logger: NewNoopLogger()})
-			jobs, err := worker.requestJobs(context.Background(), 1)
+			jobs, _, err := worker.requestJobs(context.Background(), 1)
 			if err != nil || len(jobs) != 1 {
 				t.Fatalf("poll: jobs=%d, err=%v", len(jobs), err)
 			}
@@ -96,7 +96,7 @@ func TestPullWorker_TerminalReportsCarryStepOffset(t *testing.T) {
 				return nil, tc.err
 			})
 			worker := NewWorker(WorkerConfig{ServerURL: server.URL, Functions: []Function{fn}, Logger: NewNoopLogger()})
-			jobs, err := worker.requestJobs(context.Background(), 1)
+			jobs, _, err := worker.requestJobs(context.Background(), 1)
 			if err != nil || len(jobs) != 1 {
 				t.Fatalf("poll: jobs=%d, err=%v", len(jobs), err)
 			}

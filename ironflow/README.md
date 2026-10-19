@@ -154,7 +154,6 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
     ActorKey: "event.data.userId",    // JSON path; stored by the server, not used for routing yet
     Secrets:  []string{"STRIPE_KEY"}, // secrets injected at runtime
     RecordingProfile:   ironflow.RecordingProfileSteps, // capture steps and compensations
-    RecordingRetention: "30d",        // metadata only; global retention applies
 
     Description: "Charges the card and sends the receipt", // human-readable summary
     Metadata:    map[string]any{"team": "payments"},        // custom metadata
@@ -481,6 +480,7 @@ worker := ironflow.NewWorker(ironflow.WorkerConfig{
     MaxConcurrentJobs: 4,                       // default: 10
     HeartbeatInterval: 30 * time.Second,        // default: 30s
     ReconnectDelay:    5 * time.Second,          // default: 5s
+    PollWait:          20 * time.Second,         // default: 20s; server holds an idle poll up to 25s; negative turns long polling off
     Labels:            map[string]string{"gpu": "nvidia-a100"}, // routing labels
     Projections:       []ironflow.Projection{orderTotals},      // run alongside functions
     Upcasters:         registry,                // event schema upcasting
@@ -806,6 +806,12 @@ group, err := client.CreateConsumerGroup(ctx, ironflow.ConsumerGroupConfig{
 // Join a consumer group over WebSocket, the default. Both transports can ack,
 // nak and term. Options: WithJoinNamespace, WithJoinConsumerID (accepted but not
 // sent today -- the server mints the ack identity), WithJoinTransport ("websocket" | "grpc").
+// "grpc" joins over one SubscribeBidirectional stream. Ack, Nak and Term then wait
+// for the server result and can return *AckError, ErrStaleAck (the stream
+// reconnected and the server redelivers the event, or the event was settled
+// already) or ErrSubscriptionClosed.
+// "grpc" needs a server released after v0.47.0; an older one answers Unimplemented,
+// which is terminal -- use the WebSocket transport there.
 sub, err := client.JoinConsumerGroup(ctx, "order-processors")
 defer sub.Unsubscribe()
 
@@ -984,6 +990,14 @@ also opts the subscription into reconnect-on-transport-failure. After each
 event is delivered to `Events()`, the client advances the reconnect cursor to
 that event's sequence. Delivery is at least once, so a reconnect can repeat an
 event that was in flight when the connection dropped.
+
+With a cursor, a full `Events()` channel makes the client wait rather than drop
+the event, because a dropped event would be skipped for good. Read `Events()`
+promptly. Over WebSocket a waiting subscription also holds back the other
+subscriptions on that client. After 5 seconds the client drops the connection
+and every subscription on it resumes; an `Events()` channel that nobody reads
+causes a reconnect every 5 seconds. Over ConnectRPC the wait ends when the ctx
+passed to `Subscribe` is canceled.
 
 The WebSocket client applies `Replay` only to the initial subscribe request.
 Reconnects preserve `Filter`, `ConsumerGroup`, `IncludeMetadata`, `AckMode`,
@@ -2064,13 +2078,13 @@ ironflow.DefaultClientRetryConnectionDelay   // 2s
 ironflow.DefaultWorkerMaxConcurrentJobs  // 10
 ironflow.DefaultWorkerHeartbeatInterval  // 30s
 ironflow.DefaultWorkerReconnectDelay     // 5s
+ironflow.DefaultWorkerPollWait           // 20s
 
 // Execution modes
 ironflow.PushMode  // "push"
 ironflow.PullMode  // "pull"
 
 // Run statuses
-ironflow.RunStatusPending    // "pending" (deprecated: the engine no longer produces this as of #1222)
 ironflow.RunStatusRunning    // "running"
 ironflow.RunStatusCompleted  // "completed"
 ironflow.RunStatusFailed     // "failed"

@@ -34,7 +34,7 @@ func TestWorker_RequestJobs_BatchWithFence(t *testing.T) {
 	}))
 	defer server.Close()
 
-	jobs, err := newTestWorker(server.URL).requestJobs(context.Background(), 3)
+	jobs, _, err := newTestWorker(server.URL).requestJobs(context.Background(), 3)
 	if err != nil {
 		t.Fatalf("requestJobs: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestWorker_RequestJobs_LegacySingleNoFence(t *testing.T) {
 	}))
 	defer server.Close()
 
-	jobs, err := newTestWorker(server.URL).requestJobs(context.Background(), 1)
+	jobs, _, err := newTestWorker(server.URL).requestJobs(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("requestJobs: %v", err)
 	}

@@ -340,7 +340,7 @@ func (h *serveHandler) handleWebhook(w http.ResponseWriter, r *http.Request, pro
 		for k, v := range buildAuthHeaders("") {
 			emitHTTPReq.Header.Set(k, v)
 		}
-		resp, err := http.DefaultClient.Do(emitHTTPReq)
+		resp, err := sdkDefaultClient.Do(emitHTTPReq)
 		if err != nil {
 			h.sendError(w, http.StatusBadGateway, "EMIT_FAILED", fmt.Sprintf("failed to emit event: %v", err))
 			return

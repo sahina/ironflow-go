@@ -773,7 +773,6 @@ func TestRunStatusFromWire(t *testing.T) {
 	for _, status := range []string{
 		"RUN_STATUS_UNSPECIFIED",
 		"RUN_STATUS_PENDING",
-		"RUN_STATUS_FUTURE",
 		"failed",
 		"",
 	} {

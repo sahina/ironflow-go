@@ -78,9 +78,9 @@ type PubSubServiceClient interface {
 	// Subscribe to events using server-sent streaming.
 	// Events matching the pattern are delivered to the client.
 	Subscribe(context.Context, *connect.Request[v1.SubscribeRequest]) (*connect.ServerStreamForClient[v1.SubscriptionEvent], error)
-	// SubscribeBidirectional provides bidirectional streaming for manual acks.
-	// Client sends ack messages, server sends events.
-	SubscribeBidirectional(context.Context) *connect.BidiStreamForClient[v1.SubscriptionAck, v1.SubscriptionEvent]
+	// SubscribeBidirectional joins one consumer group and carries its acks on the
+	// same stream. The first request must be join.
+	SubscribeBidirectional(context.Context) *connect.BidiStreamForClient[v1.SubscribeBidirectionalRequest, v1.SubscribeBidirectionalResponse]
 	// AckEvent acknowledges, rejects for redelivery, or terminates one event that
 	// a MANUAL consumer group delivered. Only consumer groups hold events for
 	// acknowledgment. Acking an event that is not in flight succeeds, so a retry
@@ -126,7 +126,7 @@ func NewPubSubServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(pubSubServiceMethods.ByName("Subscribe")),
 			connect.WithClientOptions(opts...),
 		),
-		subscribeBidirectional: connect.NewClient[v1.SubscriptionAck, v1.SubscriptionEvent](
+		subscribeBidirectional: connect.NewClient[v1.SubscribeBidirectionalRequest, v1.SubscribeBidirectionalResponse](
 			httpClient,
 			baseURL+PubSubServiceSubscribeBidirectionalProcedure,
 			connect.WithSchema(pubSubServiceMethods.ByName("SubscribeBidirectional")),
@@ -203,7 +203,7 @@ func NewPubSubServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 type pubSubServiceClient struct {
 	emit                   *connect.Client[v1.EmitRequest, v1.EmitResponse]
 	subscribe              *connect.Client[v1.SubscribeRequest, v1.SubscriptionEvent]
-	subscribeBidirectional *connect.Client[v1.SubscriptionAck, v1.SubscriptionEvent]
+	subscribeBidirectional *connect.Client[v1.SubscribeBidirectionalRequest, v1.SubscribeBidirectionalResponse]
 	ackEvent               *connect.Client[v1.AckEventRequest, v1.AckEventResponse]
 	createConsumerGroup    *connect.Client[v1.CreateConsumerGroupRequest, v1.ConsumerGroup]
 	getConsumerGroup       *connect.Client[v1.GetConsumerGroupRequest, v1.ConsumerGroup]
@@ -227,7 +227,7 @@ func (c *pubSubServiceClient) Subscribe(ctx context.Context, req *connect.Reques
 }
 
 // SubscribeBidirectional calls ironflow.v1.PubSubService.SubscribeBidirectional.
-func (c *pubSubServiceClient) SubscribeBidirectional(ctx context.Context) *connect.BidiStreamForClient[v1.SubscriptionAck, v1.SubscriptionEvent] {
+func (c *pubSubServiceClient) SubscribeBidirectional(ctx context.Context) *connect.BidiStreamForClient[v1.SubscribeBidirectionalRequest, v1.SubscribeBidirectionalResponse] {
 	return c.subscribeBidirectional.CallBidiStream(ctx)
 }
 
@@ -288,9 +288,9 @@ type PubSubServiceHandler interface {
 	// Subscribe to events using server-sent streaming.
 	// Events matching the pattern are delivered to the client.
 	Subscribe(context.Context, *connect.Request[v1.SubscribeRequest], *connect.ServerStream[v1.SubscriptionEvent]) error
-	// SubscribeBidirectional provides bidirectional streaming for manual acks.
-	// Client sends ack messages, server sends events.
-	SubscribeBidirectional(context.Context, *connect.BidiStream[v1.SubscriptionAck, v1.SubscriptionEvent]) error
+	// SubscribeBidirectional joins one consumer group and carries its acks on the
+	// same stream. The first request must be join.
+	SubscribeBidirectional(context.Context, *connect.BidiStream[v1.SubscribeBidirectionalRequest, v1.SubscribeBidirectionalResponse]) error
 	// AckEvent acknowledges, rejects for redelivery, or terminates one event that
 	// a MANUAL consumer group delivered. Only consumer groups hold events for
 	// acknowledgment. Acking an event that is not in flight succeeds, so a retry
@@ -447,7 +447,7 @@ func (UnimplementedPubSubServiceHandler) Subscribe(context.Context, *connect.Req
 	return connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.PubSubService.Subscribe is not implemented"))
 }
 
-func (UnimplementedPubSubServiceHandler) SubscribeBidirectional(context.Context, *connect.BidiStream[v1.SubscriptionAck, v1.SubscriptionEvent]) error {
+func (UnimplementedPubSubServiceHandler) SubscribeBidirectional(context.Context, *connect.BidiStream[v1.SubscribeBidirectionalRequest, v1.SubscribeBidirectionalResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.PubSubService.SubscribeBidirectional is not implemented"))
 }
 

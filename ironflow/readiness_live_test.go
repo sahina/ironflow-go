@@ -86,6 +86,48 @@ func TestLiveReadiness(t *testing.T) {
 		}
 	})
 
+	t.Run("event-emit, event-list and event-get", func(t *testing.T) {
+		name := fmt.Sprintf("gosdk.readiness.emit.%d", time.Now().UnixNano())
+		res, err := client.Emit(ctx, name, map[string]any{"i": 7})
+		if err != nil {
+			t.Fatalf("Emit: %v", err)
+		}
+		// No function listens on a unique name, so the event is stored with no runs.
+		if res.EventID == "" || len(res.RunIDs) != 0 {
+			t.Fatalf("Emit result = %+v, want an event ID and no runs", res)
+		}
+		page, err := client.ListEvents(ctx, ListEventsOptions{Name: name, Limit: 5})
+		if err != nil {
+			t.Fatalf("ListEvents: %v", err)
+		}
+		if page.Count != 1 || len(page.Events) != 1 || page.Events[0].ID != res.EventID || page.Limit != 5 {
+			t.Fatalf("ListEvents page = %+v, want the one emitted event %s with limit 5", page, res.EventID)
+		}
+		got, err := client.GetEvent(ctx, res.EventID)
+		if err != nil {
+			t.Fatalf("GetEvent: %v", err)
+		}
+		data, _ := got.Data.(map[string]any)
+		if got.ID != res.EventID || got.Name != name || data["i"] != float64(7) {
+			t.Fatalf("GetEvent = %+v, want %s %q data {i: 7}", got, res.EventID, name)
+		}
+	})
+
+	t.Run("event-emit-sync", func(t *testing.T) {
+		name := fmt.Sprintf("gosdk.readiness.sync.%d", time.Now().UnixNano())
+		results, err := client.EmitSync(ctx, name, map[string]any{"i": 1}, 5*time.Second)
+		if err != nil {
+			t.Fatalf("EmitSync: %v", err)
+		}
+		if len(results) != 0 {
+			t.Fatalf("EmitSync results = %+v, want none (no function listens on %q)", results, name)
+		}
+		page, err := client.ListEvents(ctx, ListEventsOptions{Name: name})
+		if err != nil || page.Count != 1 {
+			t.Fatalf("ListEvents after EmitSync = %+v, %v, want the one stored event", page, err)
+		}
+	})
+
 	t.Run("function-at-version", func(t *testing.T) {
 		entry, err := client.GetFunctionAtVersion(ctx, seed.FunctionID, seed.PausedVersion)
 		if err != nil {

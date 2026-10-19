@@ -12,6 +12,17 @@ import (
 // TestLiveManualAckNakRedelivers runs against a real server. It skips unless
 // IRONFLOW_TEST_SERVER is set; `make test-sdk-manual-ack-live` sets it.
 func TestLiveManualAckNakRedelivers(t *testing.T) {
+	// No transport option: the default is what a caller gets, so it must ack.
+	runLiveNakScenario(t)
+}
+
+// TestLiveManualAckNakRedelivers_Stream is the same scenario over SubscribeBidirectional.
+func TestLiveManualAckNakRedelivers_Stream(t *testing.T) {
+	runLiveNakScenario(t, WithJoinTransport("grpc"))
+}
+
+func runLiveNakScenario(t *testing.T, opts ...JoinConsumerGroupOption) {
+	t.Helper()
 	serverURL := os.Getenv("IRONFLOW_TEST_SERVER")
 	if serverURL == "" {
 		t.Skip("IRONFLOW_TEST_SERVER not set; run `make test-sdk-manual-ack-live`")
@@ -33,8 +44,7 @@ func TestLiveManualAckNakRedelivers(t *testing.T) {
 		t.Fatalf("create group: %v", err)
 	}
 
-	// No transport option: the default is what a caller gets, so it must ack.
-	sub, err := client.JoinConsumerGroup(ctx, group)
+	sub, err := client.JoinConsumerGroup(ctx, group, opts...)
 	if err != nil {
 		t.Fatalf("join group: %v", err)
 	}

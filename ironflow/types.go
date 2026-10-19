@@ -150,11 +150,6 @@ type FunctionConfig struct {
 	// An empty profile preserves the legacy Recording boolean behavior.
 	RecordingProfile RecordingProfile
 
-	// RecordingRetention is retained as compatibility metadata.
-	// Deprecated: IRONFLOW_AUDIT_RETENTION_DAYS controls audit pruning.
-	// A value of forever does not exempt rows from the global policy.
-	RecordingRetention string
-
 	// Metadata is custom metadata (e.g., service, team, owner).
 	Metadata map[string]any
 }
@@ -375,12 +370,12 @@ type EventFilter struct {
 	TimeoutStr string `json:"timeout,omitempty"`
 }
 
-// RunStatus represents the status of a run.
+// RunStatus represents the status of a run. A server newer than this SDK can send a
+// status not listed here; the SDK passes it through lowercased, so keep a default
+// branch when you switch on it.
 type RunStatus string
 
 const (
-	// Deprecated: the engine no longer produces this status as of #1222 (run status "pending" retired). Retained for source compatibility.
-	RunStatusPending            RunStatus = "pending"
 	RunStatusRunning            RunStatus = "running"
 	RunStatusCompleted          RunStatus = "completed"
 	RunStatusFailed             RunStatus = "failed"

@@ -114,9 +114,6 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 		if fn.Config.RecordingProfile != "" {
 			body["recordingProfile"] = string(fn.Config.RecordingProfile)
 		}
-		if fn.Config.RecordingRetention != "" {
-			body["recordingRetention"] = fn.Config.RecordingRetention
-		}
 		if len(fn.Config.Secrets) > 0 {
 			body["secrets"] = fn.Config.Secrets
 		}

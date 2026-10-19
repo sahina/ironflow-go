@@ -310,6 +310,8 @@ func postJSON(serverURL, path, apiKey, environment string, body any) ([]byte, er
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
+	// Same value the root package's transport sends; agent builds its own client.
+	req.Header.Set("X-Ironflow-SDK", "go/"+ironflow.SDKVersion)
 	if environment != "" {
 		req.Header.Set(ironflow.HeaderEnvironment, environment)
 	}

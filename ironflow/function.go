@@ -290,9 +290,6 @@ func GetFunctionMetadata(fn Function) map[string]any {
 	if config.RecordingProfile != "" {
 		metadata["recording_profile"] = config.RecordingProfile
 	}
-	if config.RecordingRetention != "" {
-		metadata["recording_retention"] = config.RecordingRetention
-	}
 
 	if config.Metadata != nil {
 		metadata["metadata"] = config.Metadata

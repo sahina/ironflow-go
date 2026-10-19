@@ -126,6 +126,9 @@ func TestExposeMcp_RegisterToolWireShape(t *testing.T) {
 		if got := r.Header.Get("Content-Type"); got != "application/json" {
 			t.Errorf("content-type = %q, want application/json", got)
 		}
+		if got := r.Header.Get("X-Ironflow-SDK"); !strings.HasPrefix(got, "go/") {
+			t.Errorf("X-Ironflow-SDK = %q, want go/<version>", got)
+		}
 		var body registerToolRequestJSON
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode register body: %v", err)

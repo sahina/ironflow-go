@@ -192,7 +192,7 @@ func (cc *ConfigClient) Watch(ctx context.Context, name string, callbacks Config
 		header.Set(HeaderEnvironment, cc.client.environment)
 	}
 
-	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, wsURL+path, header)
+	conn, resp, err := dialWS(ctx, wsURL+path, header)
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
 	}

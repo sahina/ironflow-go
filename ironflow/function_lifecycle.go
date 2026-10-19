@@ -39,26 +39,25 @@ type RegisteredFunctionDebounceConfig struct {
 
 // RegisteredFunction is a function definition returned by the management API.
 type RegisteredFunction struct {
-	ID                 string                               `json:"id"`
-	Name               string                               `json:"name"`
-	Description        string                               `json:"description"`
-	Triggers           []Trigger                            `json:"triggers"`
-	Retry              *RegisteredFunctionRetryConfig       `json:"retry"`
-	TimeoutMs          int                                  `json:"timeoutMs"`
-	Concurrency        *RegisteredFunctionConcurrencyConfig `json:"concurrency"`
-	Debounce           *RegisteredFunctionDebounceConfig    `json:"debounce"`
-	PreferredMode      ExecutionMode                        `json:"preferredMode"`
-	EndpointURL        string                               `json:"endpointUrl"`
-	ActorKey           string                               `json:"actorKey"`
-	Status             FunctionStatus                       `json:"status"`
-	Version            int                                  `json:"version"`
-	CreatedAt          time.Time                            `json:"createdAt"`
-	UpdatedAt          time.Time                            `json:"updatedAt"`
-	Recording          bool                                 `json:"recording"`
-	RecordingProfile   RecordingProfile                     `json:"recordingProfile"`
-	RecordingRetention string                               `json:"recordingRetention"`
-	Metadata           map[string]any                       `json:"metadata"`
-	CancelOn           []CancelOnConfig                     `json:"cancelOn"`
+	ID               string                               `json:"id"`
+	Name             string                               `json:"name"`
+	Description      string                               `json:"description"`
+	Triggers         []Trigger                            `json:"triggers"`
+	Retry            *RegisteredFunctionRetryConfig       `json:"retry"`
+	TimeoutMs        int                                  `json:"timeoutMs"`
+	Concurrency      *RegisteredFunctionConcurrencyConfig `json:"concurrency"`
+	Debounce         *RegisteredFunctionDebounceConfig    `json:"debounce"`
+	PreferredMode    ExecutionMode                        `json:"preferredMode"`
+	EndpointURL      string                               `json:"endpointUrl"`
+	ActorKey         string                               `json:"actorKey"`
+	Status           FunctionStatus                       `json:"status"`
+	Version          int                                  `json:"version"`
+	CreatedAt        time.Time                            `json:"createdAt"`
+	UpdatedAt        time.Time                            `json:"updatedAt"`
+	Recording        bool                                 `json:"recording"`
+	RecordingProfile RecordingProfile                     `json:"recordingProfile"`
+	Metadata         map[string]any                       `json:"metadata"`
+	CancelOn         []CancelOnConfig                     `json:"cancelOn"`
 }
 
 // FunctionChangeType describes why a history snapshot was recorded.

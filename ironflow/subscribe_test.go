@@ -635,6 +635,158 @@ func TestSubscriptionClient_ReconnectAdvancesResumeCursor(t *testing.T) {
 	}
 }
 
+// TestSubscriptionClient_FullBufferWaitsInsteadOfSkipping: an app that reads
+// slower than events arrive must not lose events past a full buffer. Dropping
+// one and delivering the next would move the cursor past it.
+func TestSubscriptionClient_FullBufferWaitsInsteadOfSkipping(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+
+	const last = 550
+	var mu sync.Mutex
+	subscribes := 0
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		mu.Lock()
+		subscribes++
+		id := fmt.Sprintf("sub-%d", subscribes)
+		mu.Unlock()
+		_ = server.SendMessage(map[string]any{
+			"type": "subscription_result",
+			"results": []map[string]any{{
+				"pattern": msg.Subscription.Pattern, "status": "ok", "subscriptionId": id,
+			}},
+		})
+		for seq := *msg.Subscription.Options.StartAfterSequence + 1; seq <= last; seq++ {
+			if server.SendMessage(map[string]any{
+				"type": "event", "subscriptionId": id, "topic": "orders.created",
+				"meta": map[string]any{"timestamp": "2026-10-17T00:00:00Z", "sequence": seq},
+			}) != nil {
+				return
+			}
+		}
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{
+		WSURL:             server.URL(),
+		ReconnectDelay:    time.Millisecond,
+		MaxReconnectDelay: time.Millisecond,
+		Logger:            NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	cursor := uint64(400)
+	sub, err := client.Subscribe(context.Background(), "orders.*", &SubscribeOptions{
+		StartAfterSequence: &cursor,
+	})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	// Read nothing for a while, so the flood backs up against the buffer.
+	time.Sleep(500 * time.Millisecond)
+
+	for want := uint64(401); want <= last; want++ {
+		select {
+		case event := <-sub.Events():
+			if event.Meta == nil || event.Meta.Sequence != want {
+				t.Fatalf("event sequence = %v, want %d: a gap", event.Meta, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("sequence %d never arrived: the full buffer dropped it", want)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if subscribes != 1 {
+		t.Fatalf("%d subscribes for one subscription; a burst should wait, not reconnect", subscribes)
+	}
+}
+
+// TestSubscriptionClient_UnreadCursorSubscriptionResumes: the wait for room in
+// a cursor subscription's channel holds back the whole read loop, so it is
+// bounded. An app that stops reading gets the connection dropped and resumed
+// from the cursor, with no frame read past the event that did not fit.
+func TestSubscriptionClient_UnreadCursorSubscriptionResumes(t *testing.T) {
+	defer func(d time.Duration) { resumeDeliverTimeout = d }(resumeDeliverTimeout)
+	resumeDeliverTimeout = 100 * time.Millisecond
+
+	server := newMockWSServer()
+	defer server.Close()
+
+	const last = 550
+	var mu sync.Mutex
+	subscribes := 0
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if json.Unmarshal(data, &msg) != nil || msg.Type != "subscribe" {
+			return
+		}
+		mu.Lock()
+		subscribes++
+		id := fmt.Sprintf("sub-%d", subscribes)
+		mu.Unlock()
+		_ = server.SendMessage(map[string]any{
+			"type": "subscription_result",
+			"results": []map[string]any{{
+				"pattern": msg.Subscription.Pattern, "status": "ok", "subscriptionId": id,
+			}},
+		})
+		for seq := *msg.Subscription.Options.StartAfterSequence + 1; seq <= last; seq++ {
+			if server.SendMessage(map[string]any{
+				"type": "event", "subscriptionId": id, "topic": "orders.created",
+				"meta": map[string]any{"timestamp": "2026-10-17T00:00:00Z", "sequence": seq},
+			}) != nil {
+				return
+			}
+		}
+	}
+
+	client := NewSubscriptionClient(SubscriptionClientConfig{
+		WSURL:             server.URL(),
+		ReconnectDelay:    time.Millisecond,
+		MaxReconnectDelay: time.Millisecond,
+		Logger:            NewNoopLogger(),
+	})
+	defer client.Close()
+	if err := client.Connect(context.Background()); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	cursor := uint64(400)
+	sub, err := client.Subscribe(context.Background(), "orders.*", &SubscribeOptions{
+		StartAfterSequence: &cursor,
+	})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond) // read nothing: longer than the bound
+
+	mu.Lock()
+	resumed := subscribes > 1
+	mu.Unlock()
+	if !resumed {
+		t.Fatal("an unread cursor subscription held the read loop past its bound")
+	}
+	for want := uint64(401); want <= last; want++ {
+		select {
+		case event := <-sub.Events():
+			if event.Meta == nil || event.Meta.Sequence != want {
+				t.Fatalf("event sequence = %v, want %d: a gap", event.Meta, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("sequence %d never arrived", want)
+		}
+	}
+}
+
 func TestSubscriptionClient_ReconnectRetriesAfterFailedRedial(t *testing.T) {
 	server := newMockWSServer()
 	defer server.Close()

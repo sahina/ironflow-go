@@ -38,10 +38,6 @@ type RegisterFunctionRequest struct {
 	ActorKey      string                 `protobuf:"bytes,10,opt,name=actor_key,json=actorKey,proto3" json:"actor_key,omitempty"`
 	Secrets       []string               `protobuf:"bytes,11,rep,name=secrets,proto3" json:"secrets,omitempty"`
 	Recording     bool                   `protobuf:"varint,12,opt,name=recording,proto3" json:"recording,omitempty"`
-	// Deprecated compatibility metadata. Global IRONFLOW_AUDIT_RETENTION_DAYS controls pruning, including forever.
-	//
-	// Deprecated: Marked as deprecated in ironflow/v1/ironflow.proto.
-	RecordingRetention string `protobuf:"bytes,13,opt,name=recording_retention,json=recordingRetention,proto3" json:"recording_retention,omitempty"`
 	// Optional workflow audit capture profile: all, run_lifecycle, or steps.
 	RecordingProfile string `protobuf:"bytes,20,opt,name=recording_profile,json=recordingProfile,proto3" json:"recording_profile,omitempty"`
 	// Arbitrary key-value metadata for the function
@@ -168,14 +164,6 @@ func (x *RegisterFunctionRequest) GetRecording() bool {
 		return x.Recording
 	}
 	return false
-}
-
-// Deprecated: Marked as deprecated in ironflow/v1/ironflow.proto.
-func (x *RegisterFunctionRequest) GetRecordingRetention() string {
-	if x != nil {
-		return x.RecordingRetention
-	}
-	return ""
 }
 
 func (x *RegisterFunctionRequest) GetRecordingProfile() string {
@@ -3210,7 +3198,7 @@ var File_ironflow_v1_ironflow_proto protoreflect.FileDescriptor
 
 const file_ironflow_v1_ironflow_proto_rawDesc = "" +
 	"\n" +
-	"\x1aironflow/v1/ironflow.proto\x12\vironflow.v1\x1a\x17ironflow/v1/types.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xbc\x06\n" +
+	"\x1aironflow/v1/ironflow.proto\x12\vironflow.v1\x1a\x17ironflow/v1/types.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa2\x06\n" +
 	"\x17RegisterFunctionRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -3225,13 +3213,12 @@ const file_ironflow_v1_ironflow_proto_rawDesc = "" +
 	"\tactor_key\x18\n" +
 	" \x01(\tR\bactorKey\x12\x18\n" +
 	"\asecrets\x18\v \x03(\tR\asecrets\x12\x1c\n" +
-	"\trecording\x18\f \x01(\bR\trecording\x123\n" +
-	"\x13recording_retention\x18\r \x01(\tB\x02\x18\x01R\x12recordingRetention\x12+\n" +
+	"\trecording\x18\f \x01(\bR\trecording\x12+\n" +
 	"\x11recording_profile\x18\x14 \x01(\tR\x10recordingProfile\x123\n" +
 	"\bmetadata\x18\x0f \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12#\n" +
 	"\rchange_reason\x18\x10 \x01(\tR\fchangeReason\x127\n" +
 	"\bdebounce\x18\x11 \x01(\v2\x1b.ironflow.v1.DebounceConfigR\bdebounce\x126\n" +
-	"\tcancel_on\x18\x13 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOnJ\x04\b\x0e\x10\x0fJ\x04\b\x12\x10\x13R\x0epause_behaviorR\x14compensate_on_cancel\"g\n" +
+	"\tcancel_on\x18\x13 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOnJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0fJ\x04\b\x12\x10\x13R\x13recording_retentionR\x0epause_behaviorR\x14compensate_on_cancel\"g\n" +
 	"\x18RegisterFunctionResponse\x121\n" +
 	"\bfunction\x18\x01 \x01(\v2\x15.ironflow.v1.FunctionR\bfunction\x12\x18\n" +
 	"\acreated\x18\x02 \x01(\bR\acreated\"$\n" +
