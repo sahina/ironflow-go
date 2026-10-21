@@ -985,7 +985,7 @@ sub, err := subClient.Subscribe(ctx, "events:order.*", &ironflow.SubscribeOption
 ```
 
 `StartAfterSequence` cannot be combined with `Replay` or `ConsumerGroup`; the
-server rejects either combination with `INVALID_ARGUMENT`. Setting the cursor
+server rejects either combination with `invalid_argument`. Setting the cursor
 also opts the subscription into reconnect-on-transport-failure. After each
 event is delivered to `Events()`, the client advances the reconnect cursor to
 that event's sequence. Delivery is at least once, so a reconnect can repeat an
@@ -1095,6 +1095,8 @@ snap, err := client.CreateSnapshot(ctx, "order-123", ironflow.CreateSnapshotInpu
     State:         materialized,
 })
 latest, err := client.GetSnapshot(ctx, "order-123")
+// The latest snapshot at or before version 500
+earlier, err := client.GetSnapshot(ctx, "order-123", ironflow.GetSnapshotOpts{BeforeVersion: 500})
 
 // Subscribe to entity stream updates (real-time)
 sub, err := subClient.SubscribeEntityStream(ctx, "order-123", ironflow.EntitySubscribeOptions{
@@ -1434,7 +1436,7 @@ defer obj.Body.Close()
 
 Errors: `ErrPreconditionFailed` (412), `ErrPayloadTooLarge` (413), `ErrUnsupportedMediaType`
 (415) and `ErrConflict` (409). Use `errors.Is`. A 404 is an `*IronflowError` with
-`Code == "NOT_FOUND"`.
+`Code == "not_found"`.
 
 ---
 
@@ -1682,7 +1684,7 @@ current, err := wh.GetSource(ctx, src.ID)
 
 // Name is required on every update. Empty VerifyHeader/VerifyAlgorithm and an
 // omitted VerifyConfig PRESERVE the stored values; Metadata replaces wholesale
-// and nil clears it. ExpectedUpdatedAt is optimistic concurrency -- ABORTED if
+// and nil clears it. ExpectedUpdatedAt is optimistic concurrency -- aborted if
 // the row moved.
 src, err = wh.UpdateSource(ctx, ironflow.UpdateWebhookSourceInput{
     ID:                src.ID,

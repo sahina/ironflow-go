@@ -223,9 +223,9 @@ func TestErrorFromResponseKeepsServerMessage(t *testing.T) {
 		want   string
 	}{
 		{"error field only", http.StatusNotFound, `{"error":"run not found"}`, "run not found"},
-		{"code and message", http.StatusNotFound, `{"code":"NOT_FOUND","message":"run not found"}`, "NOT_FOUND: run not found"},
+		{"code and message", http.StatusNotFound, `{"code":"not_found","message":"run not found"}`, "not_found: run not found"},
 		{"message wins over error", http.StatusBadRequest, `{"message":"bad limit","error":"invalid"}`, "bad limit"},
-		{"code with error field", http.StatusConflict, `{"code":"CONFLICT","error":"bucket not empty"}`, "CONFLICT: bucket not empty"},
+		{"code with error field", http.StatusConflict, `{"code":"already_exists","error":"bucket not empty"}`, "already_exists: bucket not empty"},
 		{"empty body", http.StatusNotFound, ``, "HTTP 404"},
 		{"non-JSON body", http.StatusBadGateway, `upstream down`, "HTTP 502"},
 	}

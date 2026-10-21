@@ -524,7 +524,7 @@ func TestAuthMethodsErrorHandling(t *testing.T) {
 	t.Run("returns error on 404", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`{"code":"NOT_FOUND","message":"API key not found"}`))
+			_, _ = w.Write([]byte(`{"code":"not_found","message":"API key not found"}`))
 		}))
 		defer server.Close()
 
@@ -534,15 +534,15 @@ func TestAuthMethodsErrorHandling(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		if !strings.Contains(err.Error(), "NOT_FOUND") {
-			t.Errorf("expected NOT_FOUND in error, got: %s", err.Error())
+		if !strings.Contains(err.Error(), "not_found") {
+			t.Errorf("expected not_found in error, got: %s", err.Error())
 		}
 	})
 
 	t.Run("returns error on 403", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
-			_, _ = w.Write([]byte(`{"code":"FORBIDDEN","message":"access denied"}`))
+			_, _ = w.Write([]byte(`{"code":"permission_denied","message":"access denied"}`))
 		}))
 		defer server.Close()
 
@@ -552,8 +552,8 @@ func TestAuthMethodsErrorHandling(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		if !strings.Contains(err.Error(), "FORBIDDEN") {
-			t.Errorf("expected FORBIDDEN in error, got: %s", err.Error())
+		if !strings.Contains(err.Error(), "permission_denied") {
+			t.Errorf("expected permission_denied in error, got: %s", err.Error())
 		}
 	})
 
@@ -624,7 +624,7 @@ func TestAuthMethodsErrorHandling(t *testing.T) {
 func TestAuthErrorIs_Unauthorized(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"code":"UNAUTHORIZED","message":"invalid api key"}`))
+		_, _ = w.Write([]byte(`{"code":"unauthenticated","message":"invalid api key"}`))
 	}))
 	defer server.Close()
 
@@ -660,7 +660,7 @@ func TestAuthErrorIs_EnterpriseLicenseRequired(t *testing.T) {
 func TestAuthErrorIs_Forbidden(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"code":"FORBIDDEN","message":"access denied"}`))
+		_, _ = w.Write([]byte(`{"code":"permission_denied","message":"access denied"}`))
 	}))
 	defer server.Close()
 

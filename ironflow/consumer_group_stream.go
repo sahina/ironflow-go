@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -420,7 +419,7 @@ func (g *groupStream) report(subID string, err error) {
 	select {
 	case g.errors <- &SubscriptionError{
 		SubscriptionID: subID,
-		Code:           strings.ToUpper(connect.CodeOf(err).String()),
+		Code:           connect.CodeOf(err).String(),
 		Message:        err.Error(),
 	}:
 	default:

@@ -195,7 +195,9 @@ type ConcurrencyConfig struct {
 	// Limit is the maximum concurrent executions.
 	Limit int
 
-	// Key is the JSON path for grouping (e.g., "event.data.customerId").
+	// Key is a path into the event data (e.g., "customerId" or "customer.id"),
+	// not "event.data.customerId". A key that does not resolve fails the run
+	// with CONCURRENCY_KEY_UNRESOLVED.
 	Key string
 }
 
@@ -902,6 +904,12 @@ type StreamSnapshot struct {
 	CreatedAt     string `json:"created_at"`
 }
 
+// GetSnapshotOpts filters GetSnapshot. BeforeVersion returns the latest
+// snapshot at or before that entity version; zero returns the latest overall.
+type GetSnapshotOpts struct {
+	BeforeVersion int64
+}
+
 // CreateSnapshotInput contains parameters for creating an entity stream snapshot.
 type CreateSnapshotInput struct {
 	EntityType    string `json:"entity_type"`
@@ -1079,7 +1087,8 @@ func (s *TimeTravelStepOutputSnapshot) UnmarshalJSON(b []byte) error {
 // Secrets Types
 // ============================================================================
 
-// Secret represents a secret with its name, value, and timestamps.
+// Secret represents a secret's metadata. Value stays empty: secret values are
+// write-only, and no response from the server carries one.
 type Secret struct {
 	Name      string `json:"name"`
 	Value     string `json:"value"`
@@ -1205,10 +1214,10 @@ type ProjectionStatusInfo struct {
 
 // RebuildJob represents a projection rebuild operation.
 type RebuildJob struct {
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	Progress  int    `json:"progress"`
-	StartedAt string `json:"startedAt"`
+	Name      string  `json:"name"`
+	Status    string  `json:"status"`
+	Progress  float64 `json:"progress"` // 0 to 1
+	StartedAt string  `json:"startedAt"`
 }
 
 // ============================================================================

@@ -655,8 +655,8 @@ func TestKVBucketCreate(t *testing.T) {
 			t.Fatalf("expected *IronflowError, got %T", err)
 		}
 
-		if ironflowErr.Code != "HTTP_412" {
-			t.Errorf("expected code 'HTTP_412', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "failed_precondition" {
+			t.Errorf("expected code 'failed_precondition', got '%s'", ironflowErr.Code)
 		}
 
 		if ironflowErr.Retryable {
@@ -716,8 +716,8 @@ func TestKVBucketUpdate(t *testing.T) {
 			t.Fatalf("expected *IronflowError, got %T", err)
 		}
 
-		if ironflowErr.Code != "HTTP_412" {
-			t.Errorf("expected code 'HTTP_412', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "failed_precondition" {
+			t.Errorf("expected code 'failed_precondition', got '%s'", ironflowErr.Code)
 		}
 	})
 }

@@ -59,7 +59,7 @@ func TestRegisterDeploymentRejectsInvalidSnapshot(t *testing.T) {
 	c := NewClient(ClientConfig{ServerURL: "http://127.0.0.1:1"})
 	_, err := c.Deployments().Register(context.Background(), RegisterDeploymentInput{Snapshot: json.RawMessage(`{"timeoutMs":"soon"}`)})
 	var ie *IronflowError
-	if !errors.As(err, &ie) || ie.Code != "INVALID_ARGUMENT" {
-		t.Fatalf("Register with a bad snapshot = %v, want INVALID_ARGUMENT before any request", err)
+	if !errors.As(err, &ie) || ie.Code != "invalid_argument" {
+		t.Fatalf("Register with a bad snapshot = %v, want invalid_argument before any request", err)
 	}
 }

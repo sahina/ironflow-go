@@ -420,7 +420,7 @@ func TestClient_GetPausedState(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"code":"NOT_FOUND","message":"run not found"}`))
+			w.Write([]byte(`{"code":"not_found","message":"run not found"}`))
 		}))
 		defer server.Close()
 
@@ -447,8 +447,8 @@ func TestClient_GetPausedState(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "NOT_FOUND" {
-			t.Errorf("expected code 'NOT_FOUND', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "not_found" {
+			t.Errorf("expected code 'not_found', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -456,7 +456,7 @@ func TestClient_GetPausedState(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"code":"FAILED_PRECONDITION","message":"run is not paused"}`))
+			w.Write([]byte(`{"code":"failed_precondition","message":"run is not paused"}`))
 		}))
 		defer server.Close()
 
@@ -483,8 +483,8 @@ func TestClient_GetPausedState(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "FAILED_PRECONDITION" {
-			t.Errorf("expected code 'FAILED_PRECONDITION', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "failed_precondition" {
+			t.Errorf("expected code 'failed_precondition', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -663,7 +663,7 @@ func TestClient_InjectStepOutput(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"code":"NOT_FOUND","message":"step not found in run"}`))
+			w.Write([]byte(`{"code":"not_found","message":"step not found in run"}`))
 		}))
 		defer server.Close()
 
@@ -696,8 +696,8 @@ func TestClient_InjectStepOutput(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "NOT_FOUND" {
-			t.Errorf("expected code 'NOT_FOUND', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "not_found" {
+			t.Errorf("expected code 'not_found', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -705,7 +705,7 @@ func TestClient_InjectStepOutput(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`{"code":"FAILED_PRECONDITION","message":"run must be paused to inject step output"}`))
+			w.Write([]byte(`{"code":"failed_precondition","message":"run must be paused to inject step output"}`))
 		}))
 		defer server.Close()
 
@@ -734,8 +734,8 @@ func TestClient_InjectStepOutput(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "FAILED_PRECONDITION" {
-			t.Errorf("expected code 'FAILED_PRECONDITION', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "failed_precondition" {
+			t.Errorf("expected code 'failed_precondition', got '%s'", ironflowErr.Code)
 		}
 		if ironflowErr.Retryable {
 			t.Error("expected 400 error to be non-retryable")
@@ -746,7 +746,7 @@ func TestClient_InjectStepOutput(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"code":"INTERNAL","message":"unexpected error"}`))
+			w.Write([]byte(`{"code":"internal","message":"unexpected error"}`))
 		}))
 		defer server.Close()
 
@@ -775,8 +775,8 @@ func TestClient_InjectStepOutput(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "INTERNAL" {
-			t.Errorf("expected code 'INTERNAL', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "internal" {
+			t.Errorf("expected code 'internal', got '%s'", ironflowErr.Code)
 		}
 		// 500 errors should be retryable
 		if !ironflowErr.Retryable {
@@ -883,7 +883,7 @@ func TestClient_InjectStepOutput(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"code":"UNAUTHENTICATED","message":"invalid API key"}`))
+			w.Write([]byte(`{"code":"unauthenticated","message":"invalid API key"}`))
 		}))
 		defer server.Close()
 

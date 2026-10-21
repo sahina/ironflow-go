@@ -33,7 +33,7 @@ func (sc *SchemaClient) rpc() ironflowv1connect.EventSchemaServiceClient {
 // Register registers a new event schema or a new version.
 func (sc *SchemaClient) Register(ctx context.Context, input RegisterSchemaInput) (*EventSchema, error) {
 	if input.Version <= 0 || input.Version > math.MaxInt32 {
-		return nil, NewError("version must be a positive int32", "INVALID_ARGUMENT", false)
+		return nil, NewError("version must be a positive int32", "invalid_argument", false)
 	}
 	data, err := json.Marshal(input.Schema)
 	if err != nil {
@@ -69,7 +69,7 @@ func (sc *SchemaClient) Get(ctx context.Context, name string) (*EventSchema, err
 // GetVersion returns a specific registered version.
 func (sc *SchemaClient) GetVersion(ctx context.Context, name string, version int) (*EventSchema, error) {
 	if version <= 0 || version > math.MaxInt32 {
-		return nil, NewError("version must be positive", "INVALID_ARGUMENT", false)
+		return nil, NewError("version must be positive", "invalid_argument", false)
 	}
 	return sc.get(ctx, name, version)
 }
@@ -97,7 +97,7 @@ func schemaFromProto(name string, version int32, document string, createdAt *tim
 // Delete removes a specific version of an event schema.
 func (sc *SchemaClient) Delete(ctx context.Context, name string, version int) error {
 	if version <= 0 || version > math.MaxInt32 {
-		return NewError("version must be a positive int32", "INVALID_ARGUMENT", false)
+		return NewError("version must be a positive int32", "invalid_argument", false)
 	}
 	// sdkcoverage: POST /ironflow.v1.EventSchemaService/DeleteSchema
 	_, err := sc.rpc().DeleteSchema(ctx, connect.NewRequest(&ironflowv1.DeleteSchemaRequest{EventName: name, Version: int32(version)}))

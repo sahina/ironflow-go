@@ -47,7 +47,7 @@ func TestFilesPutRetriesOnlyReplayableBodies(t *testing.T) {
 		_, _ = io.ReadAll(r.Body)
 		if n.Add(1) == 1 {
 			w.WriteHeader(503)
-			_, _ = w.Write([]byte(`{"code":"INTERNAL","message":"x"}`))
+			_, _ = w.Write([]byte(`{"code":"internal","message":"x"}`))
 			return
 		}
 		w.WriteHeader(201)
@@ -66,7 +66,7 @@ func TestFilesPutRetriesOnlyReplayableBodies(t *testing.T) {
 		t.Fatal("stream body: want the 503 error, not a retry")
 	}
 	var ife *IronflowError
-	if !errors.As(err, &ife) || ife.Code != "INTERNAL" || !strings.Contains(err.Error(), "stream") || !strings.Contains(err.Error(), "replayed") {
+	if !errors.As(err, &ife) || ife.Code != "internal" || !strings.Contains(err.Error(), "stream") || !strings.Contains(err.Error(), "replayed") {
 		t.Fatalf("want the original error wrapped with a stream message, got %v", err)
 	}
 	if n.Load() != 1 {
@@ -166,14 +166,14 @@ func TestFilesByteTransfersIgnoreClientTimeout(t *testing.T) {
 func TestFilesErrorsReturnNilAndNotFoundIsBaseError(t *testing.T) {
 	c := setupMockFilesServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
-		_, _ = w.Write([]byte(`{"code":"NOT_FOUND","message":"no such file"}`))
+		_, _ = w.Write([]byte(`{"code":"not_found","message":"no such file"}`))
 	}), 1)
 	info, err := c.Files().Bucket("b").Info(context.Background(), "gone")
 	var ie *IronflowError
-	if info != nil || !errors.As(err, &ie) || ie.Code != "NOT_FOUND" {
+	if info != nil || !errors.As(err, &ie) || ie.Code != "not_found" {
 		t.Fatalf("info=%v err=%v", info, err)
 	}
-	if obj, err := c.Files().Bucket("b").Get(context.Background(), "gone", GetFileOptions{}); obj != nil || !errors.As(err, &ie) || ie.Code != "NOT_FOUND" {
+	if obj, err := c.Files().Bucket("b").Get(context.Background(), "gone", GetFileOptions{}); obj != nil || !errors.As(err, &ie) || ie.Code != "not_found" {
 		t.Fatalf("get obj=%v err=%v", obj, err)
 	}
 }
@@ -237,7 +237,7 @@ func TestFilesPostIsNotRetried(t *testing.T) {
 	c := setupMockFilesServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if n.Add(1) == 1 {
 			w.WriteHeader(503)
-			_, _ = w.Write([]byte(`{"code":"INTERNAL","message":"x"}`))
+			_, _ = w.Write([]byte(`{"code":"internal","message":"x"}`))
 			return
 		}
 		w.WriteHeader(200)
@@ -257,7 +257,7 @@ func TestFilesSignCallsAreRetried(t *testing.T) {
 	c := setupMockFilesServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if n.Add(1)%2 == 1 {
 			w.WriteHeader(503)
-			_, _ = w.Write([]byte(`{"code":"INTERNAL","message":"x"}`))
+			_, _ = w.Write([]byte(`{"code":"internal","message":"x"}`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"url":"u"}`))

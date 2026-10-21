@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -91,9 +92,11 @@ func NewCommandDedup[T any](ctx context.Context, kv *KVClient, bucketName string
 	return d, nil
 }
 
-func isHTTPCode(err error, code string) bool {
+// isHTTPStatus matches the HTTP status, not the code: the KV write throttle's 507
+// also answers failed_precondition, and it is not a lost race.
+func isHTTPStatus(err error, status int) bool {
 	var e *IronflowError
-	return errors.As(err, &e) && e.Code == code
+	return errors.As(err, &e) && e.Details["http_status"] == status
 }
 
 // ensureBucket creates the KV bucket if it doesn't exist.
@@ -111,7 +114,7 @@ func (d *CommandDedup[T]) ensureBucket(ctx context.Context) error {
 			cfg.TTL = d.ttl
 		}
 		_, err := d.kv.CreateBucket(ctx, cfg)
-		if err != nil && !isHTTPCode(err, "HTTP_409") {
+		if err != nil && !isHTTPStatus(err, http.StatusConflict) {
 			d.initErr = err
 		}
 	})
@@ -151,12 +154,12 @@ func (d *CommandDedup[T]) TryClaim(ctx context.Context, commandId string, claim 
 		if err == nil {
 			return nil, nil // winner — proceed
 		}
-		if !isHTTPCode(err, "HTTP_412") {
+		if !isHTTPStatus(err, http.StatusPreconditionFailed) {
 			return nil, err
 		}
 		entry, err := d.kv.Bucket(d.bucketName).Get(ctx, commandId)
 		if err != nil {
-			if isHTTPCode(err, "HTTP_404") {
+			if isHTTPStatus(err, http.StatusNotFound) {
 				continue // the winner released between our write and read: claim again
 			}
 			return nil, err
@@ -198,7 +201,7 @@ func (d *CommandDedup[T]) Release(ctx context.Context, commandId string) error {
 		return err
 	}
 	err := d.kv.Bucket(d.bucketName).Delete(ctx, commandId)
-	if isHTTPCode(err, "HTTP_404") {
+	if isHTTPStatus(err, http.StatusNotFound) {
 		return nil
 	}
 	return err

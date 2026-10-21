@@ -8,10 +8,14 @@ import "time"
 
 // APIKeyInfo represents an API key without the raw secret.
 type APIKeyInfo struct {
-	ID         string   `json:"id"`
-	Name       string   `json:"name"`
-	KeyPrefix  string   `json:"key_prefix"`
-	RoleIDs    []string `json:"role_ids,omitempty"`
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	KeyPrefix string   `json:"key_prefix"`
+	RoleIDs   []string `json:"role_ids,omitempty"`
+	// EnvironmentID is the environment the key is bound to.
+	EnvironmentID string `json:"environment_id,omitempty"`
+	// ToolScopes limits the agent tools the key may call.
+	ToolScopes []string `json:"tool_scopes,omitempty"`
 	CreatedAt  string   `json:"created_at"`
 	ExpiresAt  *string  `json:"expires_at,omitempty"`
 	LastUsedAt *string  `json:"last_used_at,omitempty"`
@@ -29,6 +33,9 @@ type CreateAPIKeyInput struct {
 	EnvID     string   `json:"env_id,omitempty"`
 	RoleIDs   []string `json:"role_ids,omitempty"`
 	ExpiresIn string   `json:"expires_in,omitempty"`
+	// ToolScopes limits the agent tools the key may call. A caller grants only
+	// scopes it holds, unless it is an admin.
+	ToolScopes []string `json:"tool_scopes,omitempty"`
 }
 
 // ============================================================================

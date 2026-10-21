@@ -545,3 +545,37 @@ func TestProjectClient_DeleteEnvironment(t *testing.T) {
 		}
 	})
 }
+
+// A project update can set, keep and clear the description: nil leaves the
+// key out, a pointer to "" sends it (#3057).
+func TestProjectClient_Update_Description(t *testing.T) {
+	empty, set := "", "new text"
+	for _, tc := range []struct {
+		name    string
+		desc    *string
+		wantKey bool
+		want    string
+	}{
+		{"set", &set, true, "new text"},
+		{"clear", &empty, true, ""},
+		{"keep", nil, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var body map[string]any
+			client, cleanup := setupMockProjectServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewDecoder(r.Body).Decode(&body)
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"id": "proj_abc123", "name": "p"})
+			}))
+			defer cleanup()
+
+			if _, err := client.Projects().Update(context.Background(), "proj_abc123", UpdateProjectInput{Name: "p", Description: tc.desc}); err != nil {
+				t.Fatalf("Update: %v", err)
+			}
+			got, present := body["description"]
+			if present != tc.wantKey || (present && got != tc.want) {
+				t.Errorf("description in body = %v (present %v), want %q (present %v)", got, present, tc.want, tc.wantKey)
+			}
+		})
+	}
+}

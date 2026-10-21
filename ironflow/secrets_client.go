@@ -22,7 +22,8 @@ func (c *Client) Secrets() *SecretsClient {
 	return &SecretsClient{client: c}
 }
 
-// Get retrieves a secret by name, including its value.
+// Get retrieves a secret's metadata by name. The server never returns a value,
+// so Secret.Value is empty; a function reads the value through ctx.Secrets.
 //
 // Security: Secret values are never logged.
 func (sc *SecretsClient) Get(ctx context.Context, name string) (*Secret, error) {

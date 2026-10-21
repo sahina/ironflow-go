@@ -214,7 +214,7 @@ func TestGetFunctionMetadata(t *testing.T) {
 			Triggers: []Trigger{{Event: "test.event"}},
 			Concurrency: &ConcurrencyConfig{
 				Limit: 5,
-				Key:   "event.data.userId",
+				Key:   "userId",
 			},
 		}, func(ctx Context) (any, error) {
 			return nil, nil
@@ -229,8 +229,8 @@ func TestGetFunctionMetadata(t *testing.T) {
 		if concurrency["limit"] != 5 {
 			t.Errorf("expected limit 5, got %v", concurrency["limit"])
 		}
-		if concurrency["key"] != "event.data.userId" {
-			t.Errorf("expected key 'event.data.userId', got '%v'", concurrency["key"])
+		if concurrency["key"] != "userId" {
+			t.Errorf("expected key 'userId', got '%v'", concurrency["key"])
 		}
 	})
 

@@ -142,14 +142,14 @@ func (b *KVBucket) Put(ctx context.Context, key string, value []byte) (uint64, e
 }
 
 // Create stores a value only if the key does not already exist (if-not-exists).
-// Returns ErrKeyExists (HTTP 412) if the key already exists.
+// Returns an error with code failed_precondition if the key already exists.
 func (b *KVBucket) Create(ctx context.Context, key string, value []byte) (uint64, error) {
 	headers := map[string]string{"If-None-Match": "*"}
 	return b.putWithHeaders(ctx, key, value, headers)
 }
 
 // Update stores a value only if the revision matches (compare-and-swap).
-// Returns an error (HTTP 412) if the revision doesn't match.
+// Returns an error with code failed_precondition if the revision doesn't match.
 func (b *KVBucket) Update(ctx context.Context, key string, value []byte, revision uint64) (uint64, error) {
 	headers := map[string]string{"If-Match": strconv.FormatUint(revision, 10)}
 	return b.putWithHeaders(ctx, key, value, headers)
@@ -209,15 +209,7 @@ func (b *KVBucket) putWithHeaders(ctx context.Context, key string, value []byte,
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
-		errBody, _ := io.ReadAll(resp.Body)
-		var errResp struct {
-			Error string `json:"error"`
-		}
-		_ = json.Unmarshal(errBody, &errResp)
-		retryable, retryAfter := restRetrySignal(resp.StatusCode, resp.Header, errBody)
-		ife := NewError(errResp.Error, fmt.Sprintf("HTTP_%d", resp.StatusCode), retryable)
-		ife.RetryAfter = retryAfter
-		return 0, ife
+		return 0, kvErrorFromResponse(resp)
 	}
 
 	var result struct {
@@ -477,19 +469,7 @@ func (c *Client) restRequestWithHeaders(ctx context.Context, method, path string
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
-		errBody, _ := io.ReadAll(resp.Body)
-		var errResp struct {
-			Error string `json:"error"`
-		}
-		_ = json.Unmarshal(errBody, &errResp)
-		msg := errResp.Error
-		if msg == "" {
-			msg = fmt.Sprintf("request failed with status %d", resp.StatusCode)
-		}
-		retryable, retryAfter := restRetrySignal(resp.StatusCode, resp.Header, errBody)
-		ife := NewError(msg, fmt.Sprintf("HTTP_%d", resp.StatusCode), retryable)
-		ife.RetryAfter = retryAfter
-		return ife
+		return kvErrorFromResponse(resp)
 	}
 
 	if result != nil && resp.StatusCode != http.StatusNoContent {
@@ -499,4 +479,27 @@ func (c *Client) restRequestWithHeaders(ctx context.Context, method, path string
 	}
 
 	return nil
+}
+
+// kvErrorFromResponse maps a >= 400 REST response to an *IronflowError with the
+// bare server message (KV and config callers match on code and status, not text).
+func kvErrorFromResponse(resp *http.Response) *IronflowError {
+	errBody, _ := io.ReadAll(resp.Body)
+	var errResp struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+	}
+	_ = json.Unmarshal(errBody, &errResp)
+	msg := errResp.Error
+	if msg == "" {
+		msg = fmt.Sprintf("request failed with status %d", resp.StatusCode)
+	}
+	retryable, retryAfter := restRetrySignal(resp.StatusCode, resp.Header, errBody)
+	ife := NewError(msg, restErrorCode(errResp.Code, resp.StatusCode), retryable)
+	ife.RetryAfter = retryAfter
+	ife.Details = map[string]any{"http_status": resp.StatusCode}
+	if ife.Code == "aborted" { // a lost race, as on the Connect path
+		ife.Cause = ErrContended
+	}
+	return ife
 }

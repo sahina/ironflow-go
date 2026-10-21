@@ -43,7 +43,7 @@ func TestRunStepsConnect(t *testing.T) {
 	}
 	_, err = client.GetRunSteps(context.Background(), "missing")
 	var typed *IronflowError
-	if !errors.As(err, &typed) || typed.Code != "NOT_FOUND" || IsRetryable(err) {
+	if !errors.As(err, &typed) || typed.Code != "not_found" || IsRetryable(err) {
 		t.Fatalf("error contract: %v", err)
 	}
 }

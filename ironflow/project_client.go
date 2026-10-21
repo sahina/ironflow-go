@@ -27,9 +27,11 @@ type CreateProjectInput struct {
 }
 
 // UpdateProjectInput contains the parameters for updating a project.
+// Description is a pointer so an update can tell "keep" (nil) from "clear"
+// (a pointer to ""); omitempty on a string would never send "".
 type UpdateProjectInput struct {
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
+	Name        string  `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
 }
 
 // List returns all projects in the current organization.

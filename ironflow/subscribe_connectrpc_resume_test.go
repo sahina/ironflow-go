@@ -310,8 +310,8 @@ func TestGrpcSubscriptionClient_ResumeCursorRejections(t *testing.T) {
 			}
 			select {
 			case subErr := <-sub.Errors():
-				if subErr.Code != "INVALID_ARGUMENT" || !strings.Contains(subErr.Message, tt.message) {
-					t.Fatalf("subscription error = %#v, want INVALID_ARGUMENT containing %q", subErr, tt.message)
+				if subErr.Code != "invalid_argument" || !strings.Contains(subErr.Message, tt.message) {
+					t.Fatalf("subscription error = %#v, want invalid_argument containing %q", subErr, tt.message)
 				}
 			case <-time.After(time.Second):
 				t.Fatal("timed out waiting for rejection")
@@ -351,8 +351,8 @@ func TestGrpcSubscriptionClient_PreservesReplayUntilCursorRequestAccepted(t *tes
 	}
 	select {
 	case subErr := <-sub.Errors():
-		if subErr.Code != "INVALID_ARGUMENT" {
-			t.Fatalf("subscription error = %#v, want INVALID_ARGUMENT", subErr)
+		if subErr.Code != "invalid_argument" {
+			t.Fatalf("subscription error = %#v, want invalid_argument", subErr)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for rejection")

@@ -460,7 +460,7 @@ type ConcurrencyConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Max concurrent executions
 	Limit int32 `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
-	// JSON path for grouping (e.g., "event.data.customerId")
+	// Path into the event data for grouping (e.g., "customerId" or "customer.id"). Do not prefix "event.data.".
 	Key           string `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

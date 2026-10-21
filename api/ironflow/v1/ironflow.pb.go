@@ -2784,7 +2784,7 @@ type FunctionHistoryEntry struct {
 	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	EntityVersion int64                  `protobuf:"varint,2,opt,name=entity_version,json=entityVersion,proto3" json:"entity_version,omitempty"`
 	FunctionId    string                 `protobuf:"bytes,3,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
-	// The function config as it was BEFORE this change
+	// The function config as it is AFTER this change
 	FunctionSnapshot *Function `protobuf:"bytes,4,opt,name=function_snapshot,json=functionSnapshot,proto3" json:"function_snapshot,omitempty"`
 	ActorId          string    `protobuf:"bytes,5,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
 	ChangeReason     string    `protobuf:"bytes,6,opt,name=change_reason,json=changeReason,proto3" json:"change_reason,omitempty"`

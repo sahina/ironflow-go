@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -531,7 +530,7 @@ func (c *GrpcSubscriptionClient) reportSubscriptionError(sub *GrpcSubscription, 
 	}
 	defer c.mu.RUnlock()
 
-	code := strings.ToUpper(connect.CodeOf(err).String())
+	code := connect.CodeOf(err).String()
 	select {
 	case sub.errors <- &SubscriptionError{
 		SubscriptionID: sub.ID,

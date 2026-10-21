@@ -56,7 +56,7 @@ func TestConfigConditionalWrites(t *testing.T) {
 
 	_, err := cc.Update(ctx, "app", data, 9)
 	var ife *IronflowError
-	if !errors.As(err, &ife) || ife.Code != "HTTP_412" {
-		t.Fatalf("stale Update error = %v, want code HTTP_412", err)
+	if !errors.As(err, &ife) || ife.Code != "failed_precondition" {
+		t.Fatalf("stale Update error = %v, want code failed_precondition", err)
 	}
 }

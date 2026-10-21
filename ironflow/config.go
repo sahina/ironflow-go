@@ -48,25 +48,25 @@ func (cc *ConfigClient) Set(ctx context.Context, name string, data map[string]an
 }
 
 // Create stores a config only if the name does not exist.
-// Returns an error with code HTTP_412 if it exists.
+// Returns an error with code failed_precondition if it exists.
 func (cc *ConfigClient) Create(ctx context.Context, name string, data map[string]any) (*ConfigSetResult, error) {
 	return cc.write(ctx, "POST", "/api/v1/config/"+url.PathEscape(name), data, map[string]string{"If-None-Match": "*"})
 }
 
 // Update replaces a config only if revision is its current revision (compare-and-swap).
-// Returns an error with code HTTP_412 if the config changed or was deleted.
+// Returns an error with code failed_precondition if the config changed or was deleted.
 func (cc *ConfigClient) Update(ctx context.Context, name string, data map[string]any, revision uint64) (*ConfigSetResult, error) {
 	return cc.write(ctx, "POST", "/api/v1/config/"+url.PathEscape(name), data, ifRevision(revision))
 }
 
 // PatchIf applies a shallow merge only if revision is the config's current revision.
-// Returns an error with code HTTP_412 if the config changed or was deleted.
+// Returns an error with code failed_precondition if the config changed or was deleted.
 func (cc *ConfigClient) PatchIf(ctx context.Context, name string, data map[string]any, revision uint64) (*ConfigSetResult, error) {
 	return cc.write(ctx, "PATCH", "/api/v1/config/"+url.PathEscape(name), data, ifRevision(revision))
 }
 
 // DeleteIf removes a config only if revision is its current revision.
-// Returns an error with code HTTP_412 if the config changed or was deleted.
+// Returns an error with code failed_precondition if the config changed or was deleted.
 func (cc *ConfigClient) DeleteIf(ctx context.Context, name string, revision uint64) error {
 	return cc.client.restRequestWithHeaders(ctx, "DELETE", "/api/v1/config/"+url.PathEscape(name), nil, nil, ifRevision(revision))
 }

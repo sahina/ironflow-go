@@ -179,12 +179,12 @@ func TestProjectionClient_ExecuteSQL_ErrorContract(t *testing.T) {
 		wantRetryable bool
 		wantSentinel  error
 	}{
-		{"rejected query is not retryable", connect.CodeInvalidArgument, "INVALID_ARGUMENT", false, nil},
-		{"server fault is retryable", connect.CodeInternal, "INTERNAL", true, nil},
-		{"unavailable is retryable", connect.CodeUnavailable, "UNAVAILABLE", true, nil},
-		{"unauthenticated carries the sentinel", connect.CodeUnauthenticated, "UNAUTHENTICATED", false, ErrUnauthorized},
-		{"permission denied carries the sentinel", connect.CodePermissionDenied, "PERMISSION_DENIED", false, ErrForbidden},
-		{"lost CAS race is ErrContended", connect.CodeAborted, "ABORTED", false, ErrContended},
+		{"rejected query is not retryable", connect.CodeInvalidArgument, "invalid_argument", false, nil},
+		{"server fault is retryable", connect.CodeInternal, "internal", true, nil},
+		{"unavailable is retryable", connect.CodeUnavailable, "unavailable", true, nil},
+		{"unauthenticated carries the sentinel", connect.CodeUnauthenticated, "unauthenticated", false, ErrUnauthorized},
+		{"permission denied carries the sentinel", connect.CodePermissionDenied, "permission_denied", false, ErrForbidden},
+		{"lost CAS race is ErrContended", connect.CodeAborted, "aborted", false, ErrContended},
 	}
 
 	for _, tc := range cases {

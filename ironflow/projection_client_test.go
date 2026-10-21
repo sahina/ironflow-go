@@ -45,10 +45,10 @@ func (projectionClientService) GetProjectionStatus(context.Context, *connect.Req
 	return connect.NewResponse(&ironflowv1.GetProjectionStatusResponse{Name: "orders", Status: "paused", ErrorMessage: "previous"}), nil
 }
 func (projectionClientService) RebuildProjection(context.Context, *connect.Request[ironflowv1.RebuildProjectionRequest]) (*connect.Response[ironflowv1.RebuildProjectionResponse], error) {
-	return connect.NewResponse(&ironflowv1.RebuildProjectionResponse{Job: &ironflowv1.RebuildJob{ProjectionName: "orders", Status: "running", Progress: 50, StartedAt: timestamppb.New(time.Unix(123, 0))}}), nil
+	return connect.NewResponse(&ironflowv1.RebuildProjectionResponse{Job: &ironflowv1.RebuildJob{ProjectionName: "orders", Status: "running", Progress: 0.5, StartedAt: timestamppb.New(time.Unix(123, 0))}}), nil
 }
 func (projectionClientService) GetRebuildJob(context.Context, *connect.Request[ironflowv1.GetRebuildJobRequest]) (*connect.Response[ironflowv1.GetRebuildJobResponse], error) {
-	return connect.NewResponse(&ironflowv1.GetRebuildJobResponse{Job: &ironflowv1.RebuildJob{ProjectionName: "orders", Status: "running", Progress: 50, StartedAt: timestamppb.New(time.Unix(123, 0))}}), nil
+	return connect.NewResponse(&ironflowv1.GetRebuildJobResponse{Job: &ironflowv1.RebuildJob{ProjectionName: "orders", Status: "running", Progress: 0.5, StartedAt: timestamppb.New(time.Unix(123, 0))}}), nil
 }
 func (projectionClientService) PauseProjection(_ context.Context, r *connect.Request[ironflowv1.PauseProjectionRequest]) (*connect.Response[ironflowv1.PauseProjectionResponse], error) {
 	if r.Msg.Name == "missing" {
@@ -83,7 +83,7 @@ func TestProjectionClientConnect(t *testing.T) {
 	}
 	_, err = pc.Get(ctx, "missing")
 	var typed *IronflowError
-	if !errors.As(err, &typed) || IsRetryable(err) || typed.Code != "NOT_FOUND" {
+	if !errors.As(err, &typed) || IsRetryable(err) || typed.Code != "not_found" {
 		t.Fatalf("error contract: %v", err)
 	}
 	list, err := pc.List(ctx)
@@ -96,7 +96,7 @@ func TestProjectionClientConnect(t *testing.T) {
 	}
 	for _, read := range []func(context.Context, string) (*RebuildJob, error){pc.Rebuild, pc.GetRebuildJob} {
 		job, err := read(ctx, "orders")
-		if err != nil || job.Name != "orders" || job.Progress != 50 || job.StartedAt != "1970-01-01T00:02:03Z" {
+		if err != nil || job.Name != "orders" || job.Progress != 0.5 || job.StartedAt != "1970-01-01T00:02:03Z" {
 			t.Fatalf("job: %+v %v", job, err)
 		}
 	}

@@ -2,7 +2,6 @@ package ironflow
 
 import (
 	"errors"
-	"strings"
 
 	"connectrpc.com/connect"
 )
@@ -39,8 +38,8 @@ func connectError(err error) error {
 
 	code := connect.CodeOf(ce)
 	ifErr := NewError(
-		strings.ToUpper(code.String())+": "+ce.Message(),
-		strings.ToUpper(code.String()),
+		code.String()+": "+ce.Message(),
+		code.String(),
 		isRetryableConnectCode(code),
 	)
 	ifErr.Details = map[string]any{"connect_code": code.String()}

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,6 +37,26 @@ type readinessSeed struct {
 	PartitionProjection string   `json:"partitionProjection"`
 	Partitions          []string `json:"partitions"`
 	SchemaEvent         string   `json:"schemaEvent"`
+
+	Projections map[string]struct {
+		Name    string `json:"name"`
+		EventID string `json:"eventId"`
+		Seq     uint64 `json:"seq"`
+	} `json:"projections"`
+
+	Holds map[string]struct {
+		FunctionID string `json:"functionId"`
+		RunID      string `json:"runId"`
+		EventID    string `json:"eventId"`
+		NoteStepID string `json:"noteStepId"`
+		SpareRunID string `json:"spareRunId"`
+	} `json:"holds"`
+}
+
+// asJSON marshals a decoded payload back to JSON for comparison and IsRedacted.
+func asJSON(v any) json.RawMessage {
+	b, _ := json.Marshal(v)
+	return b
 }
 
 // sameJSON reports whether raw decodes to want.
@@ -44,9 +65,19 @@ func sameJSON(raw json.RawMessage, want map[string]any) bool {
 	return json.Unmarshal(raw, &got) == nil && reflect.DeepEqual(got, want)
 }
 
-// TestLiveReadiness reads one real seeded run back through the Go helpers.
-// It skips unless IRONFLOW_READINESS_SEED is set; `make test-readiness-live` sets it.
-func TestLiveReadiness(t *testing.T) {
+// hasErrorCode reports whether err is an IronflowError with the given code,
+// ignoring case: the REST path gives lower-case codes, Connect upper-case.
+func hasErrorCode(err error, code string) bool {
+	var ie *IronflowError
+	return errors.As(err, &ie) && strings.EqualFold(ie.Code, code)
+}
+
+// liveReadiness decodes the seed file into seed and returns a client for the
+// live server. It skips unless IRONFLOW_READINESS_SEED is set;
+// `make test-readiness-live` sets it. Each group's TestLiveReadiness<Group>
+// starts with it.
+func liveReadiness(t *testing.T, seed any) (*Client, context.Context) {
+	t.Helper()
 	seedPath := os.Getenv("IRONFLOW_READINESS_SEED")
 	if seedPath == "" {
 		t.Skip("IRONFLOW_READINESS_SEED not set; run `make test-readiness-live`")
@@ -55,13 +86,21 @@ func TestLiveReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read seed: %v", err)
 	}
-	var seed readinessSeed
-	if err := json.Unmarshal(raw, &seed); err != nil {
+	if err := json.Unmarshal(raw, seed); err != nil {
 		t.Fatalf("decode seed: %v", err)
 	}
-	client := NewClient(ClientConfig{ServerURL: os.Getenv("IRONFLOW_TEST_SERVER"), APIKey: os.Getenv("IRONFLOW_TEST_API_KEY")})
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// One deadline per group test: push and invoke subtests wait on real runs.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	t.Cleanup(cancel)
+	return NewClient(ClientConfig{ServerURL: os.Getenv("IRONFLOW_TEST_SERVER"), APIKey: os.Getenv("IRONFLOW_TEST_API_KEY")}), ctx
+}
+
+// TestLiveReadiness reads one real seeded run back through the Go helpers.
+func TestLiveReadiness(t *testing.T) {
+	var seed readinessSeed
+	client, ctx := liveReadiness(t, &seed)
+
+	liveRuns(ctx, t, client, seed)
 
 	t.Run("event-emit-batch and event-names", func(t *testing.T) {
 		suffix := fmt.Sprintf("%d", time.Now().UnixNano())
@@ -260,6 +299,133 @@ func TestLiveReadiness(t *testing.T) {
 		got := slices.Sorted(slices.Values(res.Partitions))
 		if !slices.Equal(got, seed.Partitions) || res.Returned != len(seed.Partitions) {
 			t.Fatalf("partitions = %v (returned %d), want %v", res.Partitions, res.Returned, seed.Partitions)
+		}
+	})
+
+	// #3003: this projection belongs to the Go suite alone, so the steps below
+	// may pause, rebuild and delete it. They run in order.
+	own := seed.Projections["go"]
+	pc := client.Projections()
+
+	t.Run("proj-get, proj-list and proj-status", func(t *testing.T) {
+		got, err := pc.Get(ctx, own.Name)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		state, _ := got.State.(map[string]any)
+		if got.Name != own.Name || got.Mode != "managed" || got.Status != "active" || state["count"] != float64(2) || got.LastEventSeq < int64(own.Seq) {
+			t.Fatalf("Get = %+v, want %s managed active with count 2 at seq >= %d", got, own.Name, own.Seq)
+		}
+		list, err := pc.List(ctx)
+		if err != nil || !slices.ContainsFunc(list, func(p ProjectionStatusInfo) bool { return p.Name == own.Name && p.Status == "active" }) {
+			t.Fatalf("List: %v; %s missing or not active", err, own.Name)
+		}
+		status, err := pc.GetStatus(ctx, own.Name)
+		if err != nil || status.Name != own.Name || status.Mode != "managed" || status.Status != "active" || status.LastEventSeq != got.LastEventSeq {
+			t.Fatalf("GetStatus = %+v, %v; want active managed at seq %d", status, err, got.LastEventSeq)
+		}
+	})
+
+	t.Run("proj-wait-for-event", func(t *testing.T) {
+		w, err := client.WaitForEvent(ctx, own.EventID, own.Name, WaitForProjectionOpts{Timeout: 5 * time.Second})
+		if err != nil || !w.CaughtUp || w.TargetSeq != own.Seq || w.BehindByEvents != 0 || w.Mode != "managed" {
+			t.Fatalf("WaitForEvent = %+v, %v; want caught up at target %d", w, err, own.Seq)
+		}
+	})
+
+	t.Run("proj-catchup", func(t *testing.T) {
+		w, err := client.WaitForProjection(ctx, own.Name, WaitForProjectionOpts{MinSeq: own.Seq, Timeout: 5 * time.Second})
+		if err != nil || !w.CaughtUp || w.TimedOut || w.TargetSeq != own.Seq || w.CurrentSeq < own.Seq {
+			t.Fatalf("WaitForProjection = %+v, %v; want caught up at %d", w, err, own.Seq)
+		}
+		far := own.Seq + 1_000_000
+		w, err = client.WaitForProjection(ctx, own.Name, WaitForProjectionOpts{MinSeq: far, Timeout: 200 * time.Millisecond})
+		if err != nil || w.CaughtUp || !w.TimedOut || w.TargetSeq != far {
+			t.Fatalf("WaitForProjection(unreachable) = %+v, %v; want timed out at target %d", w, err, far)
+		}
+		ch, stop, err := client.WaitForProjectionStream(ctx, own.Name, WaitForProjectionOpts{MinSeq: own.Seq, Timeout: 5 * time.Second})
+		if err != nil {
+			t.Fatalf("WaitForProjectionStream: %v", err)
+		}
+		defer stop()
+		var last WaitProgress
+		for last = range ch {
+			if last.Terminal {
+				break
+			}
+		}
+		if !last.Terminal || !last.CaughtUp || last.Err != nil || last.TargetSeq != own.Seq {
+			t.Fatalf("stream terminal frame = %+v, want caught up at %d", last, own.Seq)
+		}
+	})
+
+	t.Run("proj-catchup-batch", func(t *testing.T) {
+		missing := fmt.Sprintf("readiness-missing-%d", time.Now().UnixNano())
+		res, err := client.WaitForProjections(ctx, []WaitItem{{Name: own.Name, MinSeq: own.Seq}, {Name: missing, MinSeq: 1}}, 5*time.Second)
+		if err != nil || len(res) != 2 {
+			t.Fatalf("WaitForProjections = %+v, %v; want two results", res, err)
+		}
+		if !res[0].Result.CaughtUp || res[0].Error != "" || !strings.Contains(res[1].Error, "not found") {
+			t.Fatalf("results = %+v, want the first caught up and the second not found", res)
+		}
+	})
+
+	statusOf := func(t *testing.T) string {
+		t.Helper()
+		st, err := pc.GetStatus(ctx, own.Name)
+		if err != nil {
+			t.Fatalf("GetStatus: %v", err)
+		}
+		return st.Status
+	}
+
+	t.Run("proj-pause and proj-resume", func(t *testing.T) {
+		if err := pc.Pause(ctx, own.Name); err != nil {
+			t.Fatalf("Pause: %v", err)
+		}
+		if got := statusOf(t); got != "paused" {
+			t.Fatalf("status after Pause = %q, want paused", got)
+		}
+		if err := pc.Resume(ctx, own.Name); err != nil {
+			t.Fatalf("Resume: %v", err)
+		}
+		if got := statusOf(t); got != "active" {
+			t.Fatalf("status after Resume = %q, want active", got)
+		}
+	})
+
+	// No runner is connected, so the rebuild stays running until it is cancelled.
+	t.Run("proj-rebuild, proj-rebuild-status and proj-rebuild-cancel", func(t *testing.T) {
+		job, err := pc.Rebuild(ctx, own.Name)
+		if err != nil || job.Name != own.Name || job.Status != "running" || job.StartedAt == "" {
+			t.Fatalf("Rebuild = %+v, %v; want a running job for %s", job, err, own.Name)
+		}
+		if got := statusOf(t); got != "rebuilding" {
+			t.Fatalf("status after Rebuild = %q, want rebuilding", got)
+		}
+		if job, err = pc.GetRebuildJob(ctx, own.Name); err != nil || job.Name != own.Name || job.Status != "running" {
+			t.Fatalf("GetRebuildJob = %+v, %v; want running", job, err)
+		}
+		if err := pc.CancelRebuild(ctx, own.Name); err != nil {
+			t.Fatalf("CancelRebuild: %v", err)
+		}
+		if job, err = pc.GetRebuildJob(ctx, own.Name); err != nil || job.Status != "cancelled" {
+			t.Fatalf("GetRebuildJob after cancel = %+v, %v; want cancelled", job, err)
+		}
+		if got := statusOf(t); got != "active" {
+			t.Fatalf("status after CancelRebuild = %q, want active", got)
+		}
+	})
+
+	// Delete is the SDK's unregister: the REST route runs the UnregisterProjection handler.
+	t.Run("proj-delete and proj-unregister", func(t *testing.T) {
+		if err := pc.Delete(ctx, own.Name); err != nil {
+			t.Fatalf("Delete: %v", err)
+		}
+		_, err := pc.Get(ctx, own.Name)
+		var ie *IronflowError
+		if !errors.As(err, &ie) || ie.Code != "not_found" {
+			t.Fatalf("Get after Delete = %v, want not_found", err)
 		}
 	})
 
@@ -554,4 +720,163 @@ func liveWebhooks(t *testing.T, client *Client, serverURL string) {
 	if total != len(want) || !slices.Equal(got, want) {
 		t.Fatalf("deliveries (total %d) = %+v, want %+v", total, got, want)
 	}
+}
+
+// liveRuns covers the runs rows (#3051). The hold runs belong to the Go suite
+// alone, so the steps below pause, cancel, redact and delete them. They run in order.
+func liveRuns(ctx context.Context, t *testing.T, client *Client, seed readinessSeed) {
+	hold := seed.Holds["go"]
+	statusOf := func(t *testing.T, id string) RunStatus {
+		t.Helper()
+		run, err := client.GetRun(ctx, id)
+		if err != nil {
+			t.Fatalf("GetRun(%s): %v", id, err)
+		}
+		return run.Status
+	}
+	ids := func(runs []*WorkflowRun) []string {
+		var out []string
+		for _, r := range runs {
+			out = append(out, r.ID)
+		}
+		return slices.Sorted(slices.Values(out))
+	}
+	bothHolds := slices.Sorted(slices.Values([]string{hold.RunID, hold.SpareRunID}))
+
+	t.Run("run-get", func(t *testing.T) {
+		run, err := client.GetRun(ctx, seed.RunID)
+		if err != nil {
+			t.Fatalf("GetRun: %v", err)
+		}
+		if run.ID != seed.RunID || run.FunctionID != seed.FunctionID || run.Status != RunStatusCompleted || run.EndedAt == nil {
+			t.Fatalf("GetRun = %+v, want %s of %s completed", run, seed.RunID, seed.FunctionID)
+		}
+		if string(asJSON(run.Input)) != "{}" || !sameJSON(asJSON(run.Output), seed.StepOutput) {
+			t.Fatalf("GetRun input %v output %v, want {} and %v", run.Input, run.Output, seed.StepOutput)
+		}
+	})
+
+	t.Run("run-list", func(t *testing.T) {
+		res, err := client.ListRuns(ctx, &ListRunsOptions{FunctionID: seed.FunctionID})
+		if err != nil || !slices.Equal(ids(res.Runs), []string{seed.RunID}) || res.TotalCount != 1 {
+			t.Fatalf("ListRuns(seed function) = %+v, %v; want only %s", res, err, seed.RunID)
+		}
+		waiting, err := client.ListRuns(ctx, &ListRunsOptions{FunctionID: hold.FunctionID, Status: RunStatusWaiting})
+		if err != nil || !slices.Equal(ids(waiting.Runs), bothHolds) || waiting.TotalCount != 2 {
+			t.Fatalf("ListRuns(waiting) = %+v, %v; want %v", waiting, err, bothHolds)
+		}
+		first, err := client.ListRuns(ctx, &ListRunsOptions{FunctionID: hold.FunctionID, Limit: 1})
+		if err != nil || len(first.Runs) != 1 || first.NextCursor == "" {
+			t.Fatalf("ListRuns(limit 1) = %+v, %v; want one run and a cursor", first, err)
+		}
+		second, err := client.ListRuns(ctx, &ListRunsOptions{FunctionID: hold.FunctionID, Limit: 1, Cursor: first.NextCursor})
+		if err != nil || len(second.Runs) != 1 {
+			t.Fatalf("ListRuns(page 2) = %+v, %v; want one run", second, err)
+		}
+		if got := ids(append(first.Runs, second.Runs...)); !slices.Equal(got, bothHolds) {
+			t.Fatalf("pages = %v, want %v", got, bothHolds)
+		}
+	})
+
+	t.Run("run-steps", func(t *testing.T) {
+		steps, err := client.GetRunSteps(ctx, seed.RunID)
+		if err != nil || steps.Count != 1 || len(steps.Steps) != 1 {
+			t.Fatalf("GetRunSteps(seed run) = %+v, %v; want one step", steps, err)
+		}
+		if st := steps.Steps[0]; st.StepID != seed.StepID || st.RunID != seed.RunID || st.Status != "completed" || !sameJSON(asJSON(st.Output), seed.StepOutput) {
+			t.Fatalf("seed step = %+v, want %s completed with %v", st, seed.StepID, seed.StepOutput)
+		}
+		held, err := client.GetRunSteps(ctx, hold.RunID)
+		if err != nil || len(held.Steps) != 2 {
+			t.Fatalf("GetRunSteps(hold run) = %+v, %v; want two steps", held, err)
+		}
+		note, wait := held.Steps[0], held.Steps[1]
+		if note.ID != hold.NoteStepID || note.Status != "completed" || !sameJSON(asJSON(note.Output), map[string]any{"sdk": "go"}) {
+			t.Fatalf("note step = %+v, want %s completed with {sdk: go}", note, hold.NoteStepID)
+		}
+		if wait.StepType != "wait_for_event" || wait.Status != "waiting" || wait.WaitEventName != "readiness.never."+hold.FunctionID || wait.WaitTimeout == nil {
+			t.Fatalf("wait step = %+v, want a waiting wait_for_event on readiness.never.%s", wait, hold.FunctionID)
+		}
+	})
+
+	t.Run("run-pause", func(t *testing.T) {
+		status, err := client.PauseRun(ctx, hold.RunID)
+		if err != nil || status != "paused" {
+			t.Fatalf("PauseRun = %q, %v; want paused (a waiting run is held at once)", status, err)
+		}
+		if got := statusOf(t, hold.RunID); got != RunStatusPaused {
+			t.Fatalf("status after PauseRun = %s, want paused", got)
+		}
+	})
+
+	t.Run("run-paused-state", func(t *testing.T) {
+		state, err := client.GetPausedState(ctx, hold.RunID)
+		if err != nil || state.PauseReason != "injection" || len(state.Steps) != 1 {
+			t.Fatalf("GetPausedState = %+v, %v; want injection with one step", state, err)
+		}
+		if st := state.Steps[0]; st.ID != hold.NoteStepID || st.Status != "completed" || st.Injected || st.CompletedAt == "" || !sameJSON(st.Output, map[string]any{"sdk": "go"}) {
+			t.Fatalf("paused step = %+v (output %s), want %s completed with {sdk: go}", st, st.Output, hold.NoteStepID)
+		}
+	})
+
+	// The wait step is still open, so resume puts the run back on its wait.
+	t.Run("run-resume", func(t *testing.T) {
+		run, err := client.ResumeRun(ctx, hold.RunID, "")
+		if err != nil || run.ID != hold.RunID || run.Status != RunStatusWaiting {
+			t.Fatalf("ResumeRun = %+v, %v; want %s waiting", run, err, hold.RunID)
+		}
+	})
+
+	t.Run("run-cancel", func(t *testing.T) {
+		run, err := client.CancelRun(ctx, hold.RunID, "readiness")
+		if err != nil || run.ID != hold.RunID || run.Status != RunStatusCancelled {
+			t.Fatalf("CancelRun = %+v, %v; want %s cancelled", run, err, hold.RunID)
+		}
+		if got := statusOf(t, hold.RunID); got != RunStatusCancelled {
+			t.Fatalf("status after CancelRun = %s, want cancelled", got)
+		}
+	})
+
+	t.Run("payload-redact", func(t *testing.T) {
+		if err := client.RedactStep(ctx, hold.NoteStepID); err != nil {
+			t.Fatalf("RedactStep: %v", err)
+		}
+		if err := client.RedactRun(ctx, hold.RunID); err != nil {
+			t.Fatalf("RedactRun: %v", err)
+		}
+		if err := client.RedactEvent(ctx, hold.EventID); err != nil {
+			t.Fatalf("RedactEvent: %v", err)
+		}
+		steps, err := client.GetRunSteps(ctx, hold.RunID)
+		if err != nil || len(steps.Steps) == 0 || !IsRedacted(asJSON(steps.Steps[0].Output)) {
+			t.Fatalf("note step after RedactStep = %+v, %v; want a redacted output", steps, err)
+		}
+		run, err := client.GetRun(ctx, hold.RunID)
+		if err != nil || !IsRedacted(asJSON(run.Input)) {
+			t.Fatalf("run after RedactRun = %+v, %v; want a redacted input", run, err)
+		}
+		ev, err := client.GetEvent(ctx, hold.EventID)
+		if err != nil || !IsRedacted(asJSON(ev.Data)) {
+			t.Fatalf("event after RedactEvent = %+v, %v; want redacted data", ev, err)
+		}
+	})
+
+	t.Run("run-delete", func(t *testing.T) {
+		if err := client.DeleteRun(ctx, hold.RunID); err != nil {
+			t.Fatalf("DeleteRun: %v", err)
+		}
+		_, err := client.GetRun(ctx, hold.RunID)
+		var ie *IronflowError
+		if !errors.As(err, &ie) || ie.Code != "not_found" { // a Connect route keeps the Connect code
+			t.Fatalf("GetRun after DeleteRun = %v, want not_found", err)
+		}
+		if _, err := client.CancelRun(ctx, hold.SpareRunID, "readiness"); err != nil {
+			t.Fatalf("CancelRun(spare): %v", err)
+		}
+		for want := int64(1); want >= 0; want-- {
+			if n, err := client.DeleteRuns(ctx, RunDeleteFilter{FunctionID: hold.FunctionID}); err != nil || n != want {
+				t.Fatalf("DeleteRuns = %d, %v; want %d", n, err, want)
+			}
+		}
+	})
 }

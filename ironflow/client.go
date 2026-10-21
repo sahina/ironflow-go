@@ -478,7 +478,7 @@ func runStatusToWire(status RunStatus) (string, error) {
 	default:
 		return "", NewError(
 			fmt.Sprintf("invalid run status filter: %q", string(status)),
-			"INVALID_ARGUMENT",
+			"invalid_argument",
 			false,
 		)
 	}
@@ -1085,6 +1085,44 @@ func (c *Client) Health(ctx context.Context) (string, error) {
 	return resp.Status, nil
 }
 
+// ReadyStatus is the answer of the readiness probe.
+type ReadyStatus struct {
+	// Status is "ready".
+	Status string `json:"status"`
+	// Warnings are non-fatal advisories, for example a degraded audit delivery.
+	Warnings map[string]string `json:"warnings,omitempty"`
+}
+
+// Ready reads the readiness probe, GET /ready: the server's database and NATS
+// answer. Health reports liveness only. A server that is not ready returns an
+// *IronflowError with code "NOT_READY", the failing dependencies in
+// Details["issues"] and Details["http_status"] set to 503.
+func (c *Client) Ready(ctx context.Context) (*ReadyStatus, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.serverURL+"/ready", nil)
+	if err != nil {
+		return nil, WrapError(err, "failed to create request", "REQUEST_ERROR", true)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, WrapError(err, "request failed", "REQUEST_FAILED", true)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var body struct {
+		ReadyStatus
+		Issues map[string]string `json:"issues"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil && resp.StatusCode == http.StatusOK {
+		return nil, WrapError(err, "failed to decode response", "DECODE_ERROR", false)
+	}
+	if resp.StatusCode != http.StatusOK {
+		e := NewError(fmt.Sprintf("server not ready: %d %v", resp.StatusCode, body.Issues), "NOT_READY", true)
+		e.Details = map[string]any{"http_status": resp.StatusCode, "issues": body.Issues}
+		return nil, e
+	}
+	return &body.ReadyStatus, nil
+}
+
 // ServerCapabilities describes the server's available capabilities.
 type ServerCapabilities struct {
 	// Transports lists supported transport protocols.
@@ -1116,7 +1154,8 @@ func (c *Client) GetCapabilities(ctx context.Context) (*ServerCapabilities, erro
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, NewError(fmt.Sprintf("failed to get capabilities: %d", resp.StatusCode), "HTTP_ERROR", false)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, c.errorFromResponse(resp, body)
 	}
 
 	var caps ServerCapabilities
@@ -1137,6 +1176,12 @@ type FunctionInfo struct {
 	UpdatedAt     string `json:"updated_at"`
 }
 
+// WorkerVersion names the SDK and runtime a worker registered with.
+type WorkerVersion struct {
+	SDK     string `json:"sdk"`
+	Runtime string `json:"runtime"`
+}
+
 // WorkerInfo describes a connected worker.
 type WorkerInfo struct {
 	ID            string            `json:"id"`
@@ -1144,6 +1189,7 @@ type WorkerInfo struct {
 	FunctionIDs   []string          `json:"function_ids"`
 	MaxConcurrent int               `json:"max_concurrent"`
 	Labels        map[string]string `json:"labels"`
+	Version       WorkerVersion     `json:"version"`
 	ActiveJobs    int               `json:"active_jobs"`
 	RegisteredAt  string            `json:"registered_at"`
 	LastHeartbeat string            `json:"last_heartbeat"`
@@ -1210,7 +1256,8 @@ func (c *Client) ListWorkers(ctx context.Context) ([]WorkerInfo, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, NewError(fmt.Sprintf("failed to list workers: %d", resp.StatusCode), "HTTP_ERROR", false)
+		body, _ := io.ReadAll(resp.Body)
+		return nil, c.errorFromResponse(resp, body)
 	}
 
 	var result struct {
@@ -1580,7 +1627,7 @@ func WithJoinConsumerID(consumerID string) JoinConsumerGroupOption {
 // until the ctx passed to JoinConsumerGroup is done or Unsubscribe is called.
 // A retryable disconnect, or 90 s with no frame from the server,
 // reconnects silently with backoff; Errors() carries only the error that ends
-// the subscription, CANCELED or DEADLINE_EXCEEDED when ctx ends it. Ack, nak and
+// the subscription, canceled or deadline_exceeded when ctx ends it. Ack, nak and
 // term wait for the server's result. After a reconnect they return ErrStaleAck
 // for events of the old stream, which the server redelivers. On an AUTO group
 // they do nothing.
@@ -1597,7 +1644,7 @@ func WithJoinTransport(transport string) JoinConsumerGroupOption {
 //
 // With the "grpc" transport, ctx bounds the subscription's whole life, not only
 // the join: the stream ends when ctx is done or Unsubscribe is called. A done
-// ctx is reported on Errors() as CANCELED or DEADLINE_EXCEEDED. Retryable
+// ctx is reported on Errors() as canceled or deadline_exceeded. Retryable
 // disconnects reconnect silently.
 //
 // Example:
@@ -2343,10 +2390,11 @@ func (c *Client) errorFromResponse(resp *http.Response, respBody []byte) *Ironfl
 	retryable, retryAfter := restRetrySignal(resp.StatusCode, resp.Header, respBody)
 
 	msg := cmp.Or(errResp.Message, errResp.Error, fmt.Sprintf("HTTP %d", resp.StatusCode))
-	if errResp.Code != "" {
-		msg = errResp.Code + ": " + msg
+	code := restErrorCode(errResp.Code, resp.StatusCode)
+	if errResp.Code != "" { // the prefix reports what the server sent, not the code the SDK derived
+		msg = code + ": " + msg
 	}
-	ironflowErr := NewError(msg, errResp.Code, retryable)
+	ironflowErr := NewError(msg, code, retryable)
 	ironflowErr.Details = map[string]any{"http_status": resp.StatusCode}
 
 	switch resp.StatusCode {
@@ -2369,8 +2417,9 @@ func (c *Client) errorFromResponse(resp *http.Response, respBody []byte) *Ironfl
 		//
 		// Two Connect codes land here and want opposite things (#2074).
 		// "aborted" is a lost CAS race: nothing was applied, so re-read and
-		// reissue. Anything else — "already_exists", or a REST body carrying
-		// no code at all — is a deduplicated resume: wait, do not reissue.
+		// reissue. Anything else — "already_exists", "failed_precondition" or a
+		// body with no code — is a deduplicated resume or a failed precondition:
+		// wait or fix the state, do not reissue.
 		//
 		// Retryable stays false on both. gRPC defines Aborted as "retry at a
 		// higher level" — restart the read-modify-write — and Retryable here

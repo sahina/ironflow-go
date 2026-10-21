@@ -200,7 +200,7 @@ func TestGetAuditTrail(t *testing.T) {
 	t.Run("returns error on non-200 status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"code":"NOT_FOUND","message":"run not found"}`))
+			w.Write([]byte(`{"code":"not_found","message":"run not found"}`))
 		}))
 		defer server.Close()
 
@@ -228,8 +228,8 @@ func TestGetAuditTrail(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "NOT_FOUND" {
-			t.Errorf("expected code 'NOT_FOUND', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "not_found" {
+			t.Errorf("expected code 'not_found', got '%s'", ironflowErr.Code)
 		}
 	})
 

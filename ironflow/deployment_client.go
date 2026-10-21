@@ -103,7 +103,7 @@ type FunctionExecutionRouting struct {
 
 // Register stores an immutable deployment. Registering the identical tuple
 // again succeeds with Created false; a different artifact, snapshot, mode or
-// endpoint under an existing deployment ID fails with ALREADY_EXISTS.
+// endpoint under an existing deployment ID fails with already_exists.
 func (dc *DeploymentClient) Register(ctx context.Context, input RegisterDeploymentInput) (*RegisterDeploymentResult, error) {
 	req := &ironflowv1.RegisterDeploymentRequest{
 		FunctionId:            input.FunctionID,
@@ -116,7 +116,7 @@ func (dc *DeploymentClient) Register(ctx context.Context, input RegisterDeployme
 	if len(input.Snapshot) > 0 {
 		req.Snapshot = &ironflowv1.ExecutionSnapshot{}
 		if err := protojson.Unmarshal(input.Snapshot, req.Snapshot); err != nil {
-			return nil, NewError(fmt.Sprintf("invalid snapshot: %v", err), "INVALID_ARGUMENT", false)
+			return nil, NewError(fmt.Sprintf("invalid snapshot: %v", err), "invalid_argument", false)
 		}
 	}
 	// sdkcoverage: POST /ironflow.v1.DeploymentService/RegisterDeployment
@@ -197,7 +197,7 @@ func executionModeToProto(m ExecutionMode) ironflowv1.ExecutionMode {
 
 func deploymentFromProto(pd *ironflowv1.Deployment) (*Deployment, error) {
 	if pd == nil {
-		return nil, NewError("server returned no deployment", "INTERNAL", false)
+		return nil, NewError("server returned no deployment", "internal", false)
 	}
 	d := &Deployment{
 		EnvironmentID:  pd.GetEnvironmentId(),

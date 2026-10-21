@@ -215,7 +215,7 @@ type UpdateWebhookSourceInput struct {
 	// legacy body-only verification and every real delivery would then fail.
 	VerifyConfig *WebhookVerifyConfig `json:"verify_config,omitempty"`
 	// ExpectedUpdatedAt is an optimistic-concurrency token: send the UpdatedAt
-	// you last read and the write is rejected with ABORTED if the row moved.
+	// you last read and the write is rejected with aborted if the row moved.
 	// Worth sending precisely because VerifyConfig is preserve-on-omit — an
 	// unguarded rename can otherwise revert someone else's descriptor change.
 	// Omit to skip the check.

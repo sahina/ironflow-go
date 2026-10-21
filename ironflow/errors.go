@@ -68,8 +68,8 @@ var (
 	//
 	// Two Connect codes serialize to 409 with opposite retry advice, so the
 	// status alone cannot pick between them (#2074). CodeAlreadyExists lands
-	// here; CodeAborted lands on ErrContended. A 409 carrying no Connect code —
-	// every REST route — still lands here, which is the pre-#2074 behavior.
+	// here; CodeAborted lands on ErrContended. A 409 carrying any other code,
+	// such as a file route's, still lands here, which is the pre-#2074 behavior.
 	ErrConflict = errors.New("conflict")
 
 	// ErrContended is returned when a concurrent write won and the server
@@ -356,17 +356,67 @@ func authError(resp *http.Response, what string) error {
 	case http.StatusUnauthorized:
 		return &IronflowError{
 			Message: fmt.Sprintf("%s: 401 unauthenticated. %s", what, AuthHelp),
-			Code:    "UNAUTHENTICATED",
+			Code:    "unauthenticated",
+			Details: map[string]any{"http_status": resp.StatusCode},
 			Cause:   ErrUnauthorized,
 		}
 	case http.StatusForbidden:
 		return &IronflowError{
 			Message: fmt.Sprintf("%s: 403 forbidden%s. %s%s", what, serverMessage(resp), environmentHint(resp), AuthHelp),
-			Code:    "UNAUTHORIZED",
+			Code:    "permission_denied",
+			Details: map[string]any{"http_status": resp.StatusCode},
 			Cause:   ErrForbidden,
 		}
 	}
 	return nil
+}
+
+// legacyGenericCodes maps the capitalised generic codes that a server released
+// before #3054 sent to the Connect codes they name. A domain code, such as
+// BUCKET_NOT_EMPTY, is not in the table and keeps its name.
+// Keep in step with connectCodeForStatus (sdk/js/core/src/errors.ts), connect_code_for_status
+// (sdk/python/ironflow/_http.py) and errorenvelope.httpCode (internal/errorenvelope).
+var legacyGenericCodes = map[string]string{
+	"INVALID": "invalid_argument", "FORBIDDEN": "permission_denied", "NOT_FOUND": "not_found",
+	"CONFLICT": "already_exists", "INTERNAL": "internal",
+}
+
+// restErrorCode names a REST failure with a Connect code (#3054). The body's
+// own code wins: it carries domain codes such as BUCKET_NOT_EMPTY. A body with
+// none, from a server older than the fix or a proxy, gets the code the Connect
+// protocol maps the status to; the server's errorenvelope.httpCode is the same
+// table. 409 is already_exists: "aborted" always arrives in the body.
+func restErrorCode(bodyCode string, status int) string {
+	if bodyCode != "" {
+		// A server released before #3054 sent generic codes in capitals.
+		if c, ok := legacyGenericCodes[bodyCode]; ok {
+			return c
+		}
+		return bodyCode
+	}
+	switch {
+	case status == http.StatusUnauthorized:
+		return "unauthenticated"
+	case status == http.StatusRequestTimeout || status == http.StatusGatewayTimeout:
+		return "deadline_exceeded"
+	case status == http.StatusPaymentRequired, status == http.StatusPreconditionFailed, status == http.StatusInsufficientStorage:
+		return "failed_precondition"
+	case status == http.StatusForbidden:
+		return "permission_denied"
+	case status == http.StatusNotFound:
+		return "not_found"
+	case status == http.StatusConflict:
+		return "already_exists"
+	case status == http.StatusTooManyRequests:
+		return "resource_exhausted"
+	case status == http.StatusNotImplemented:
+		return "unimplemented"
+	case status == http.StatusServiceUnavailable:
+		return "unavailable"
+	case status >= 500:
+		return "internal"
+	}
+	return "invalid_argument"
 }
 
 // serverMessage returns ": <message>" from a JSON error body, or "".

@@ -121,10 +121,15 @@ func (c *Client) CreateSnapshot(ctx context.Context, entityID string, input Crea
 	return &StreamSnapshot{SnapshotID: resp.Msg.SnapshotId, EntityID: entityID, EntityType: input.EntityType, EntityVersion: input.EntityVersion, State: input.State}, nil
 }
 
-// GetSnapshot returns the latest snapshot for an entity stream.
-func (c *Client) GetSnapshot(ctx context.Context, entityID string) (*StreamSnapshot, error) {
+// GetSnapshot returns the latest snapshot for an entity stream, or with
+// opts.BeforeVersion the latest one at or before that version.
+func (c *Client) GetSnapshot(ctx context.Context, entityID string, opts ...GetSnapshotOpts) (*StreamSnapshot, error) {
+	req := &ironflowv1.GetSnapshotRequest{EntityId: entityID}
+	if len(opts) > 0 {
+		req.BeforeVersion = opts[0].BeforeVersion
+	}
 	// sdkcoverage: POST /ironflow.v1.EntityStreamService/GetSnapshot
-	resp, err := c.entityRPC().GetSnapshot(ctx, connect.NewRequest(&ironflowv1.GetSnapshotRequest{EntityId: entityID}))
+	resp, err := c.entityRPC().GetSnapshot(ctx, connect.NewRequest(req))
 	if err != nil {
 		return nil, connectError(err)
 	}

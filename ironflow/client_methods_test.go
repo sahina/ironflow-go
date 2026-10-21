@@ -245,6 +245,7 @@ func TestListWorkers(t *testing.T) {
 						"function_ids": ["fn-001", "fn-002"],
 						"max_concurrent": 10,
 						"labels": {"region": "us-east", "tier": "premium"},
+						"version": {"sdk": "go", "runtime": "go1.27"},
 						"active_jobs": 3,
 						"registered_at": "2025-01-01T00:00:00Z",
 						"last_heartbeat": "2025-01-01T01:00:00Z",
@@ -291,6 +292,9 @@ func TestListWorkers(t *testing.T) {
 		}
 		if w1.Hostname != "worker-host-1" {
 			t.Errorf("expected hostname 'worker-host-1', got '%s'", w1.Hostname)
+		}
+		if w1.Version != (WorkerVersion{SDK: "go", Runtime: "go1.27"}) {
+			t.Errorf("expected version {go go1.27}, got %+v", w1.Version)
 		}
 		if len(w1.FunctionIDs) != 2 {
 			t.Fatalf("expected 2 function IDs, got %d", len(w1.FunctionIDs))
@@ -360,7 +364,7 @@ func TestListWorkers(t *testing.T) {
 	t.Run("returns error on non-200 status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte(`{"code":"SERVICE_UNAVAILABLE","message":"maintenance"}`))
+			w.Write([]byte(`{"code":"unavailable","message":"maintenance"}`))
 		}))
 		defer server.Close()
 
@@ -385,8 +389,8 @@ func TestListWorkers(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "HTTP_ERROR" {
-			t.Errorf("expected code 'HTTP_ERROR', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "unavailable" {
+			t.Errorf("expected code 'unavailable', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -678,7 +682,7 @@ func TestEmit(t *testing.T) {
 	t.Run("returns error on server error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"code":"INTERNAL","message":"database error"}`))
+			w.Write([]byte(`{"code":"internal","message":"database error"}`))
 		}))
 		defer server.Close()
 
@@ -702,8 +706,8 @@ func TestEmit(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "INTERNAL" {
-			t.Errorf("expected code 'INTERNAL', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "internal" {
+			t.Errorf("expected code 'internal', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -1590,7 +1594,7 @@ func TestGetRun(t *testing.T) {
 	t.Run("returns error on non-200 status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"code":"NOT_FOUND","message":"run not found"}`))
+			w.Write([]byte(`{"code":"not_found","message":"run not found"}`))
 		}))
 		defer server.Close()
 
@@ -1618,8 +1622,8 @@ func TestGetRun(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "NOT_FOUND" {
-			t.Errorf("expected code 'NOT_FOUND', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "not_found" {
+			t.Errorf("expected code 'not_found', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -1825,7 +1829,7 @@ func TestListRuns(t *testing.T) {
 	t.Run("returns error on non-200 status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"code":"INTERNAL","message":"database error"}`))
+			w.Write([]byte(`{"code":"internal","message":"database error"}`))
 		}))
 		defer server.Close()
 
@@ -1853,8 +1857,8 @@ func TestListRuns(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "INTERNAL" {
-			t.Errorf("expected code 'INTERNAL', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "internal" {
+			t.Errorf("expected code 'internal', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -1970,7 +1974,7 @@ func TestCancelRun(t *testing.T) {
 	t.Run("returns error on non-200 status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"code":"NOT_FOUND","message":"run not found"}`))
+			w.Write([]byte(`{"code":"not_found","message":"run not found"}`))
 		}))
 		defer server.Close()
 
@@ -1998,15 +2002,15 @@ func TestCancelRun(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "NOT_FOUND" {
-			t.Errorf("expected code 'NOT_FOUND', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "not_found" {
+			t.Errorf("expected code 'not_found', got '%s'", ironflowErr.Code)
 		}
 	})
 
 	t.Run("returns error on server error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"code":"INTERNAL","message":"internal error"}`))
+			w.Write([]byte(`{"code":"internal","message":"internal error"}`))
 		}))
 		defer server.Close()
 
@@ -2030,8 +2034,8 @@ func TestCancelRun(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "INTERNAL" {
-			t.Errorf("expected code 'INTERNAL', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "internal" {
+			t.Errorf("expected code 'internal', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -2352,7 +2356,7 @@ func TestAppendStreamEvent(t *testing.T) {
 	t.Run("returns error on server error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"code":"INTERNAL","message":"storage failure"}`))
+			w.Write([]byte(`{"code":"internal","message":"storage failure"}`))
 		}))
 		defer server.Close()
 
@@ -2380,8 +2384,8 @@ func TestAppendStreamEvent(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "INTERNAL" {
-			t.Errorf("expected code 'INTERNAL', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "internal" {
+			t.Errorf("expected code 'internal', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -2704,7 +2708,7 @@ func TestReadStream(t *testing.T) {
 	t.Run("returns error on non-200 status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"code":"NOT_FOUND","message":"entity not found"}`))
+			w.Write([]byte(`{"code":"not_found","message":"entity not found"}`))
 		}))
 		defer server.Close()
 
@@ -2732,15 +2736,15 @@ func TestReadStream(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "NOT_FOUND" {
-			t.Errorf("expected code 'NOT_FOUND', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "not_found" {
+			t.Errorf("expected code 'not_found', got '%s'", ironflowErr.Code)
 		}
 	})
 
 	t.Run("returns error on server error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"code":"INTERNAL","message":"storage failure"}`))
+			w.Write([]byte(`{"code":"internal","message":"storage failure"}`))
 		}))
 		defer server.Close()
 
@@ -2764,8 +2768,8 @@ func TestReadStream(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "INTERNAL" {
-			t.Errorf("expected code 'INTERNAL', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "internal" {
+			t.Errorf("expected code 'internal', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -2888,7 +2892,7 @@ func TestGetStreamInfo(t *testing.T) {
 	t.Run("returns error on non-200 status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"code":"NOT_FOUND","message":"entity stream not found"}`))
+			w.Write([]byte(`{"code":"not_found","message":"entity stream not found"}`))
 		}))
 		defer server.Close()
 
@@ -2916,15 +2920,15 @@ func TestGetStreamInfo(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "NOT_FOUND" {
-			t.Errorf("expected code 'NOT_FOUND', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "not_found" {
+			t.Errorf("expected code 'not_found', got '%s'", ironflowErr.Code)
 		}
 	})
 
 	t.Run("returns error on server error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"code":"INTERNAL","message":"database error"}`))
+			w.Write([]byte(`{"code":"internal","message":"database error"}`))
 		}))
 		defer server.Close()
 
@@ -2948,8 +2952,8 @@ func TestGetStreamInfo(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "INTERNAL" {
-			t.Errorf("expected code 'INTERNAL', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "internal" {
+			t.Errorf("expected code 'internal', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -3185,7 +3189,7 @@ func TestCreateConsumerGroup(t *testing.T) {
 	t.Run("returns error on non-200 status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusConflict)
-			w.Write([]byte(`{"code":"ALREADY_EXISTS","message":"consumer group already exists"}`))
+			w.Write([]byte(`{"code":"already_exists","message":"consumer group already exists"}`))
 		}))
 		defer server.Close()
 
@@ -3216,15 +3220,15 @@ func TestCreateConsumerGroup(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "ALREADY_EXISTS" {
-			t.Errorf("expected code 'ALREADY_EXISTS', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "already_exists" {
+			t.Errorf("expected code 'already_exists', got '%s'", ironflowErr.Code)
 		}
 	})
 
 	t.Run("returns error on server error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"code":"INTERNAL","message":"database error"}`))
+			w.Write([]byte(`{"code":"internal","message":"database error"}`))
 		}))
 		defer server.Close()
 
@@ -3251,8 +3255,8 @@ func TestCreateConsumerGroup(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "INTERNAL" {
-			t.Errorf("expected code 'INTERNAL', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "internal" {
+			t.Errorf("expected code 'internal', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -3451,7 +3455,7 @@ func TestGetConsumerGroup(t *testing.T) {
 	t.Run("returns error on non-200 status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"code":"NOT_FOUND","message":"consumer group not found"}`))
+			w.Write([]byte(`{"code":"not_found","message":"consumer group not found"}`))
 		}))
 		defer server.Close()
 
@@ -3479,15 +3483,15 @@ func TestGetConsumerGroup(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "NOT_FOUND" {
-			t.Errorf("expected code 'NOT_FOUND', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "not_found" {
+			t.Errorf("expected code 'not_found', got '%s'", ironflowErr.Code)
 		}
 	})
 
 	t.Run("returns error on server error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"code":"INTERNAL","message":"database error"}`))
+			w.Write([]byte(`{"code":"internal","message":"database error"}`))
 		}))
 		defer server.Close()
 
@@ -3511,8 +3515,8 @@ func TestGetConsumerGroup(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "INTERNAL" {
-			t.Errorf("expected code 'INTERNAL', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "internal" {
+			t.Errorf("expected code 'internal', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -3744,7 +3748,7 @@ func TestListConsumerGroups(t *testing.T) {
 	t.Run("returns error on non-200 status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"code":"INTERNAL","message":"database error"}`))
+			w.Write([]byte(`{"code":"internal","message":"database error"}`))
 		}))
 		defer server.Close()
 
@@ -3772,8 +3776,8 @@ func TestListConsumerGroups(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "INTERNAL" {
-			t.Errorf("expected code 'INTERNAL', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "internal" {
+			t.Errorf("expected code 'internal', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -3911,7 +3915,7 @@ func TestDeleteConsumerGroup(t *testing.T) {
 	t.Run("returns error on non-200 status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"code":"NOT_FOUND","message":"consumer group not found"}`))
+			w.Write([]byte(`{"code":"not_found","message":"consumer group not found"}`))
 		}))
 		defer server.Close()
 
@@ -3935,15 +3939,15 @@ func TestDeleteConsumerGroup(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "NOT_FOUND" {
-			t.Errorf("expected code 'NOT_FOUND', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "not_found" {
+			t.Errorf("expected code 'not_found', got '%s'", ironflowErr.Code)
 		}
 	})
 
 	t.Run("returns error on server error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"code":"INTERNAL","message":"database error"}`))
+			w.Write([]byte(`{"code":"internal","message":"database error"}`))
 		}))
 		defer server.Close()
 
@@ -3967,8 +3971,8 @@ func TestDeleteConsumerGroup(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "INTERNAL" {
-			t.Errorf("expected code 'INTERNAL', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "internal" {
+			t.Errorf("expected code 'internal', got '%s'", ironflowErr.Code)
 		}
 	})
 
@@ -4054,7 +4058,7 @@ func TestHealth(t *testing.T) {
 	t.Run("returns error on non-200 status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte(`{"code":"UNAVAILABLE","message":"server not ready"}`))
+			w.Write([]byte(`{"code":"unavailable","message":"server not ready"}`))
 		}))
 		defer server.Close()
 
@@ -4078,8 +4082,46 @@ func TestHealth(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected IronflowError, got %T", err)
 		}
-		if ironflowErr.Code != "UNAVAILABLE" {
-			t.Errorf("expected code 'UNAVAILABLE', got '%s'", ironflowErr.Code)
+		if ironflowErr.Code != "unavailable" {
+			t.Errorf("expected code 'unavailable', got '%s'", ironflowErr.Code)
+		}
+	})
+}
+
+func TestReady(t *testing.T) {
+	newClient := func(h http.HandlerFunc) *Client {
+		server := httptest.NewServer(h)
+		t.Cleanup(server.Close)
+		return &Client{serverURL: server.URL, httpClient: &http.Client{}, retryConfig: &ClientRetryConfig{MaxAttempts: 1}, logger: NewNoopLogger()}
+	}
+
+	t.Run("reads GET /ready", func(t *testing.T) {
+		var method, path string
+		client := newClient(func(w http.ResponseWriter, r *http.Request) {
+			method, path = r.Method, r.URL.Path
+			_, _ = w.Write([]byte(`{"status":"ready","warnings":{"audit":"degraded"}}`))
+		})
+		got, err := client.Ready(context.Background())
+		if err != nil || got.Status != "ready" || got.Warnings["audit"] != "degraded" {
+			t.Fatalf("Ready = %+v, %v", got, err)
+		}
+		if method != "GET" || path != "/ready" {
+			t.Errorf("request = %s %s, want GET /ready", method, path)
+		}
+	})
+
+	t.Run("a server that is not ready returns NOT_READY with the issues", func(t *testing.T) {
+		client := newClient(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"not ready","issues":{"nats":"disconnected"}}`))
+		})
+		_, err := client.Ready(context.Background())
+		ie, ok := err.(*IronflowError)
+		if !ok || ie.Code != "NOT_READY" || ie.Details["http_status"] != 503 {
+			t.Fatalf("Ready error = %#v, want NOT_READY at 503", err)
+		}
+		if issues, _ := ie.Details["issues"].(map[string]string); issues["nats"] != "disconnected" {
+			t.Errorf("issues = %v, want nats disconnected", ie.Details["issues"])
 		}
 	})
 }

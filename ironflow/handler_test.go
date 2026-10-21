@@ -88,7 +88,7 @@ func TestCreateHandler_AllOptions(t *testing.T) {
 			},
 			Concurrency: &ConcurrencyConfig{
 				Limit: 10,
-				Key:   "event.data.customerId",
+				Key:   "customerId",
 			},
 			Mode:     PullMode,
 			ActorKey: "data.customerId",

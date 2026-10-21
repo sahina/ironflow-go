@@ -189,7 +189,7 @@ func TestGroupStream_ResultsCorrelateByAckID(t *testing.T) {
 
 	var ackErr *AckError
 	if !errors.As(nakErr, &ackErr) || ackErr.Message != "nak failed" {
-		t.Fatalf("Nak error = %v, want its own INTERNAL result", nakErr)
+		t.Fatalf("Nak error = %v, want its own internal result", nakErr)
 	}
 	select {
 	case err := <-ackDone:
@@ -444,8 +444,8 @@ func TestGroupStream_CtxCancelTearsDownStream(t *testing.T) {
 	}
 	select {
 	case e := <-sub.Errors():
-		if e == nil || e.Code != "CANCELED" {
-			t.Fatalf("Errors() = %+v, want CANCELED", e)
+		if e == nil || e.Code != "canceled" {
+			t.Fatalf("Errors() = %+v, want canceled", e)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the ctx end did not reach Errors()")
@@ -487,8 +487,8 @@ func TestGroupStream_NotFoundOnRejoinIsTerminal(t *testing.T) {
 
 	select {
 	case e := <-sub.Errors():
-		if e.Code != "NOT_FOUND" {
-			t.Fatalf("Errors() code = %q, want NOT_FOUND", e.Code)
+		if e.Code != "not_found" {
+			t.Fatalf("Errors() code = %q, want not_found", e.Code)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("no terminal error reached Errors()")

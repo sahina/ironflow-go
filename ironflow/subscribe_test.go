@@ -507,7 +507,7 @@ func TestSubscriptionClient_ResumeCursorRejections(t *testing.T) {
 						"type": "subscription_result",
 						"results": []map[string]any{{
 							"pattern": msg.Subscription.Pattern, "status": "error",
-							"code": "INVALID_ARGUMENT", "message": tt.message,
+							"code": "invalid_argument", "message": tt.message,
 						}},
 					})
 				}
@@ -521,8 +521,8 @@ func TestSubscriptionClient_ResumeCursorRejections(t *testing.T) {
 
 			cursor := uint64(400)
 			_, err := client.Subscribe(context.Background(), "orders.*", tt.options(&cursor))
-			if err == nil || !strings.Contains(err.Error(), "INVALID_ARGUMENT") || !strings.Contains(err.Error(), tt.message) {
-				t.Fatalf("Subscribe error = %v, want INVALID_ARGUMENT containing %q", err, tt.message)
+			if err == nil || !strings.Contains(err.Error(), "invalid_argument") || !strings.Contains(err.Error(), tt.message) {
+				t.Fatalf("Subscribe error = %v, want invalid_argument containing %q", err, tt.message)
 			}
 		})
 	}
@@ -1110,7 +1110,7 @@ func TestSubscriptionClient_CanceledResubscribeRejectionDoesNotPanic(t *testing.
 	sub.Unsubscribe()
 	client.handleMessage([]byte(`{
 		"type":"subscription_result",
-		"results":[{"pattern":"orders.*","status":"error","code":"INVALID_ARGUMENT","message":"rejected"}]
+		"results":[{"pattern":"orders.*","status":"error","code":"invalid_argument","message":"rejected"}]
 	}`))
 
 	select {
@@ -1249,7 +1249,7 @@ func TestSubscriptionClient_ResubscribeRejectionRemovesPublicState(t *testing.T)
 				"results": []map[string]any{{
 					"pattern": msg.Subscription.Pattern,
 					"status":  "error",
-					"code":    "INVALID_ARGUMENT",
+					"code":    "invalid_argument",
 					"message": "cursor rejected",
 				}},
 			})

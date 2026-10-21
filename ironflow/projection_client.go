@@ -430,7 +430,7 @@ func sdkRebuildJob(job *ironflowv1.RebuildJob) *RebuildJob {
 	if job == nil {
 		return nil
 	}
-	result := &RebuildJob{Name: job.ProjectionName, Status: job.Status, Progress: int(job.Progress)}
+	result := &RebuildJob{Name: job.ProjectionName, Status: job.Status, Progress: job.Progress}
 	if job.StartedAt != nil {
 		result.StartedAt = job.StartedAt.AsTime().Format(time.RFC3339Nano)
 	}
