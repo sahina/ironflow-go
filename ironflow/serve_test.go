@@ -570,7 +570,7 @@ func TestServe_PublishEnvironment(t *testing.T) {
 			got, runEnv := "unset", "unset"
 			pubsub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				got = "<absent>"
-				if v, ok := r.Header[http.CanonicalHeaderKey(HeaderEnvironment)]; ok {
+				if v, ok := r.Header[http.CanonicalHeaderKey(HeaderEnvironmentID)]; ok {
 					got = v[0]
 				}
 				w.Header().Set("Content-Type", "application/json")
@@ -593,7 +593,7 @@ func TestServe_PublishEnvironment(t *testing.T) {
 			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/ironflow", strings.NewReader(validPushBody("pub-fn"))))
 
 			if got != tc.want {
-				t.Errorf("publish X-Ironflow-Environment = %q, want %q", got, tc.want)
+				t.Errorf("publish X-Ironflow-Environment-ID = %q, want %q", got, tc.want)
 			}
 			wantRun := tc.want
 			if wantRun == "<absent>" {

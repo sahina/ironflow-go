@@ -26,8 +26,8 @@ type ServeConfig struct {
 	// When set, SDK-defined webhooks will emit events to the server after transform.
 	ServerURL string
 
-	// Environment scopes the durable Publish steps of push-mode runs through
-	// X-Ironflow-Environment. Falls back to IRONFLOW_ENV. With neither set no
+	// Environment is an environment ID. It scopes the durable Publish steps of push-mode runs through
+	// X-Ironflow-Environment-ID. Falls back to IRONFLOW_ENV. With neither set no
 	// header is sent and the server uses the API key's environment. There is
 	// no "default" fallback: a key scoped to another environment would get 403.
 	Environment string

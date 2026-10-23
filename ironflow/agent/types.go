@@ -164,6 +164,11 @@ type ApproveResult[T any] struct {
 	// approver.
 	Approver string
 
+	// EmittedBy is the authenticated emitter of the approval event, set by
+	// the engine (e.g. "apikey:<id>", "user:<id>"). Unlike Approver, the
+	// caller cannot choose it. Empty when the engine reports no emitter.
+	EmittedBy string
+
 	// Payload is echoed back from the approval event.
 	Payload T
 
@@ -329,8 +334,8 @@ type ExposeMcpConfig struct {
 	// when empty.
 	APIKey string
 
-	// Environment scopes RegisterTool and UnregisterTool through
-	// X-Ironflow-Environment. Falls back to IRONFLOW_ENV. With neither set
+	// Environment is an environment ID. It scopes RegisterTool and UnregisterTool through
+	// X-Ironflow-Environment-ID. Falls back to IRONFLOW_ENV. With neither set
 	// no header is sent and the server uses the API key's environment.
 	Environment string
 }

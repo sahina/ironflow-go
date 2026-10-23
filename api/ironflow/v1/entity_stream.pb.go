@@ -346,8 +346,10 @@ type StreamEvent struct {
 	EntityId        string                 `protobuf:"bytes,17,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`
 	EntityType      string                 `protobuf:"bytes,18,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"`
 	NatsSeq         int64                  `protobuf:"varint,19,opt,name=nats_seq,json=natsSeq,proto3" json:"nats_seq,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Who emitted the event; see Event.emitted_by.
+	EmittedBy     string `protobuf:"bytes,20,opt,name=emitted_by,json=emittedBy,proto3" json:"emitted_by,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StreamEvent) Reset() {
@@ -511,6 +513,13 @@ func (x *StreamEvent) GetNatsSeq() int64 {
 		return x.NatsSeq
 	}
 	return 0
+}
+
+func (x *StreamEvent) GetEmittedBy() string {
+	if x != nil {
+		return x.EmittedBy
+	}
+	return ""
 }
 
 type GetStreamInfoRequest struct {
@@ -1721,7 +1730,7 @@ const file_ironflow_v1_entity_stream_proto_rawDesc = "" +
 	"\x12ReadStreamResponse\x120\n" +
 	"\x06events\x18\x01 \x03(\v2\x18.ironflow.v1.StreamEventR\x06events\x12\x1f\n" +
 	"\vtotal_count\x18\x02 \x01(\x05R\n" +
-	"totalCount\"\xc3\x05\n" +
+	"totalCount\"\xe2\x05\n" +
 	"\vStreamEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12+\n" +
@@ -1746,7 +1755,9 @@ const file_ironflow_v1_entity_stream_proto_rawDesc = "" +
 	"\tentity_id\x18\x11 \x01(\tR\bentityId\x12\x1f\n" +
 	"\ventity_type\x18\x12 \x01(\tR\n" +
 	"entityType\x12\x19\n" +
-	"\bnats_seq\x18\x13 \x01(\x03R\anatsSeq\"3\n" +
+	"\bnats_seq\x18\x13 \x01(\x03R\anatsSeq\x12\x1d\n" +
+	"\n" +
+	"emitted_by\x18\x14 \x01(\tR\temittedBy\"3\n" +
 	"\x14GetStreamInfoRequest\x12\x1b\n" +
 	"\tentity_id\x18\x01 \x01(\tR\bentityId\"\xa0\x02\n" +
 	"\x15GetStreamInfoResponse\x12\x1b\n" +

@@ -887,6 +887,10 @@ type Event struct {
 	EntityId      string `protobuf:"bytes,9,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`
 	EntityType    string `protobuf:"bytes,10,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"`
 	EntityVersion int64  `protobuf:"varint,11,opt,name=entity_version,json=entityVersion,proto3" json:"entity_version,omitempty"`
+	// Who emitted the event: apikey:<id>, user:<id>, platform_user:<id>,
+	// webhook:<source-id>, nats or platform. Empty on rows from before it was
+	// recorded.
+	EmittedBy     string `protobuf:"bytes,13,opt,name=emitted_by,json=emittedBy,proto3" json:"emitted_by,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1003,6 +1007,13 @@ func (x *Event) GetEntityVersion() int64 {
 		return x.EntityVersion
 	}
 	return 0
+}
+
+func (x *Event) GetEmittedBy() string {
+	if x != nil {
+		return x.EmittedBy
+	}
+	return ""
 }
 
 type Run struct {
@@ -1831,7 +1842,7 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\bnext_run\x18\x17 \x01(\v2\x1a.google.protobuf.TimestampR\anextRun\x123\n" +
 	"\bmetadata\x18\x12 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x127\n" +
 	"\bdebounce\x18\x13 \x01(\v2\x1b.ironflow.v1.DebounceConfigR\bdebounce\x126\n" +
-	"\tcancel_on\x18\x15 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOnJ\x04\b\x10\x10\x11J\x04\b\x11\x10\x12J\x04\b\x14\x10\x15R\x13recording_retentionR\x0epause_behaviorR\x14compensate_on_cancel\"\xbe\x03\n" +
+	"\tcancel_on\x18\x15 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOnJ\x04\b\x10\x10\x11J\x04\b\x11\x10\x12J\x04\b\x14\x10\x15R\x13recording_retentionR\x0epause_behaviorR\x14compensate_on_cancel\"\xdd\x03\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12+\n" +
@@ -1847,7 +1858,9 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\ventity_type\x18\n" +
 	" \x01(\tR\n" +
 	"entityType\x12%\n" +
-	"\x0eentity_version\x18\v \x01(\x03R\rentityVersion\"\x8e\v\n" +
+	"\x0eentity_version\x18\v \x01(\x03R\rentityVersion\x12\x1d\n" +
+	"\n" +
+	"emitted_by\x18\r \x01(\tR\temittedBy\"\x8e\v\n" +
 	"\x03Run\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vfunction_id\x18\x02 \x01(\tR\n" +

@@ -2,14 +2,12 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/sahina/ironflow-go/ironflow"
 )
-
-// approveEventPrefix is the canonical event-name prefix for approval
-// events. Mirrors the JS APPROVE_EVENT_PREFIX.
-const approveEventPrefix = "agent.approve."
 
 // approvalEventData is the on-the-wire shape an approver publishes.
 type approvalEventData[T any] struct {
@@ -20,22 +18,27 @@ type approvalEventData[T any] struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
-// Approve waits for a human approval event. Wraps ironflow.WaitForEvent
-// on a deterministic event name derived from the agent run + approval
-// name. Default behavior on TTL elapse is to return Approved=false,
-// Reason="timeout" — explicit rejection vs timeout is observable to
-// the caller via the Reason field.
+// Approve waits for a human approval event. It is sugar over
+// ironflow.WaitForEvent: the caller chooses eventName and the engine has no
+// approval concept. The approver emits that same name with
+// { runId, approved } through any client (REST POST /api/v1/events, Connect
+// Emit, CLI, SDK, webhook). Default behavior on TTL elapse is to return
+// Approved=false, Reason="timeout" — explicit rejection vs timeout is
+// observable to the caller via the Reason field.
 //
-// Approval events follow the convention:
+// The wait matches the event name and data.runId == ctx.Run().ID:
 //
-//	name:   "agent.approve.{name}"
-//	filter: data.runId == "{ctx.Run().ID}"
-//	data:   { runId, approved, approver?, payload?, reason? }
-func Approve[T any](ctx Context, name string, opts ApproveOptions[T]) (ApproveResult[T], error) {
+//	data: { runId, approved, approver?, payload?, reason? }
+//
+// The step name is "approve.{eventName}". The SDK escapes the name in the
+// step ID, so any event name is a valid step name.
+func Approve[T any](ctx Context, eventName string, opts ApproveOptions[T]) (ApproveResult[T], error) {
 	var zero ApproveResult[T]
+	if strings.TrimSpace(eventName) == "" {
+		return zero, errors.New("approve: event name must not be empty")
+	}
 	runID := ctx.Run().ID
-	eventName := approveEventPrefix + name
-	stepName := "approve." + name
+	stepName := "approve." + eventName
 
 	filter := ironflow.EventFilter{
 		Event:      eventName,
@@ -65,9 +68,10 @@ func Approve[T any](ctx Context, name string, opts ApproveOptions[T]) (ApproveRe
 	}
 
 	return ApproveResult[T]{
-		Approved: data.Approved,
-		Approver: data.Approver,
-		Payload:  data.Payload,
-		Reason:   data.Reason,
+		Approved:  data.Approved,
+		Approver:  data.Approver,
+		EmittedBy: event.EmittedBy,
+		Payload:   data.Payload,
+		Reason:    data.Reason,
 	}, nil
 }

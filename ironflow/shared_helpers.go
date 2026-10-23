@@ -32,7 +32,7 @@ func buildAuthHeaders(apiKey string) map[string]string {
 func buildWorkerHeaders(apiKey, environment string) map[string]string {
 	headers := buildAuthHeaders(apiKey)
 	if environment = resolveEnvironment(environment); environment != "" {
-		headers[HeaderEnvironment] = environment
+		headers[HeaderEnvironmentID] = environment
 	}
 	return headers
 }

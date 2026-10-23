@@ -607,7 +607,7 @@ func doPublish(exec *executionContext, topic string, data any, opts ...PublishOp
 		req.Header.Set(HeaderRunID, exec.runID)
 	}
 	if exec.environment != "" {
-		req.Header.Set(HeaderEnvironment, exec.environment)
+		req.Header.Set(HeaderEnvironmentID, exec.environment)
 	}
 
 	resp, err := sdkDefaultClient.Do(req)
@@ -778,6 +778,11 @@ func decodeWaitEvent(raw []byte) (Event, error) {
 	if err := json.Unmarshal(raw, &event); err != nil {
 		return Event{}, err
 	}
+	// Event has no json tags, so any top-level "emittedBy" key lands here, also
+	// one inside an event payload that the engine did not wrap. Only an engine
+	// envelope may set it.
+	emittedBy := event.EmittedBy
+	event.EmittedBy = ""
 	if len(event.RawData) != 0 {
 		return event, nil
 	}
@@ -790,6 +795,7 @@ func decodeWaitEvent(raw []byte) (Event, error) {
 		}
 		if len(envelope.Data) != 0 {
 			event.RawData = envelope.Data
+			event.EmittedBy = emittedBy
 			return event, nil
 		}
 	}

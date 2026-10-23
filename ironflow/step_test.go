@@ -714,3 +714,42 @@ func TestStepIDEscaping(t *testing.T) {
 		}
 	})
 }
+
+func TestDecodeWaitEvent_EmittedBy(t *testing.T) {
+	withKey, err := decodeWaitEvent([]byte(`{"id":"e1","name":"x.approved","data":{"a":1},"timestamp":"2026-10-22T10:00:00Z","emittedBy":"apikey:k1"}`))
+	if err != nil {
+		t.Fatalf("decodeWaitEvent: %v", err)
+	}
+	if withKey.EmittedBy != "apikey:k1" {
+		t.Errorf("EmittedBy = %q, want apikey:k1", withKey.EmittedBy)
+	}
+	without, err := decodeWaitEvent([]byte(`{"id":"e1","name":"x.approved","data":{"a":1},"timestamp":"2026-10-22T10:00:00Z"}`))
+	if err != nil {
+		t.Fatalf("decodeWaitEvent: %v", err)
+	}
+	if without.EmittedBy != "" {
+		t.Errorf("EmittedBy = %q, want empty", without.EmittedBy)
+	}
+}
+
+// A payload the engine did not wrap in an envelope must not set EmittedBy.
+func TestDecodeWaitEvent_ForgedEmittedByIgnored(t *testing.T) {
+	for name, raw := range map[string]string{
+		"bare payload": `{"emittedBy":"user:evil","foo":1}`,
+		"RawData key":  `{"RawData":{"foo":1},"emittedBy":"user:evil"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			event, err := decodeWaitEvent([]byte(raw))
+			if err != nil {
+				t.Fatalf("decodeWaitEvent: %v", err)
+			}
+			if event.EmittedBy != "" {
+				t.Errorf("EmittedBy = %q, want empty", event.EmittedBy)
+			}
+		})
+	}
+	event, _ := decodeWaitEvent([]byte(`{"emittedBy":"user:evil","foo":1}`))
+	if string(event.RawData) != `{"emittedBy":"user:evil","foo":1}` {
+		t.Errorf("RawData = %s, want the raw bytes", event.RawData)
+	}
+}

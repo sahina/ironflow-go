@@ -36,7 +36,7 @@ func TestAuthError_403(t *testing.T) {
 
 			headers := map[string]string{}
 			if tc.env != "" {
-				headers[HeaderEnvironment] = tc.env
+				headers[HeaderEnvironmentID] = tc.env
 			}
 			fns := map[string]Function{"f": {}}
 			err := registerFunctions(context.Background(), srv.URL, headers, fns, srv.Client(), NewNoopLogger())
@@ -66,7 +66,7 @@ func TestAuthError_401Unchanged(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := registerFunctions(context.Background(), srv.URL, map[string]string{HeaderEnvironment: "env_x"},
+	err := registerFunctions(context.Background(), srv.URL, map[string]string{HeaderEnvironmentID: "env_x"},
 		map[string]Function{"f": {}}, srv.Client(), NewNoopLogger())
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("want ErrUnauthorized, got %v", err)

@@ -50,7 +50,7 @@ type WorkerConfig struct {
 	// APIKey is the API key for authentication. If empty, falls back to IRONFLOW_API_KEY env var.
 	APIKey string
 
-	// Environment is the target environment, by name or ID. If empty, falls
+	// Environment is the target environment ID. If empty, falls
 	// back to the IRONFLOW_ENV env var. If both are empty, no environment
 	// header is sent and the server uses the API key's environment or the default.
 	//

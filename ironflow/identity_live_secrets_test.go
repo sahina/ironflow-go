@@ -20,7 +20,7 @@ func TestLiveIdentitySecrets(t *testing.T) {
 		t.Helper()
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, tn.server+"/api/v1/secrets/"+name, nil)
 		req.Header.Set("Authorization", "Bearer "+tn.key)
-		req.Header.Set("X-Ironflow-Environment", "current")
+		req.Header.Set("X-Ironflow-Environment-ID", "current")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("GET secret %s: %v", name, err)

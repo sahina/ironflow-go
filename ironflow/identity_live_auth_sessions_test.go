@@ -29,7 +29,7 @@ func TestLiveIdentityAuthSessions(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+bearer)
 		}
 		if env != "" {
-			req.Header.Set("X-Ironflow-Environment", env)
+			req.Header.Set("X-Ironflow-Environment-ID", env)
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -146,12 +146,12 @@ func TestLiveIdentityAuthSessions(t *testing.T) {
 		if code, _ := call(http.MethodGet, "/api/v1/roles", session, "current", nil); code != http.StatusOK {
 			t.Errorf("GET /roles with the session and environment current = %d, want 200", code)
 		}
-		if code, _ := call(http.MethodGet, "/api/v1/roles?env=current", session, "", nil); code != http.StatusOK {
-			t.Errorf("GET /roles?env=current with the session = %d, want 200", code)
+		if code, _ := call(http.MethodGet, "/api/v1/roles?env_id=current", session, "", nil); code != http.StatusOK {
+			t.Errorf("GET /roles?env_id=current with the session = %d, want 200", code)
 		}
-		// Any other unknown name still fails closed.
-		if code, _ := call(http.MethodGet, "/api/v1/roles", session, "no-such-environment", nil); code != http.StatusForbidden {
-			t.Errorf("GET /roles with the session and an unknown name = %d, want 403", code)
+		// A name never selects an environment: a pinned session gets 400 for any name.
+		if code, _ := call(http.MethodGet, "/api/v1/roles", session, "no-such-environment", nil); code != http.StatusBadRequest {
+			t.Errorf("GET /roles with the session and an environment name = %d, want 400", code)
 		}
 		// A session is minted from an API key, not exchanged from another token.
 		if code, _ := call(http.MethodPost, "/api/v1/auth/desktop-session", adminToken, tn.envID, nil); code != http.StatusUnauthorized {

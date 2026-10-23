@@ -182,7 +182,7 @@ func TestFilesBucketCallsAndListQuery(t *testing.T) {
 	var gotMethod, gotURI, gotBody, gotEnv string
 	c := setupMockFilesServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
-		gotMethod, gotURI, gotBody, gotEnv = r.Method, r.URL.RequestURI(), string(b), r.Header.Get(HeaderEnvironment)
+		gotMethod, gotURI, gotBody, gotEnv = r.Method, r.URL.RequestURI(), string(b), r.Header.Get(HeaderEnvironmentID)
 		_, _ = w.Write([]byte(`{"files":[{"path":"a"}],"prefixes":["d/"],"nextCursor":"n","buckets":[{"name":"x"}]}`))
 	}), 1)
 	c.environment = "env_x"

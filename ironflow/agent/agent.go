@@ -85,7 +85,7 @@ type agentRuntime struct {
 //	        },
 //	    })
 //	    if err != nil { return nil, err }
-//	    decision, err := agent.Approve[reviewPayload](ctx, "ship-it",
+//	    decision, err := agent.Approve[reviewPayload](ctx, "ship-it.approved",
 //	        agent.ApproveOptions[reviewPayload]{TTL: 24 * time.Hour})
 //	    return map[string]any{"approved": decision.Approved}, err
 //	})

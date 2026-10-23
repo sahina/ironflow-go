@@ -102,7 +102,7 @@ func (c *Client) WaitForProjectionStream(ctx context.Context, name string, opts 
 		creq.Header().Set("Authorization", "Bearer "+c.apiKey)
 	}
 	if c.environment != "" {
-		creq.Header().Set(HeaderEnvironment, c.environment)
+		creq.Header().Set(HeaderEnvironmentID, c.environment)
 	}
 
 	// sdkcoverage: POST /ironflow.v1.ProjectionService/WaitProjectionCatchupStream

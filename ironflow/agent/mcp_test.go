@@ -395,7 +395,7 @@ func TestExposeMcp_Environment(t *testing.T) {
 			var got []string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				v := "<absent>"
-				if h, ok := r.Header[http.CanonicalHeaderKey(ironflow.HeaderEnvironment)]; ok {
+				if h, ok := r.Header[http.CanonicalHeaderKey(ironflow.HeaderEnvironmentID)]; ok {
 					v = h[0]
 				}
 				got = append(got, v)

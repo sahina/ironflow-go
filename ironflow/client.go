@@ -72,10 +72,11 @@ type ClientConfig struct {
 	// IRONFLOW_API_KEY env var. Optional for local dev.
 	APIKey string
 
-	// Environment scopes the client's requests (events, runs, entity streams,
+	// Environment is an environment ID. It scopes the client's requests (events, runs, entity streams,
 	// projections, webhooks, KV, config, ...) through the
-	// X-Ironflow-Environment header. Secret routes send their own "current"
-	// value, and subscriptions do not send it. Empty sends no header: the server
+	// X-Ironflow-Environment-ID header. Secret routes send their own "current"
+	// value, and the standalone NewGrpcSubscriptionClient does not send it (the
+	// Client's own ConnectRPC calls do). Empty sends no header: the server
 	// then uses the API key's environment, or the default environment when
 	// auth is off. The client does not read IRONFLOW_ENV: a process can set it
 	// for its worker and still use a Client for another environment's key (#2471).
@@ -1246,7 +1247,7 @@ func (c *Client) ListWorkers(ctx context.Context) ([]WorkerInfo, error) {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 	if c.environment != "" {
-		req.Header.Set(HeaderEnvironment, c.environment)
+		req.Header.Set(HeaderEnvironmentID, c.environment)
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -2341,7 +2342,7 @@ func (c *Client) executeRequest(ctx context.Context, httpClient *http.Client, me
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 	if c.environment != "" {
-		req.Header.Set(HeaderEnvironment, c.environment)
+		req.Header.Set(HeaderEnvironmentID, c.environment)
 	}
 	// Forward the emitting run id (when the context carries one) so events a
 	// function emits are attributed to the run for the flow map's learned

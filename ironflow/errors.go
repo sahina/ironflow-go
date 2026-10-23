@@ -436,7 +436,7 @@ func environmentHint(resp *http.Response) string {
 	if resp.Request == nil {
 		return ""
 	}
-	return environmentHintFor(resp.Request.Header.Get(HeaderEnvironment))
+	return environmentHintFor(resp.Request.Header.Get(HeaderEnvironmentID))
 }
 
 // environmentHintFor returns "" when env is empty. The SDK cannot tell whether

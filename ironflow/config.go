@@ -189,7 +189,7 @@ func (cc *ConfigClient) Watch(ctx context.Context, name string, callbacks Config
 		header.Set("Authorization", "Bearer "+cc.client.apiKey)
 	}
 	if cc.client.environment != "" {
-		header.Set(HeaderEnvironment, cc.client.environment)
+		header.Set(HeaderEnvironmentID, cc.client.environment)
 	}
 
 	conn, resp, err := dialWS(ctx, wsURL+path, header)

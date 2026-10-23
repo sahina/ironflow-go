@@ -53,8 +53,8 @@ const (
 	EnvEnvironment = "IRONFLOW_ENV"
 )
 
-// HeaderEnvironment scopes a request to an environment.
-const HeaderEnvironment = "X-Ironflow-Environment"
+// HeaderEnvironmentID selects the request environment by ID.
+const HeaderEnvironmentID = "X-Ironflow-Environment-ID"
 
 // Default timeout values
 const (

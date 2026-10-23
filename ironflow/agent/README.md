@@ -79,13 +79,15 @@ var ReviewAgent = agent.Agent(agent.AgentConfig{
 	})
 	if err != nil { return nil, err }
 
-	approval, err := agent.Approve[map[string]any](ctx, "ship-it", agent.ApproveOptions[map[string]any]{
+	approval, err := agent.Approve[map[string]any](ctx, "ship-it.approved", agent.ApproveOptions[map[string]any]{
 		TTL:     24 * time.Hour,
 		Payload: map[string]any{"findings": res.Content},
 	})
 	return map[string]any{"approved": approval.Approved}, err
 })
 ```
+
+`ApproveResult.EmittedBy` is the authenticated emitter of the approval event, for example `apikey:<id>`. The engine sets it from the credential of the caller. `ApproveResult.Approver` is free text from the event data, and the caller chooses it. To check who approved, read `EmittedBy`. An operator with `runs:cancel` can inject or patch a step output, so `EmittedBy` proves the emitter only for a step that an event resolved.
 
 ## Surface
 
@@ -96,7 +98,7 @@ var ReviewAgent = agent.Agent(agent.AgentConfig{
 | `Tool(ctx, def, input)` | Run tool by reference | `ironflow.Run` |
 | `ToolByName(ctx, name, args)` | Run tool by registered name (LLM dispatch) | `ironflow.Run` |
 | `LLM(ctx, req)` | Memoized completion + classified errors | `ironflow.Run` |
-| `Approve[T](ctx, name, opts)` | Wait for human approval | `ironflow.WaitForEvent` |
+| `Approve[T](ctx, eventName, opts)` | Wait for the event name you choose; the approver emits it with `{runId, approved}` | `ironflow.WaitForEvent` |
 | `Spawn[I, O](ctx, name, opts)` | Sub-agent invoke | `ironflow.Invoke` / `InvokeAsync` |
 | `Memory(ctx)` | Durable agent memory | `client.AppendStreamEvent` + projections |
 | `ExposeMcp(cfg)` | Register agent tools with Ironflow's MCP server; the returned handle's `Unregister()` removes them | `AgentToolsService.RegisterTool` + HMAC callback |
@@ -186,7 +188,7 @@ Cross-run retry safety: `Append` generates a deterministic idempotency key (`{ru
 
 ## Testing
 
-The `ironflowtest.NewClient` test harness drives the underlying step interceptor; agent helpers compose over it transparently. See `agent/*_test.go` for examples mocking `tool.{name}`, `llm.turn`, `approve.{name}`, sub-function invokes, and memory backends.
+The `ironflowtest.NewClient` test harness drives the underlying step interceptor; agent helpers compose over it transparently. See `agent/*_test.go` for examples mocking `tool.{name}`, `llm.turn`, `approve.{eventName}`, sub-function invokes, and memory backends.
 
 ## See also
 

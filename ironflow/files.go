@@ -303,7 +303,7 @@ func (c *Client) rawRequest(ctx context.Context, method, path string, body io.Re
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 	if c.environment != "" {
-		req.Header.Set(HeaderEnvironment, c.environment)
+		req.Header.Set(HeaderEnvironmentID, c.environment)
 	}
 	if rid := runIDFromContext(ctx); rid != "" {
 		req.Header.Set(HeaderRunID, rid)

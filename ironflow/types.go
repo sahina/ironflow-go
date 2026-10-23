@@ -307,6 +307,12 @@ type Event struct {
 
 	// Metadata contains additional event metadata.
 	Metadata map[string]any
+
+	// EmittedBy is the authenticated emitter the engine recorded, e.g.
+	// "apikey:<id>", "user:<id>", "webhook:<source-id>", "nats" or
+	// "platform". Empty when the engine did not report one. The engine sets
+	// it from the caller's credential; the event body cannot change it.
+	EmittedBy string
 }
 
 // Data unmarshals the event data into the provided value.

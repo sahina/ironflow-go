@@ -196,7 +196,7 @@ func (b *KVBucket) putWithHeaders(ctx context.Context, key string, value []byte,
 		req.Header.Set("Authorization", "Bearer "+b.client.apiKey)
 	}
 	if b.client.environment != "" {
-		req.Header.Set(HeaderEnvironment, b.client.environment)
+		req.Header.Set(HeaderEnvironmentID, b.client.environment)
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
@@ -325,7 +325,7 @@ func (b *KVBucket) Watch(ctx context.Context, callbacks KVWatchCallbacks, opts .
 		header.Set("Authorization", "Bearer "+b.client.apiKey)
 	}
 	if b.client.environment != "" {
-		header.Set(HeaderEnvironment, b.client.environment)
+		header.Set(HeaderEnvironmentID, b.client.environment)
 	}
 
 	conn, resp, err := dialWS(ctx, wsURL+path, header)
@@ -451,12 +451,12 @@ func (c *Client) restRequestWithHeaders(ctx context.Context, method, path string
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 	if c.environment != "" {
-		req.Header.Set(HeaderEnvironment, c.environment)
+		req.Header.Set(HeaderEnvironmentID, c.environment)
 	}
 	if path == "/api/v1/secrets" || strings.HasPrefix(path, "/api/v1/secrets/") {
 		// Secret routes require an explicit environment header, while the
 		// authenticated API key remains the authority for the actual scope.
-		req.Header.Set("X-Ironflow-Environment", "current")
+		req.Header.Set("X-Ironflow-Environment-ID", "current")
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)

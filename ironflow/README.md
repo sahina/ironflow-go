@@ -280,6 +280,8 @@ if err := event.Data(&approval); err != nil {
 }
 ```
 
+`event.EmittedBy` is the authenticated emitter that the engine recorded, for example `apikey:<id>` or `user:<id>`. The engine sets it from the credential of the caller, so the event body cannot change it. It is empty when the engine reports none. An operator with `runs:cancel` can inject or patch a step output, so `EmittedBy` proves the emitter only for a step that an event resolved.
+
 ### Invoke -- Synchronous Cross-Function Call
 
 Calls another function and waits for its result. Default timeout: 30s.
@@ -450,7 +452,7 @@ handler := ironflow.Serve(ironflow.ServeConfig{
     SigningKey:        os.Getenv("IRONFLOW_SIGNING_KEY"), // verify request signatures
     SkipVerification: false,   // skip signature check (dev only)
     ServerURL:        "http://localhost:9123", // for webhook event emission
-    Environment:      "staging", // scopes durable Publish steps (X-Ironflow-Environment); falls back to IRONFLOW_ENV
+    Environment:      "env_staging", // environment ID; scopes durable Publish steps (X-Ironflow-Environment-ID); falls back to IRONFLOW_ENV
     Webhooks:         []ironflow.Webhook{stripeWebhook}, // webhook sources
     Upcasters:        registry, // event schema upcasting
 })
@@ -485,7 +487,7 @@ worker := ironflow.NewWorker(ironflow.WorkerConfig{
     Projections:       []ironflow.Projection{orderTotals},      // run alongside functions
     Upcasters:         registry,                // event schema upcasting
     Logger:            ironflow.NewNoopLogger(), // disable logging
-    Environment:        "staging",               // target environment; default: IRONFLOW_ENV env
+    Environment:        "env_staging",               // target environment ID; default: IRONFLOW_ENV env
     CheckpointInterval: time.Second,             // default: 1s; debounce for reporting completed steps (polling worker only)
     DrainTimeout:       30 * time.Second,        // default: 30s; wait in Drain before active jobs are cancelled
     OnError: func(err error, ctx ironflow.ErrorContext) { // called after compensations, before the failure is reported; must not block
@@ -539,7 +541,7 @@ The `Client` is used for server interaction: emitting events, managing runs, pub
 client := ironflow.NewClient(ironflow.ClientConfig{
     ServerURL: ironflow.GetServerURL(),     // default: http://localhost:9123
     APIKey:    "ifkey_...",                 // default: IRONFLOW_API_KEY env
-    Environment: "staging",                 // X-Ironflow-Environment; empty sends no header. IRONFLOW_ENV is not read.
+    Environment: "env_staging",                 // environment ID, sent as X-Ironflow-Environment-ID; empty sends no header. IRONFLOW_ENV is not read.
     Timeout:   30 * time.Second,            // default: 30s
     HTTPClient: &http.Client{},             // optional custom HTTP client
 
@@ -592,7 +594,8 @@ for _, r := range syncResults {
 // Sync invoke -- one function by ID, one result (ADR 0067)
 invokeResult, err := client.InvokeSync(ctx, "process-order", data, 30*time.Second)
 
-// Batch emit -- one round trip, one EmitResult per event
+// Batch emit -- one round trip, one TriggerBatchResult per event, in order.
+// A failed item sets Error (Code, Message); the other items still emit.
 results, err := client.TriggerBatch(ctx, []ironflow.TriggerBatchEvent{
     {Event: "order.placed", Data: map[string]any{"orderId": "1"}},
     {Event: "order.placed", Data: map[string]any{"orderId": "2"}},
@@ -2055,7 +2058,7 @@ ironflow.EnvSigningKey  // "IRONFLOW_SIGNING_KEY"
 ironflow.EnvAPIKey      // "IRONFLOW_API_KEY"
 ironflow.EnvLogLevel    // "IRONFLOW_LOG_LEVEL"
 ironflow.EnvEnvironment // "IRONFLOW_ENV"
-ironflow.HeaderEnvironment // "X-Ironflow-Environment"
+ironflow.HeaderEnvironmentID // "X-Ironflow-Environment-ID"
 
 // Timeouts
 ironflow.DefaultClientTimeout       // 30s

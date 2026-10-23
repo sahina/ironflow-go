@@ -14,13 +14,13 @@ import (
 )
 
 // recordEnvServer answers every request with `{}` and records each path's
-// X-Ironflow-Environment value ("<absent>" when the header is missing).
+// X-Ironflow-Environment-ID value ("<absent>" when the header is missing).
 func recordEnvServer(t *testing.T) (*httptest.Server, func() map[string]string) {
 	t.Helper()
 	var mu sync.Mutex
 	seen := map[string]string{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		v, ok := r.Header[http.CanonicalHeaderKey(HeaderEnvironment)]
+		v, ok := r.Header[http.CanonicalHeaderKey(HeaderEnvironmentID)]
 		mu.Lock()
 		if ok {
 			seen[r.URL.Path] = v[0]
@@ -55,7 +55,7 @@ func TestClientEnvironment_SetsHeaderOnRESTAndRPC(t *testing.T) {
 		"/ironflow.v1.IronflowService/PatchStep",
 	} {
 		if got[path] != "staging" {
-			t.Errorf("%s: X-Ironflow-Environment = %q, want staging", path, got[path])
+			t.Errorf("%s: X-Ironflow-Environment-ID = %q, want staging", path, got[path])
 		}
 	}
 }
@@ -89,7 +89,7 @@ func TestClientEnvironment_HandBuiltRequests(t *testing.T) {
 		"/api/v1/secrets/s1":                             "current",
 	} {
 		if got[path] != want {
-			t.Errorf("%s: X-Ironflow-Environment = %q, want %q", path, got[path], want)
+			t.Errorf("%s: X-Ironflow-Environment-ID = %q, want %q", path, got[path], want)
 		}
 	}
 }
@@ -99,7 +99,7 @@ func TestClientEnvironment_ProjectionWaitStream(t *testing.T) {
 	got := make(chan string, 1)
 	srv := httptest.NewUnstartedServer(h2c.NewHandler(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		select {
-		case got <- r.Header.Get(HeaderEnvironment):
+		case got <- r.Header.Get(HeaderEnvironmentID):
 		default:
 		}
 	}), &http2.Server{}))
@@ -113,7 +113,7 @@ func TestClientEnvironment_ProjectionWaitStream(t *testing.T) {
 	select {
 	case v := <-got:
 		if v != "staging" {
-			t.Errorf("X-Ironflow-Environment = %q, want staging", v)
+			t.Errorf("X-Ironflow-Environment-ID = %q, want staging", v)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("the wait stream request did not reach the server")
@@ -136,7 +136,34 @@ func TestClientEnvironment_UnsetSendsNoHeaderEvenWithIronflowEnv(t *testing.T) {
 	}
 	for path, v := range got {
 		if v != "<absent>" {
-			t.Errorf("%s: X-Ironflow-Environment = %q, want no header", path, v)
+			t.Errorf("%s: X-Ironflow-Environment-ID = %q, want no header", path, v)
 		}
+	}
+}
+
+// The wire name is the contract: a rename of the constant alone must not move it.
+func TestClientEnvironment_SendsEnvironmentIDHeaderOnly(t *testing.T) {
+	var got http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewClient(ClientConfig{ServerURL: srv.URL, Environment: "env_x", Logger: NewNoopLogger()})
+	_, _ = c.Emit(context.Background(), "order.placed", map[string]any{"id": 1})
+
+	if v := got.Get("X-Ironflow-Environment-ID"); v != "env_x" {
+		t.Errorf("X-Ironflow-Environment-ID = %q, want env_x", v)
+	}
+	if v := got.Values("X-Ironflow-Environment"); len(v) != 0 {
+		t.Errorf("legacy X-Ironflow-Environment = %v, want absent", v)
+	}
+}
+
+func TestCapacityPath_UsesEnvID(t *testing.T) {
+	got := capacityPath("/api/v1/capacity/lanes", CapacityListOptions{Environment: "env_x"})
+	if got != "/api/v1/capacity/lanes?env_id=env_x" {
+		t.Errorf("capacityPath = %q, want env_id query", got)
 	}
 }

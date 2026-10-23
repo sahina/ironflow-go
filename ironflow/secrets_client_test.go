@@ -102,8 +102,8 @@ func TestSecretsClient_Patch(t *testing.T) {
 		if r.Method != http.MethodPatch || r.URL.Path != "/api/v1/secrets/old" {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
-		if got := r.Header.Get("X-Ironflow-Environment"); got != "current" {
-			t.Fatalf("X-Ironflow-Environment = %q, want current", got)
+		if got := r.Header.Get("X-Ironflow-Environment-ID"); got != "current" {
+			t.Fatalf("X-Ironflow-Environment-ID = %q, want current", got)
 		}
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

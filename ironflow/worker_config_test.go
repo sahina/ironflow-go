@@ -32,7 +32,7 @@ func TestWorkerHeaders_Environment(t *testing.T) {
 				"polling":   NewWorker(cfg).getHeaders(),
 				"streaming": NewStreamingWorker(cfg).getHeaders(),
 			} {
-				got, present := headers[HeaderEnvironment]
+				got, present := headers[HeaderEnvironmentID]
 				if tc.wantUnset {
 					if present {
 						t.Errorf("%s: header must be absent, got %q", kind, got)
@@ -40,7 +40,7 @@ func TestWorkerHeaders_Environment(t *testing.T) {
 					continue
 				}
 				if got != tc.want {
-					t.Errorf("%s: %s = %q, want %q", kind, HeaderEnvironment, got, tc.want)
+					t.Errorf("%s: %s = %q, want %q", kind, HeaderEnvironmentID, got, tc.want)
 				}
 			}
 		})
@@ -107,7 +107,7 @@ func TestJobExecutor_PublishCarriesEnvironment(t *testing.T) {
 			t.Setenv(EnvEnvironment, tc.envVar)
 			var got []string
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				got = r.Header.Values(HeaderEnvironment)
+				got = r.Header.Values(HeaderEnvironmentID)
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(map[string]any{"eventId": "evt_abc", "sequence": "1"})
 			}))
@@ -146,7 +146,7 @@ func TestJobExecutor_PublishCarriesEnvironment(t *testing.T) {
 				return
 			}
 			if len(got) != 1 || got[0] != tc.want {
-				t.Fatalf("%s = %v, want [%s]", HeaderEnvironment, got, tc.want)
+				t.Fatalf("%s = %v, want [%s]", HeaderEnvironmentID, got, tc.want)
 			}
 		})
 	}

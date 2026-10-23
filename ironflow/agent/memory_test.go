@@ -218,7 +218,7 @@ func TestDefaultMemoryBackend_SendsRunEnvironment(t *testing.T) {
 	seen := map[string]string{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		seen[r.URL.Path] = r.Header.Get(ironflow.HeaderEnvironment)
+		seen[r.URL.Path] = r.Header.Get(ironflow.HeaderEnvironmentID)
 		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{}`))
@@ -242,7 +242,7 @@ func TestDefaultMemoryBackend_SendsRunEnvironment(t *testing.T) {
 		"/ironflow.v1.ProjectionService/WaitForEvent",
 	} {
 		if seen[path] != "staging" {
-			t.Errorf("%s: X-Ironflow-Environment = %q, want staging", path, seen[path])
+			t.Errorf("%s: X-Ironflow-Environment-ID = %q, want staging", path, seen[path])
 		}
 	}
 }
@@ -251,7 +251,7 @@ func TestDefaultMemoryBackend_SendsRunEnvironment(t *testing.T) {
 func TestAgent_MemoryBackendUsesRunEnvironment(t *testing.T) {
 	got := "unset"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = r.Header.Get(ironflow.HeaderEnvironment)
+		got = r.Header.Get(ironflow.HeaderEnvironmentID)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{}`))
 	}))
@@ -276,6 +276,6 @@ func TestAgent_MemoryBackendUsesRunEnvironment(t *testing.T) {
 		t.Fatalf("handler: %v", err)
 	}
 	if got != "staging" {
-		t.Errorf("AppendEvent X-Ironflow-Environment = %q, want staging", got)
+		t.Errorf("AppendEvent X-Ironflow-Environment-ID = %q, want staging", got)
 	}
 }

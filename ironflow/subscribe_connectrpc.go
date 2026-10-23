@@ -227,7 +227,7 @@ func (b bearerAuth) apply(h http.Header) {
 		h.Set("Authorization", "Bearer "+b.key)
 	}
 	if b.env != "" {
-		h.Set(HeaderEnvironment, b.env)
+		h.Set(HeaderEnvironmentID, b.env)
 	}
 }
 

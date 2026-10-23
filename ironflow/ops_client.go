@@ -129,7 +129,7 @@ type DebounceEntry struct {
 func capacityPath(route string, opts CapacityListOptions) string {
 	q := url.Values{}
 	if opts.Environment != "" {
-		q.Set("env", opts.Environment)
+		q.Set("env_id", opts.Environment)
 	}
 	if opts.Function != "" {
 		q.Set("function", opts.Function)
