@@ -1,6 +1,6 @@
 # Ironflow Go SDK
 
-Go SDK for [Ironflow](https://github.com/sahina/ironflow) -- an event-driven backend platform with durable workflows, pub/sub, event sourcing, and entity streams.
+Go SDK for [Ironflow](https://docs.ironflow.run) -- an event-driven backend platform with durable workflows, pub/sub, event sourcing, and entity streams.
 
 **Source mirror**: [`github.com/sahina/ironflow-go`](https://github.com/sahina/ironflow-go) (public, read-only). Engine repo is private.
 
@@ -153,13 +153,13 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
 
     ActorKey: "event.data.userId",    // JSON path; stored by the server, not used for routing yet
     Secrets:  []string{"STRIPE_KEY"}, // secrets injected at runtime
-    RecordingProfile:   ironflow.RecordingProfileSteps, // capture steps and compensations
+    RecordingProfile:   ironflow.RecordingProfileSteps, // RecordingProfileAll | RecordingProfileRunLifecycle (run.created, run.status_changed) | RecordingProfileSteps (steps and compensations)
 
     Description: "Charges the card and sends the receipt", // human-readable summary
     Metadata:    map[string]any{"team": "payments"},        // custom metadata
     Debounce: &ironflow.DebounceConfig{Period: 5 * time.Second, Key: "userId"}, // async-only
     CancelOn: []ironflow.CancelOnConfig{
-        {Event: "order.cancelled", Match: "data.orderId"}, // auto-cancel in-flight runs; OR across specs
+        {Event: "order.cancelled", Match: "orderId"}, // path into the event data; auto-cancel in-flight runs; OR across specs
     },
     Validate: func(data json.RawMessage) error { // local payload check; an error fails the run without retry
         return nil
@@ -188,7 +188,7 @@ The `Context` passed to handlers provides:
 
 | Field         | Type            | Description                          |
 |---------------|-----------------|--------------------------------------|
-| `ctx.Event`   | `Event`         | Triggering event (ID, Name, Version, RawData, Timestamp, IdempotencyKey, Source, Metadata) |
+| `ctx.Event`   | `Event`         | Triggering event (ID, Name, Version, RawData, Timestamp, IdempotencyKey, Source, Metadata, EmittedBy) |
 | `ctx.Run`     | `RunInfo`       | Run metadata (ID, FunctionID, Attempt, MaxAttempts, StartedAt, Environment) |
 | `ctx.Secrets` | `SecretsReader` | Resolved secrets (see [Secrets](#secrets)) |
 
@@ -242,6 +242,8 @@ result, err := ironflow.Run[MyResult](ctx, "slow-step", func() (MyResult, error)
     return callExternalAPI()
 }, ironflow.WithTimeout(30 * time.Second))
 ```
+
+A step output and the function's return value must encode as JSON. A value that does not encode (`NaN`, `±Inf`, a channel, a function or a cycle) fails the run with the non-retryable code `SERIALIZATION_ERROR`, so compensations run. The steps before the bad one keep their outputs.
 
 ### Sleep -- Durable Pause
 
@@ -757,8 +759,12 @@ functions, err := client.ListFunctions(ctx)
 // List connected workers
 workers, err := client.ListWorkers(ctx)
 
-// Health check
+// Health check (liveness)
 status, err := client.Health(ctx) // returns "healthy"
+
+// Readiness: checks the database and NATS. A server that is not ready returns
+// an *IronflowError with Code "NOT_READY"; Details["issues"] names what failed.
+ready, err := client.Ready(ctx) // ready.Status == "ready"; ready.Warnings holds non-fatal advisories
 
 // Server capabilities (transports, features, version)
 caps, err := client.GetCapabilities(ctx)
@@ -767,7 +773,9 @@ fmt.Println(caps.Transports, caps.Features, caps.Version)
 // Auto-detect best subscription transport
 transport, err := client.DetectTransport(ctx) // "grpc" or "websocket"
 
-// Operations: capacity views need platform credentials (an ifplatform_ key)
+// Operations: capacity views need platform credentials (an ifplatform_ key).
+// Other views: ListCapacityLanes, ListCapacityLeases, ListCapacityBuckets,
+// ListCapacitySessions and ListCapacityCredits take the same options.
 stats, err := client.CapacityStats(ctx)
 queue, err := client.ListCapacityQueue(ctx, ironflow.CapacityListOptions{Limit: 50})
 entries, err := client.ListDebounceEntries(ctx)
@@ -813,8 +821,9 @@ group, err := client.CreateConsumerGroup(ctx, ironflow.ConsumerGroupConfig{
 // for the server result and can return *AckError, ErrStaleAck (the stream
 // reconnected and the server redelivers the event, or the event was settled
 // already) or ErrSubscriptionClosed.
-// "grpc" needs a server released after v0.47.0; an older one answers Unimplemented,
-// which is terminal -- use the WebSocket transport there.
+// "grpc" needs a server released after v0.47.0 (0.48.0 or later); an older one makes
+// the join fail with an *IronflowError whose Code is ErrCodeServerTooOld
+// ("SERVER_TOO_OLD"), which the SDK does not retry -- use the WebSocket transport there.
 sub, err := client.JoinConsumerGroup(ctx, "order-processors")
 defer sub.Unsubscribe()
 
@@ -924,6 +933,8 @@ for {
 }
 ```
 
+`sub.CurrentID()` returns the server subscription ID bound to the handle now. The ID can change after a reconnect.
+
 You can also create a standalone `SubscriptionClient`:
 
 ```go
@@ -970,10 +981,11 @@ Or standalone:
 
 ```go
 grpcClient := ironflow.NewGrpcSubscriptionClient(ironflow.GrpcSubscriptionClientConfig{
-    ServerURL:     "http://localhost:9123",
-    AutoReconnect: true,
+    ServerURL: "http://localhost:9123",
 })
 ```
+
+The standalone constructor has no key field, so it reads `IRONFLOW_API_KEY`. The gRPC client reconnects only for a subscription that sets `StartAfterSequence`. `GrpcSubscriptionClientConfig.AutoReconnect` stays for source compatibility and does nothing.
 
 ### Resume from a sequence
 
@@ -1578,14 +1590,32 @@ restored, err := client.RollbackPolicySet(ctx, 3, saved.Version) // keeps the ac
 
 A 503 `PolicySetErrNotPropagated` is not retryable. The write committed as the version in the message. Send the same request again with `ifVersion` set to that version (a no-op that finishes propagation). Never send it again with the old version, because that fails with a 412.
 
-### Password and Tenant Provisioning
+### Users, Passwords and Tenant Provisioning
 
 ```go
-err := client.Users().ChangePassword(ctx, userID, ironflow.ChangePasswordInput{
+users := client.Users()
+
+user, err := users.Create(ctx, ironflow.CreateUserInput{
+    Email:    "dev@example.com",
+    Name:     "Dev",
+    Password: initialPassword,
+    Roles:    []string{"developer"},
+})
+all, err := users.List(ctx)
+user, err = users.Get(ctx, userID)
+
+// Name and Email are pointers -- leave one nil to keep it unchanged.
+newName := "Dev Two"
+user, err = users.Update(ctx, userID, ironflow.UpdateUserInput{Name: &newName})
+err = users.Delete(ctx, userID)
+
+// Use a client authenticated as the user changing their own password.
+err = users.ChangePassword(ctx, currentUserID, ironflow.ChangePasswordInput{
     CurrentPassword: "old-password",
     NewPassword:     "new-password",
 })
 
+tenants, err := client.Tenants().List(ctx)
 tenant, err := client.Tenants().Provision(ctx, ironflow.ProvisionTenantInput{
     OrgName: "Acme",
     EnvName: "production",
@@ -1817,14 +1847,24 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
 | `Get(name string, dest *string)` | Get secret value. Error if missing |
 | `Has(name string) bool`          | Check if secret exists             |
 
-The administrative client can also patch secret metadata without replacing its
-value:
+`client.Secrets()` manages the secrets of the current environment. Values are
+write-only: no call returns one, and `Secret.Value` stays empty.
 
 ```go
+secrets := client.Secrets()
+
+secret, err := secrets.Set(ctx, "STRIPE_KEY", "sk_live_...")   // create
+secret, err = secrets.Update(ctx, "STRIPE_KEY", "sk_live_new") // replace the value
+secret, err = secrets.Get(ctx, "STRIPE_KEY")                   // metadata only
+entries, err := secrets.List(ctx)                              // []SecretListEntry: Name, CreatedAt, UpdatedAt
+
+// Rename a secret or change its description without replacing the value.
+// Set at least one field.
 description := "Rotated by payments"
-secret, err := client.Secrets().Patch(ctx, "STRIPE_KEY", ironflow.PatchSecretInput{
+secret, err = secrets.Patch(ctx, "STRIPE_KEY", ironflow.PatchSecretInput{
     Description: &description,
 })
+err = secrets.Delete(ctx, "STRIPE_KEY")
 ```
 
 ---
@@ -1956,7 +1996,8 @@ errors.Is(err, ironflow.ErrInvalidSignature)
 errors.Is(err, ironflow.ErrSignatureExpired)
 errors.Is(err, ironflow.ErrMissingSignature)
 errors.Is(err, ironflow.ErrValidation)
-errors.Is(err, ironflow.ErrPreconditionFailed)    // HTTP 412 (file storage)
+errors.Is(err, ironflow.ErrPreconditionFailed)    // HTTP 412 -- an If-Match or If-None-Match condition did not hold (files, KV, config, policy set)
+errors.Is(err, ironflow.ErrPreconditionRequired)  // HTTP 428 -- the write needs an If-Match header and carried none
 errors.Is(err, ironflow.ErrPayloadTooLarge)        // HTTP 413 (file storage)
 errors.Is(err, ironflow.ErrUnsupportedMediaType)   // HTTP 415 (file storage)
 errors.Is(err, ironflow.ErrConflict)   // HTTP 409 / Connect AlreadyExists — an identical
@@ -1965,6 +2006,10 @@ errors.Is(err, ironflow.ErrContended)  // HTTP 409 / Connect Aborted — a concu
                                         // and nothing was applied; re-read, then reissue
 errors.Is(err, ironflow.ErrInjectionUnverified) // Connect Aborted — the step DID change;
                                         // read Output/OriginalOutput and decide, do not reissue
+errors.Is(err, ironflow.ErrStaleAck)    // gRPC consumer-group Ack, Nak or Term for an event that is
+                                        // not pending on this stream (settled already, or sent before a reconnect)
+errors.Is(err, ironflow.ErrSubscriptionClosed) // gRPC consumer-group Ack, Nak or Term after Unsubscribe
+                                        // or a terminal stream error
 ```
 
 ### Retryability
@@ -2040,6 +2085,7 @@ apiKey := ironflow.GetAPIKey()       // IRONFLOW_API_KEY
 wsURL := ironflow.GetWebSocketURL("") // converts server URL to ws:// + /ws
 
 d, err := ironflow.ParseDuration("30m") // "1s"/"5m"/"2h"/"7d" -> time.Duration
+ironflow.PrintBanner()                  // ASCII logo, printed once per process
 ```
 
 ---
@@ -2059,12 +2105,16 @@ ironflow.EnvAPIKey      // "IRONFLOW_API_KEY"
 ironflow.EnvLogLevel    // "IRONFLOW_LOG_LEVEL"
 ironflow.EnvEnvironment // "IRONFLOW_ENV"
 ironflow.HeaderEnvironmentID // "X-Ironflow-Environment-ID"
+ironflow.HeaderRunID         // "X-Ironflow-Run-ID" -- attached by WithRunID and ctx.RunContext()
+ironflow.SDKVersion          // the SDK version, reported to the server on worker registration
+ironflow.ErrCodeServerTooOld // "SERVER_TOO_OLD" -- IronflowError.Code for a call the server is too old to serve
 
 // Timeouts
 ironflow.DefaultClientTimeout       // 30s
 ironflow.DefaultFunctionTimeout     // 10m
 ironflow.DefaultEmitSyncTimeout     // 30s -- EmitSync and InvokeSync
 ironflow.DefaultSignatureTolerance  // 5m
+ironflow.DefaultCommandDedupTTL     // 7d -- the recommended CommandDedupOptions.TTL
 
 // Function retry defaults
 ironflow.DefaultRetryMaxAttempts    // 3
@@ -2115,6 +2165,53 @@ ironflow.ProjectionModeExternal  // "external"
 ironflow.EventSourceAPI     // "api"
 ironflow.EventSourceCron    // "cron"
 ironflow.EventSourceWebhook // "webhook"
+
+// Function statuses (UpdateFunctionStatus)
+ironflow.FunctionStatusActive      // "active"
+ironflow.FunctionStatusPaused      // "paused"
+ironflow.FunctionStatusArchived    // "archived"
+ironflow.FunctionStatusUnspecified // "unspecified"
+
+// Function history change types
+ironflow.FunctionChangeCreated      // "created"
+ironflow.FunctionChangeUpdate       // "update"
+ironflow.FunctionChangeStatusChange // "status_change"
+ironflow.FunctionChangeRollback     // "rollback"
+ironflow.FunctionChangeDelete       // "delete"
+
+// Function execution routing (Deployments().GetExecutionRouting)
+ironflow.FunctionRoutingLegacy    // "legacy"
+ironflow.FunctionRoutingAdopting  // "adopting"
+ironflow.FunctionRoutingVersioned // "versioned"
+
+// Audit recording profiles (FunctionConfig.RecordingProfile)
+ironflow.RecordingProfileAll          // "all"
+ironflow.RecordingProfileRunLifecycle // "run_lifecycle"
+ironflow.RecordingProfileSteps        // "steps"
+
+// Projection statuses
+ironflow.ProjectionStatusActive     // "active"
+ironflow.ProjectionStatusRebuilding // "rebuilding"
+ironflow.ProjectionStatusPaused     // "paused"
+ironflow.ProjectionStatusError      // "error"
+
+// Consumer group statuses
+ironflow.ConsumerGroupStatusActive  // "active"
+ironflow.ConsumerGroupStatusPaused  // "paused"
+ironflow.ConsumerGroupStatusDeleted // "deleted"
+
+// Subscription connection states (SubscriptionClient.State)
+ironflow.StateConnecting   // "connecting"
+ironflow.StateConnected    // "connected"
+ironflow.StateDisconnected // "disconnected"
+ironflow.StateReconnecting // "reconnecting"
+
+// Log levels (LoggerConfig.Level)
+ironflow.LogLevelDebug  // logs everything
+ironflow.LogLevelInfo   // info, warn and error
+ironflow.LogLevelWarn   // warn and error
+ironflow.LogLevelError  // errors only
+ironflow.LogLevelSilent // no output
 ```
 
 ---
@@ -2142,6 +2239,10 @@ logger := ironflow.NewLogger(ironflow.LoggerConfig{
 
 // Disable logging entirely
 logger := ironflow.NewNoopLogger()
+
+// Levels: LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError, LogLevelSilent
+level := ironflow.ParseLogLevel("debug") // from a string
+level = ironflow.GetLogLevel()           // from IRONFLOW_LOG_LEVEL
 
 // Use custom logger in client/worker
 client := ironflow.NewClient(ironflow.ClientConfig{

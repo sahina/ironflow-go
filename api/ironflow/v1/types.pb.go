@@ -577,8 +577,8 @@ type DebounceConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Quiet period in milliseconds. Must be >= 1000 (scheduler tick floor).
 	PeriodMs int32 `protobuf:"varint,1,opt,name=period_ms,json=periodMs,proto3" json:"period_ms,omitempty"`
-	// JSON-path expression for the debounce group key (e.g. "userId",
-	// "data.customerId"). Empty-payload events use a global sentinel.
+	// Path inside the event data for the debounce group key (e.g. "userId",
+	// "customer.id"); no "data." prefix. Empty-payload events use a global sentinel.
 	// See internal/eventpath for path syntax.
 	Key string `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
 	// Optional maximum delay before a pending debounce group fires.

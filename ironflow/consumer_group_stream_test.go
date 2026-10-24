@@ -461,7 +461,12 @@ func (l *countingLogger) Warn(string, ...any) { l.warns.Add(1) }
 
 func waitUntil(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	waitUntilWithin(t, 5*time.Second, what, cond)
+}
+
+func waitUntilWithin(t *testing.T, timeout time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", what)
@@ -634,7 +639,8 @@ func TestGroupStream_AutoBackpressuresAndAckIsNoop(t *testing.T) {
 
 	// Nobody reads Events(): HTTP/2 flow control must stop the server well short of total.
 	var last int32 = -1
-	waitUntil(t, "the server to block on flow control", func() bool {
+	// The server gzips ~30MB before flow control stops it; a slow CI runner needs more than 5s.
+	waitUntilWithin(t, 30*time.Second, "the server to block on flow control", func() bool {
 		cur := sent.Load()
 		stable := cur == last
 		last = cur

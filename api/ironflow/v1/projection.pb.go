@@ -2397,110 +2397,6 @@ func (x *CancelRebuildResponse) GetStatus() string {
 	return ""
 }
 
-type ReportRebuildProgressRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	EventsProcessed int64                  `protobuf:"varint,2,opt,name=events_processed,json=eventsProcessed,proto3" json:"events_processed,omitempty"`
-	TotalEvents     int64                  `protobuf:"varint,3,opt,name=total_events,json=totalEvents,proto3" json:"total_events,omitempty"`
-	Completed       bool                   `protobuf:"varint,4,opt,name=completed,proto3" json:"completed,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *ReportRebuildProgressRequest) Reset() {
-	*x = ReportRebuildProgressRequest{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[33]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ReportRebuildProgressRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ReportRebuildProgressRequest) ProtoMessage() {}
-
-func (x *ReportRebuildProgressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[33]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ReportRebuildProgressRequest.ProtoReflect.Descriptor instead.
-func (*ReportRebuildProgressRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{33}
-}
-
-func (x *ReportRebuildProgressRequest) GetName() string {
-	if x != nil {
-		return x.Name
-	}
-	return ""
-}
-
-func (x *ReportRebuildProgressRequest) GetEventsProcessed() int64 {
-	if x != nil {
-		return x.EventsProcessed
-	}
-	return 0
-}
-
-func (x *ReportRebuildProgressRequest) GetTotalEvents() int64 {
-	if x != nil {
-		return x.TotalEvents
-	}
-	return 0
-}
-
-func (x *ReportRebuildProgressRequest) GetCompleted() bool {
-	if x != nil {
-		return x.Completed
-	}
-	return false
-}
-
-type ReportRebuildProgressResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ReportRebuildProgressResponse) Reset() {
-	*x = ReportRebuildProgressResponse{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[34]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ReportRebuildProgressResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ReportRebuildProgressResponse) ProtoMessage() {}
-
-func (x *ReportRebuildProgressResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[34]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ReportRebuildProgressResponse.ProtoReflect.Descriptor instead.
-func (*ReportRebuildProgressResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{34}
-}
-
 type PauseProjectionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -2510,7 +2406,7 @@ type PauseProjectionRequest struct {
 
 func (x *PauseProjectionRequest) Reset() {
 	*x = PauseProjectionRequest{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[35]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2522,7 +2418,7 @@ func (x *PauseProjectionRequest) String() string {
 func (*PauseProjectionRequest) ProtoMessage() {}
 
 func (x *PauseProjectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[35]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2535,7 +2431,7 @@ func (x *PauseProjectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PauseProjectionRequest.ProtoReflect.Descriptor instead.
 func (*PauseProjectionRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{35}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *PauseProjectionRequest) GetName() string {
@@ -2554,7 +2450,7 @@ type PauseProjectionResponse struct {
 
 func (x *PauseProjectionResponse) Reset() {
 	*x = PauseProjectionResponse{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[36]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2566,7 +2462,7 @@ func (x *PauseProjectionResponse) String() string {
 func (*PauseProjectionResponse) ProtoMessage() {}
 
 func (x *PauseProjectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[36]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2579,7 +2475,7 @@ func (x *PauseProjectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PauseProjectionResponse.ProtoReflect.Descriptor instead.
 func (*PauseProjectionResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{36}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *PauseProjectionResponse) GetStatus() string {
@@ -2598,7 +2494,7 @@ type ResumeProjectionRequest struct {
 
 func (x *ResumeProjectionRequest) Reset() {
 	*x = ResumeProjectionRequest{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[37]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2610,7 +2506,7 @@ func (x *ResumeProjectionRequest) String() string {
 func (*ResumeProjectionRequest) ProtoMessage() {}
 
 func (x *ResumeProjectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[37]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2623,7 +2519,7 @@ func (x *ResumeProjectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeProjectionRequest.ProtoReflect.Descriptor instead.
 func (*ResumeProjectionRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{37}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ResumeProjectionRequest) GetName() string {
@@ -2642,7 +2538,7 @@ type ResumeProjectionResponse struct {
 
 func (x *ResumeProjectionResponse) Reset() {
 	*x = ResumeProjectionResponse{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[38]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2654,7 +2550,7 @@ func (x *ResumeProjectionResponse) String() string {
 func (*ResumeProjectionResponse) ProtoMessage() {}
 
 func (x *ResumeProjectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[38]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2667,7 +2563,7 @@ func (x *ResumeProjectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResumeProjectionResponse.ProtoReflect.Descriptor instead.
 func (*ResumeProjectionResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{38}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ResumeProjectionResponse) GetStatus() string {
@@ -2690,7 +2586,7 @@ type CreateSQLProjectionRequest struct {
 
 func (x *CreateSQLProjectionRequest) Reset() {
 	*x = CreateSQLProjectionRequest{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[39]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2702,7 +2598,7 @@ func (x *CreateSQLProjectionRequest) String() string {
 func (*CreateSQLProjectionRequest) ProtoMessage() {}
 
 func (x *CreateSQLProjectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[39]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2715,7 +2611,7 @@ func (x *CreateSQLProjectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSQLProjectionRequest.ProtoReflect.Descriptor instead.
 func (*CreateSQLProjectionRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{39}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *CreateSQLProjectionRequest) GetName() string {
@@ -2763,7 +2659,7 @@ type CreateSQLProjectionResponse struct {
 
 func (x *CreateSQLProjectionResponse) Reset() {
 	*x = CreateSQLProjectionResponse{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[40]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2775,7 +2671,7 @@ func (x *CreateSQLProjectionResponse) String() string {
 func (*CreateSQLProjectionResponse) ProtoMessage() {}
 
 func (x *CreateSQLProjectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[40]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2788,7 +2684,7 @@ func (x *CreateSQLProjectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSQLProjectionResponse.ProtoReflect.Descriptor instead.
 func (*CreateSQLProjectionResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{40}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *CreateSQLProjectionResponse) GetName() string {
@@ -2818,7 +2714,7 @@ type QuerySQLProjectionRequest struct {
 
 func (x *QuerySQLProjectionRequest) Reset() {
 	*x = QuerySQLProjectionRequest{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[41]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2830,7 +2726,7 @@ func (x *QuerySQLProjectionRequest) String() string {
 func (*QuerySQLProjectionRequest) ProtoMessage() {}
 
 func (x *QuerySQLProjectionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[41]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2843,7 +2739,7 @@ func (x *QuerySQLProjectionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuerySQLProjectionRequest.ProtoReflect.Descriptor instead.
 func (*QuerySQLProjectionRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{41}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *QuerySQLProjectionRequest) GetName() string {
@@ -2892,7 +2788,7 @@ type QuerySQLProjectionResponse struct {
 
 func (x *QuerySQLProjectionResponse) Reset() {
 	*x = QuerySQLProjectionResponse{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[42]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2904,7 +2800,7 @@ func (x *QuerySQLProjectionResponse) String() string {
 func (*QuerySQLProjectionResponse) ProtoMessage() {}
 
 func (x *QuerySQLProjectionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[42]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2917,7 +2813,7 @@ func (x *QuerySQLProjectionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuerySQLProjectionResponse.ProtoReflect.Descriptor instead.
 func (*QuerySQLProjectionResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{42}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *QuerySQLProjectionResponse) GetColumns() []string {
@@ -2956,7 +2852,7 @@ type QuerySQLRow struct {
 
 func (x *QuerySQLRow) Reset() {
 	*x = QuerySQLRow{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[43]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2968,7 +2864,7 @@ func (x *QuerySQLRow) String() string {
 func (*QuerySQLRow) ProtoMessage() {}
 
 func (x *QuerySQLRow) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[43]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2981,7 +2877,7 @@ func (x *QuerySQLRow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuerySQLRow.ProtoReflect.Descriptor instead.
 func (*QuerySQLRow) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{43}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *QuerySQLRow) GetValues() []string {
@@ -3010,7 +2906,7 @@ type WaitProjectionCatchupRequest struct {
 
 func (x *WaitProjectionCatchupRequest) Reset() {
 	*x = WaitProjectionCatchupRequest{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[44]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3022,7 +2918,7 @@ func (x *WaitProjectionCatchupRequest) String() string {
 func (*WaitProjectionCatchupRequest) ProtoMessage() {}
 
 func (x *WaitProjectionCatchupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[44]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3035,7 +2931,7 @@ func (x *WaitProjectionCatchupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitProjectionCatchupRequest.ProtoReflect.Descriptor instead.
 func (*WaitProjectionCatchupRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{44}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *WaitProjectionCatchupRequest) GetName() string {
@@ -3081,7 +2977,7 @@ type WaitProjectionCatchupResponse struct {
 
 func (x *WaitProjectionCatchupResponse) Reset() {
 	*x = WaitProjectionCatchupResponse{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[45]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3093,7 +2989,7 @@ func (x *WaitProjectionCatchupResponse) String() string {
 func (*WaitProjectionCatchupResponse) ProtoMessage() {}
 
 func (x *WaitProjectionCatchupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[45]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3106,7 +3002,7 @@ func (x *WaitProjectionCatchupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitProjectionCatchupResponse.ProtoReflect.Descriptor instead.
 func (*WaitProjectionCatchupResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{45}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *WaitProjectionCatchupResponse) GetCaughtUp() bool {
@@ -3169,7 +3065,7 @@ type WaitItem struct {
 
 func (x *WaitItem) Reset() {
 	*x = WaitItem{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[46]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3181,7 +3077,7 @@ func (x *WaitItem) String() string {
 func (*WaitItem) ProtoMessage() {}
 
 func (x *WaitItem) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[46]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3194,7 +3090,7 @@ func (x *WaitItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitItem.ProtoReflect.Descriptor instead.
 func (*WaitItem) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{46}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *WaitItem) GetName() string {
@@ -3228,7 +3124,7 @@ type WaitProjectionCatchupBatchRequest struct {
 
 func (x *WaitProjectionCatchupBatchRequest) Reset() {
 	*x = WaitProjectionCatchupBatchRequest{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[47]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3240,7 +3136,7 @@ func (x *WaitProjectionCatchupBatchRequest) String() string {
 func (*WaitProjectionCatchupBatchRequest) ProtoMessage() {}
 
 func (x *WaitProjectionCatchupBatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[47]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3253,7 +3149,7 @@ func (x *WaitProjectionCatchupBatchRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use WaitProjectionCatchupBatchRequest.ProtoReflect.Descriptor instead.
 func (*WaitProjectionCatchupBatchRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{47}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *WaitProjectionCatchupBatchRequest) GetItems() []*WaitItem {
@@ -3280,7 +3176,7 @@ type WaitItemResult struct {
 
 func (x *WaitItemResult) Reset() {
 	*x = WaitItemResult{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[48]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3292,7 +3188,7 @@ func (x *WaitItemResult) String() string {
 func (*WaitItemResult) ProtoMessage() {}
 
 func (x *WaitItemResult) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[48]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3305,7 +3201,7 @@ func (x *WaitItemResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitItemResult.ProtoReflect.Descriptor instead.
 func (*WaitItemResult) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{48}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *WaitItemResult) GetResult() *WaitProjectionCatchupResponse {
@@ -3331,7 +3227,7 @@ type WaitProjectionCatchupBatchResponse struct {
 
 func (x *WaitProjectionCatchupBatchResponse) Reset() {
 	*x = WaitProjectionCatchupBatchResponse{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[49]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3343,7 +3239,7 @@ func (x *WaitProjectionCatchupBatchResponse) String() string {
 func (*WaitProjectionCatchupBatchResponse) ProtoMessage() {}
 
 func (x *WaitProjectionCatchupBatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[49]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3356,7 +3252,7 @@ func (x *WaitProjectionCatchupBatchResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use WaitProjectionCatchupBatchResponse.ProtoReflect.Descriptor instead.
 func (*WaitProjectionCatchupBatchResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{49}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *WaitProjectionCatchupBatchResponse) GetResults() []*WaitItemResult {
@@ -3378,7 +3274,7 @@ type WaitForEventRequest struct {
 
 func (x *WaitForEventRequest) Reset() {
 	*x = WaitForEventRequest{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[50]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3390,7 +3286,7 @@ func (x *WaitForEventRequest) String() string {
 func (*WaitForEventRequest) ProtoMessage() {}
 
 func (x *WaitForEventRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[50]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3403,7 +3299,7 @@ func (x *WaitForEventRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitForEventRequest.ProtoReflect.Descriptor instead.
 func (*WaitForEventRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{50}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *WaitForEventRequest) GetEventId() string {
@@ -3450,7 +3346,7 @@ type WaitProjectionCatchupStreamResponse struct {
 
 func (x *WaitProjectionCatchupStreamResponse) Reset() {
 	*x = WaitProjectionCatchupStreamResponse{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[51]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3462,7 +3358,7 @@ func (x *WaitProjectionCatchupStreamResponse) String() string {
 func (*WaitProjectionCatchupStreamResponse) ProtoMessage() {}
 
 func (x *WaitProjectionCatchupStreamResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[51]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3475,7 +3371,7 @@ func (x *WaitProjectionCatchupStreamResponse) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use WaitProjectionCatchupStreamResponse.ProtoReflect.Descriptor instead.
 func (*WaitProjectionCatchupStreamResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{51}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *WaitProjectionCatchupStreamResponse) GetKind() WaitStreamFrameKind {
@@ -3546,7 +3442,7 @@ type ListProjectionHistoryRequest struct {
 
 func (x *ListProjectionHistoryRequest) Reset() {
 	*x = ListProjectionHistoryRequest{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[52]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3558,7 +3454,7 @@ func (x *ListProjectionHistoryRequest) String() string {
 func (*ListProjectionHistoryRequest) ProtoMessage() {}
 
 func (x *ListProjectionHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[52]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3571,7 +3467,7 @@ func (x *ListProjectionHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProjectionHistoryRequest.ProtoReflect.Descriptor instead.
 func (*ListProjectionHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{52}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ListProjectionHistoryRequest) GetName() string {
@@ -3606,7 +3502,7 @@ type ListProjectionHistoryResponse struct {
 
 func (x *ListProjectionHistoryResponse) Reset() {
 	*x = ListProjectionHistoryResponse{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[53]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3618,7 +3514,7 @@ func (x *ListProjectionHistoryResponse) String() string {
 func (*ListProjectionHistoryResponse) ProtoMessage() {}
 
 func (x *ListProjectionHistoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[53]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3631,7 +3527,7 @@ func (x *ListProjectionHistoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProjectionHistoryResponse.ProtoReflect.Descriptor instead.
 func (*ListProjectionHistoryResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{53}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ListProjectionHistoryResponse) GetEntries() []*ProjectionHistoryEntry {
@@ -3665,7 +3561,7 @@ type GetProjectionRevisionRequest struct {
 
 func (x *GetProjectionRevisionRequest) Reset() {
 	*x = GetProjectionRevisionRequest{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[54]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3677,7 +3573,7 @@ func (x *GetProjectionRevisionRequest) String() string {
 func (*GetProjectionRevisionRequest) ProtoMessage() {}
 
 func (x *GetProjectionRevisionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[54]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3690,7 +3586,7 @@ func (x *GetProjectionRevisionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProjectionRevisionRequest.ProtoReflect.Descriptor instead.
 func (*GetProjectionRevisionRequest) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{54}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *GetProjectionRevisionRequest) GetName() string {
@@ -3716,7 +3612,7 @@ type GetProjectionRevisionResponse struct {
 
 func (x *GetProjectionRevisionResponse) Reset() {
 	*x = GetProjectionRevisionResponse{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[55]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3728,7 +3624,7 @@ func (x *GetProjectionRevisionResponse) String() string {
 func (*GetProjectionRevisionResponse) ProtoMessage() {}
 
 func (x *GetProjectionRevisionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[55]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3741,7 +3637,7 @@ func (x *GetProjectionRevisionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProjectionRevisionResponse.ProtoReflect.Descriptor instead.
 func (*GetProjectionRevisionResponse) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{55}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *GetProjectionRevisionResponse) GetEntry() *ProjectionHistoryEntry {
@@ -3766,7 +3662,7 @@ type ProjectionHistoryEntry struct {
 
 func (x *ProjectionHistoryEntry) Reset() {
 	*x = ProjectionHistoryEntry{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[56]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3778,7 +3674,7 @@ func (x *ProjectionHistoryEntry) String() string {
 func (*ProjectionHistoryEntry) ProtoMessage() {}
 
 func (x *ProjectionHistoryEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[56]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3791,7 +3687,7 @@ func (x *ProjectionHistoryEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectionHistoryEntry.ProtoReflect.Descriptor instead.
 func (*ProjectionHistoryEntry) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{56}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *ProjectionHistoryEntry) GetEventId() string {
@@ -3861,7 +3757,7 @@ type ProjectionDefinition struct {
 
 func (x *ProjectionDefinition) Reset() {
 	*x = ProjectionDefinition{}
-	mi := &file_ironflow_v1_projection_proto_msgTypes[57]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3873,7 +3769,7 @@ func (x *ProjectionDefinition) String() string {
 func (*ProjectionDefinition) ProtoMessage() {}
 
 func (x *ProjectionDefinition) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_projection_proto_msgTypes[57]
+	mi := &file_ironflow_v1_projection_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3886,7 +3782,7 @@ func (x *ProjectionDefinition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectionDefinition.ProtoReflect.Descriptor instead.
 func (*ProjectionDefinition) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{57}
+	return file_ironflow_v1_projection_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *ProjectionDefinition) GetName() string {
@@ -4143,13 +4039,7 @@ const file_ironflow_v1_projection_proto_rawDesc = "" +
 	"\x14CancelRebuildRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"/\n" +
 	"\x15CancelRebuildResponse\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06status\"\x9e\x01\n" +
-	"\x1cReportRebuildProgressRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12)\n" +
-	"\x10events_processed\x18\x02 \x01(\x03R\x0feventsProcessed\x12!\n" +
-	"\ftotal_events\x18\x03 \x01(\x03R\vtotalEvents\x12\x1c\n" +
-	"\tcompleted\x18\x04 \x01(\bR\tcompleted\"\x1f\n" +
-	"\x1dReportRebuildProgressResponse\",\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\",\n" +
 	"\x16PauseProjectionRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"1\n" +
 	"\x17PauseProjectionResponse\x12\x16\n" +
@@ -4277,7 +4167,7 @@ const file_ironflow_v1_projection_proto_rawDesc = "" +
 	"\"WAIT_STREAM_FRAME_KIND_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fWAIT_STREAM_FRAME_KIND_PROGRESS\x10\x01\x12$\n" +
 	" WAIT_STREAM_FRAME_KIND_HEARTBEAT\x10\x02\x12\x1f\n" +
-	"\x1bWAIT_STREAM_FRAME_KIND_DONE\x10\x032\xe3\x15\n" +
+	"\x1bWAIT_STREAM_FRAME_KIND_DONE\x10\x032\xf3\x14\n" +
 	"\x11ProjectionService\x12s\n" +
 	"\x15ListProjectionHistory\x12).ironflow.v1.ListProjectionHistoryRequest\x1a*.ironflow.v1.ListProjectionHistoryResponse\"\x03\x90\x02\x01\x12s\n" +
 	"\x15GetProjectionRevision\x12).ironflow.v1.GetProjectionRevisionRequest\x1a*.ironflow.v1.GetProjectionRevisionResponse\"\x03\x90\x02\x01\x12e\n" +
@@ -4295,8 +4185,7 @@ const file_ironflow_v1_projection_proto_rawDesc = "" +
 	"\x13GetProjectionStatus\x12'.ironflow.v1.GetProjectionStatusRequest\x1a(.ironflow.v1.GetProjectionStatusResponse\"\x03\x90\x02\x01\x12b\n" +
 	"\x11RebuildProjection\x12%.ironflow.v1.RebuildProjectionRequest\x1a&.ironflow.v1.RebuildProjectionResponse\x12[\n" +
 	"\rGetRebuildJob\x12!.ironflow.v1.GetRebuildJobRequest\x1a\".ironflow.v1.GetRebuildJobResponse\"\x03\x90\x02\x01\x12V\n" +
-	"\rCancelRebuild\x12!.ironflow.v1.CancelRebuildRequest\x1a\".ironflow.v1.CancelRebuildResponse\x12n\n" +
-	"\x15ReportRebuildProgress\x12).ironflow.v1.ReportRebuildProgressRequest\x1a*.ironflow.v1.ReportRebuildProgressResponse\x12\\\n" +
+	"\rCancelRebuild\x12!.ironflow.v1.CancelRebuildRequest\x1a\".ironflow.v1.CancelRebuildResponse\x12\\\n" +
 	"\x0fPauseProjection\x12#.ironflow.v1.PauseProjectionRequest\x1a$.ironflow.v1.PauseProjectionResponse\x12_\n" +
 	"\x10ResumeProjection\x12$.ironflow.v1.ResumeProjectionRequest\x1a%.ironflow.v1.ResumeProjectionResponse\x12h\n" +
 	"\x13CreateSQLProjection\x12'.ironflow.v1.CreateSQLProjectionRequest\x1a(.ironflow.v1.CreateSQLProjectionResponse\x12j\n" +
@@ -4319,7 +4208,7 @@ func file_ironflow_v1_projection_proto_rawDescGZIP() []byte {
 }
 
 var file_ironflow_v1_projection_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_ironflow_v1_projection_proto_msgTypes = make([]protoimpl.MessageInfo, 60)
+var file_ironflow_v1_projection_proto_msgTypes = make([]protoimpl.MessageInfo, 58)
 var file_ironflow_v1_projection_proto_goTypes = []any{
 	(ProjectionEventKind)(0),                    // 0: ironflow.v1.ProjectionEventKind
 	(WaitStreamFrameKind)(0),                    // 1: ironflow.v1.WaitStreamFrameKind
@@ -4356,93 +4245,91 @@ var file_ironflow_v1_projection_proto_goTypes = []any{
 	(*GetRebuildJobResponse)(nil),               // 32: ironflow.v1.GetRebuildJobResponse
 	(*CancelRebuildRequest)(nil),                // 33: ironflow.v1.CancelRebuildRequest
 	(*CancelRebuildResponse)(nil),               // 34: ironflow.v1.CancelRebuildResponse
-	(*ReportRebuildProgressRequest)(nil),        // 35: ironflow.v1.ReportRebuildProgressRequest
-	(*ReportRebuildProgressResponse)(nil),       // 36: ironflow.v1.ReportRebuildProgressResponse
-	(*PauseProjectionRequest)(nil),              // 37: ironflow.v1.PauseProjectionRequest
-	(*PauseProjectionResponse)(nil),             // 38: ironflow.v1.PauseProjectionResponse
-	(*ResumeProjectionRequest)(nil),             // 39: ironflow.v1.ResumeProjectionRequest
-	(*ResumeProjectionResponse)(nil),            // 40: ironflow.v1.ResumeProjectionResponse
-	(*CreateSQLProjectionRequest)(nil),          // 41: ironflow.v1.CreateSQLProjectionRequest
-	(*CreateSQLProjectionResponse)(nil),         // 42: ironflow.v1.CreateSQLProjectionResponse
-	(*QuerySQLProjectionRequest)(nil),           // 43: ironflow.v1.QuerySQLProjectionRequest
-	(*QuerySQLProjectionResponse)(nil),          // 44: ironflow.v1.QuerySQLProjectionResponse
-	(*QuerySQLRow)(nil),                         // 45: ironflow.v1.QuerySQLRow
-	(*WaitProjectionCatchupRequest)(nil),        // 46: ironflow.v1.WaitProjectionCatchupRequest
-	(*WaitProjectionCatchupResponse)(nil),       // 47: ironflow.v1.WaitProjectionCatchupResponse
-	(*WaitItem)(nil),                            // 48: ironflow.v1.WaitItem
-	(*WaitProjectionCatchupBatchRequest)(nil),   // 49: ironflow.v1.WaitProjectionCatchupBatchRequest
-	(*WaitItemResult)(nil),                      // 50: ironflow.v1.WaitItemResult
-	(*WaitProjectionCatchupBatchResponse)(nil),  // 51: ironflow.v1.WaitProjectionCatchupBatchResponse
-	(*WaitForEventRequest)(nil),                 // 52: ironflow.v1.WaitForEventRequest
-	(*WaitProjectionCatchupStreamResponse)(nil), // 53: ironflow.v1.WaitProjectionCatchupStreamResponse
-	(*ListProjectionHistoryRequest)(nil),        // 54: ironflow.v1.ListProjectionHistoryRequest
-	(*ListProjectionHistoryResponse)(nil),       // 55: ironflow.v1.ListProjectionHistoryResponse
-	(*GetProjectionRevisionRequest)(nil),        // 56: ironflow.v1.GetProjectionRevisionRequest
-	(*GetProjectionRevisionResponse)(nil),       // 57: ironflow.v1.GetProjectionRevisionResponse
-	(*ProjectionHistoryEntry)(nil),              // 58: ironflow.v1.ProjectionHistoryEntry
-	(*ProjectionDefinition)(nil),                // 59: ironflow.v1.ProjectionDefinition
-	nil,                                         // 60: ironflow.v1.CreateSQLProjectionRequest.EventHandlersEntry
-	nil,                                         // 61: ironflow.v1.ProjectionDefinition.EventHandlersEntry
-	(*structpb.Struct)(nil),                     // 62: google.protobuf.Struct
-	(*structpb.Value)(nil),                      // 63: google.protobuf.Value
-	(*timestamppb.Timestamp)(nil),               // 64: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),                 // 65: google.protobuf.Duration
+	(*PauseProjectionRequest)(nil),              // 35: ironflow.v1.PauseProjectionRequest
+	(*PauseProjectionResponse)(nil),             // 36: ironflow.v1.PauseProjectionResponse
+	(*ResumeProjectionRequest)(nil),             // 37: ironflow.v1.ResumeProjectionRequest
+	(*ResumeProjectionResponse)(nil),            // 38: ironflow.v1.ResumeProjectionResponse
+	(*CreateSQLProjectionRequest)(nil),          // 39: ironflow.v1.CreateSQLProjectionRequest
+	(*CreateSQLProjectionResponse)(nil),         // 40: ironflow.v1.CreateSQLProjectionResponse
+	(*QuerySQLProjectionRequest)(nil),           // 41: ironflow.v1.QuerySQLProjectionRequest
+	(*QuerySQLProjectionResponse)(nil),          // 42: ironflow.v1.QuerySQLProjectionResponse
+	(*QuerySQLRow)(nil),                         // 43: ironflow.v1.QuerySQLRow
+	(*WaitProjectionCatchupRequest)(nil),        // 44: ironflow.v1.WaitProjectionCatchupRequest
+	(*WaitProjectionCatchupResponse)(nil),       // 45: ironflow.v1.WaitProjectionCatchupResponse
+	(*WaitItem)(nil),                            // 46: ironflow.v1.WaitItem
+	(*WaitProjectionCatchupBatchRequest)(nil),   // 47: ironflow.v1.WaitProjectionCatchupBatchRequest
+	(*WaitItemResult)(nil),                      // 48: ironflow.v1.WaitItemResult
+	(*WaitProjectionCatchupBatchResponse)(nil),  // 49: ironflow.v1.WaitProjectionCatchupBatchResponse
+	(*WaitForEventRequest)(nil),                 // 50: ironflow.v1.WaitForEventRequest
+	(*WaitProjectionCatchupStreamResponse)(nil), // 51: ironflow.v1.WaitProjectionCatchupStreamResponse
+	(*ListProjectionHistoryRequest)(nil),        // 52: ironflow.v1.ListProjectionHistoryRequest
+	(*ListProjectionHistoryResponse)(nil),       // 53: ironflow.v1.ListProjectionHistoryResponse
+	(*GetProjectionRevisionRequest)(nil),        // 54: ironflow.v1.GetProjectionRevisionRequest
+	(*GetProjectionRevisionResponse)(nil),       // 55: ironflow.v1.GetProjectionRevisionResponse
+	(*ProjectionHistoryEntry)(nil),              // 56: ironflow.v1.ProjectionHistoryEntry
+	(*ProjectionDefinition)(nil),                // 57: ironflow.v1.ProjectionDefinition
+	nil,                                         // 58: ironflow.v1.CreateSQLProjectionRequest.EventHandlersEntry
+	nil,                                         // 59: ironflow.v1.ProjectionDefinition.EventHandlersEntry
+	(*structpb.Struct)(nil),                     // 60: google.protobuf.Struct
+	(*structpb.Value)(nil),                      // 61: google.protobuf.Value
+	(*timestamppb.Timestamp)(nil),               // 62: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),                 // 63: google.protobuf.Duration
 }
 var file_ironflow_v1_projection_proto_depIdxs = []int32{
 	14, // 0: ironflow.v1.PollProjectionEventsRequest.lease:type_name -> ironflow.v1.ProjectionLease
-	62, // 1: ironflow.v1.ProjectionEvent.data:type_name -> google.protobuf.Struct
-	63, // 2: ironflow.v1.ProjectionEvent.data_value:type_name -> google.protobuf.Value
-	64, // 3: ironflow.v1.ProjectionEvent.timestamp:type_name -> google.protobuf.Timestamp
-	62, // 4: ironflow.v1.ProjectionEvent.metadata:type_name -> google.protobuf.Struct
+	60, // 1: ironflow.v1.ProjectionEvent.data:type_name -> google.protobuf.Struct
+	61, // 2: ironflow.v1.ProjectionEvent.data_value:type_name -> google.protobuf.Value
+	62, // 3: ironflow.v1.ProjectionEvent.timestamp:type_name -> google.protobuf.Timestamp
+	60, // 4: ironflow.v1.ProjectionEvent.metadata:type_name -> google.protobuf.Struct
 	0,  // 5: ironflow.v1.ProjectionEvent.kind:type_name -> ironflow.v1.ProjectionEventKind
 	7,  // 6: ironflow.v1.PollProjectionEventsResponse.events:type_name -> ironflow.v1.ProjectionEvent
-	62, // 7: ironflow.v1.PollProjectionEventsResponse.current_state:type_name -> google.protobuf.Struct
-	63, // 8: ironflow.v1.PollProjectionEventsResponse.current_state_value:type_name -> google.protobuf.Value
+	60, // 7: ironflow.v1.PollProjectionEventsResponse.current_state:type_name -> google.protobuf.Struct
+	61, // 8: ironflow.v1.PollProjectionEventsResponse.current_state_value:type_name -> google.protobuf.Value
 	14, // 9: ironflow.v1.StreamProjectionEventsRequest.lease:type_name -> ironflow.v1.ProjectionLease
-	62, // 10: ironflow.v1.SaveProjectionStateRequest.state:type_name -> google.protobuf.Struct
-	63, // 11: ironflow.v1.SaveProjectionStateRequest.state_value:type_name -> google.protobuf.Value
-	64, // 12: ironflow.v1.SaveProjectionStateRequest.last_event_time:type_name -> google.protobuf.Timestamp
+	60, // 10: ironflow.v1.SaveProjectionStateRequest.state:type_name -> google.protobuf.Struct
+	61, // 11: ironflow.v1.SaveProjectionStateRequest.state_value:type_name -> google.protobuf.Value
+	62, // 12: ironflow.v1.SaveProjectionStateRequest.last_event_time:type_name -> google.protobuf.Timestamp
 	14, // 13: ironflow.v1.SaveProjectionStateRequest.lease:type_name -> ironflow.v1.ProjectionLease
 	14, // 14: ironflow.v1.AckProjectionEventsRequest.lease:type_name -> ironflow.v1.ProjectionLease
 	14, // 15: ironflow.v1.AcquireProjectionLeaseResponse.lease:type_name -> ironflow.v1.ProjectionLease
-	65, // 16: ironflow.v1.AcquireProjectionLeaseResponse.ttl:type_name -> google.protobuf.Duration
+	63, // 16: ironflow.v1.AcquireProjectionLeaseResponse.ttl:type_name -> google.protobuf.Duration
 	14, // 17: ironflow.v1.RenewProjectionLeaseRequest.lease:type_name -> ironflow.v1.ProjectionLease
-	65, // 18: ironflow.v1.RenewProjectionLeaseResponse.ttl:type_name -> google.protobuf.Duration
+	63, // 18: ironflow.v1.RenewProjectionLeaseResponse.ttl:type_name -> google.protobuf.Duration
 	14, // 19: ironflow.v1.ReleaseProjectionLeaseRequest.lease:type_name -> ironflow.v1.ProjectionLease
-	64, // 20: ironflow.v1.GetProjectionRequest.as_of:type_name -> google.protobuf.Timestamp
-	62, // 21: ironflow.v1.GetProjectionResponse.state:type_name -> google.protobuf.Struct
-	63, // 22: ironflow.v1.GetProjectionResponse.state_value:type_name -> google.protobuf.Value
-	64, // 23: ironflow.v1.GetProjectionResponse.last_event_time:type_name -> google.protobuf.Timestamp
+	62, // 20: ironflow.v1.GetProjectionRequest.as_of:type_name -> google.protobuf.Timestamp
+	60, // 21: ironflow.v1.GetProjectionResponse.state:type_name -> google.protobuf.Struct
+	61, // 22: ironflow.v1.GetProjectionResponse.state_value:type_name -> google.protobuf.Value
+	62, // 23: ironflow.v1.GetProjectionResponse.last_event_time:type_name -> google.protobuf.Timestamp
 	24, // 24: ironflow.v1.GetProjectionResponse.registry:type_name -> ironflow.v1.ProjectionInfo
-	64, // 25: ironflow.v1.GetProjectionResponse.state_updated_at:type_name -> google.protobuf.Timestamp
-	64, // 26: ironflow.v1.ProjectionInfo.created_at:type_name -> google.protobuf.Timestamp
-	64, // 27: ironflow.v1.ProjectionInfo.updated_at:type_name -> google.protobuf.Timestamp
-	62, // 28: ironflow.v1.ProjectionInfo.event_handlers:type_name -> google.protobuf.Struct
-	64, // 29: ironflow.v1.ProjectionInfo.rebuild_started_at:type_name -> google.protobuf.Timestamp
+	62, // 25: ironflow.v1.GetProjectionResponse.state_updated_at:type_name -> google.protobuf.Timestamp
+	62, // 26: ironflow.v1.ProjectionInfo.created_at:type_name -> google.protobuf.Timestamp
+	62, // 27: ironflow.v1.ProjectionInfo.updated_at:type_name -> google.protobuf.Timestamp
+	60, // 28: ironflow.v1.ProjectionInfo.event_handlers:type_name -> google.protobuf.Struct
+	62, // 29: ironflow.v1.ProjectionInfo.rebuild_started_at:type_name -> google.protobuf.Timestamp
 	24, // 30: ironflow.v1.ListProjectionsResponse.projections:type_name -> ironflow.v1.ProjectionInfo
-	64, // 31: ironflow.v1.GetProjectionStatusResponse.updated_at:type_name -> google.protobuf.Timestamp
-	64, // 32: ironflow.v1.GetProjectionStatusResponse.rebuild_started_at:type_name -> google.protobuf.Timestamp
+	62, // 31: ironflow.v1.GetProjectionStatusResponse.updated_at:type_name -> google.protobuf.Timestamp
+	62, // 32: ironflow.v1.GetProjectionStatusResponse.rebuild_started_at:type_name -> google.protobuf.Timestamp
 	30, // 33: ironflow.v1.RebuildProjectionResponse.job:type_name -> ironflow.v1.RebuildJob
-	64, // 34: ironflow.v1.RebuildJob.started_at:type_name -> google.protobuf.Timestamp
-	65, // 35: ironflow.v1.RebuildJob.estimated_remaining:type_name -> google.protobuf.Duration
+	62, // 34: ironflow.v1.RebuildJob.started_at:type_name -> google.protobuf.Timestamp
+	63, // 35: ironflow.v1.RebuildJob.estimated_remaining:type_name -> google.protobuf.Duration
 	30, // 36: ironflow.v1.GetRebuildJobResponse.job:type_name -> ironflow.v1.RebuildJob
-	60, // 37: ironflow.v1.CreateSQLProjectionRequest.event_handlers:type_name -> ironflow.v1.CreateSQLProjectionRequest.EventHandlersEntry
-	45, // 38: ironflow.v1.QuerySQLProjectionResponse.rows:type_name -> ironflow.v1.QuerySQLRow
-	63, // 39: ironflow.v1.QuerySQLRow.typed_values:type_name -> google.protobuf.Value
-	65, // 40: ironflow.v1.WaitProjectionCatchupRequest.timeout:type_name -> google.protobuf.Duration
-	48, // 41: ironflow.v1.WaitProjectionCatchupBatchRequest.items:type_name -> ironflow.v1.WaitItem
-	65, // 42: ironflow.v1.WaitProjectionCatchupBatchRequest.timeout:type_name -> google.protobuf.Duration
-	47, // 43: ironflow.v1.WaitItemResult.result:type_name -> ironflow.v1.WaitProjectionCatchupResponse
-	50, // 44: ironflow.v1.WaitProjectionCatchupBatchResponse.results:type_name -> ironflow.v1.WaitItemResult
-	65, // 45: ironflow.v1.WaitForEventRequest.timeout:type_name -> google.protobuf.Duration
+	58, // 37: ironflow.v1.CreateSQLProjectionRequest.event_handlers:type_name -> ironflow.v1.CreateSQLProjectionRequest.EventHandlersEntry
+	43, // 38: ironflow.v1.QuerySQLProjectionResponse.rows:type_name -> ironflow.v1.QuerySQLRow
+	61, // 39: ironflow.v1.QuerySQLRow.typed_values:type_name -> google.protobuf.Value
+	63, // 40: ironflow.v1.WaitProjectionCatchupRequest.timeout:type_name -> google.protobuf.Duration
+	46, // 41: ironflow.v1.WaitProjectionCatchupBatchRequest.items:type_name -> ironflow.v1.WaitItem
+	63, // 42: ironflow.v1.WaitProjectionCatchupBatchRequest.timeout:type_name -> google.protobuf.Duration
+	45, // 43: ironflow.v1.WaitItemResult.result:type_name -> ironflow.v1.WaitProjectionCatchupResponse
+	48, // 44: ironflow.v1.WaitProjectionCatchupBatchResponse.results:type_name -> ironflow.v1.WaitItemResult
+	63, // 45: ironflow.v1.WaitForEventRequest.timeout:type_name -> google.protobuf.Duration
 	1,  // 46: ironflow.v1.WaitProjectionCatchupStreamResponse.kind:type_name -> ironflow.v1.WaitStreamFrameKind
-	58, // 47: ironflow.v1.ListProjectionHistoryResponse.entries:type_name -> ironflow.v1.ProjectionHistoryEntry
-	58, // 48: ironflow.v1.GetProjectionRevisionResponse.entry:type_name -> ironflow.v1.ProjectionHistoryEntry
-	59, // 49: ironflow.v1.ProjectionHistoryEntry.previous_definition:type_name -> ironflow.v1.ProjectionDefinition
-	64, // 50: ironflow.v1.ProjectionHistoryEntry.recorded_at:type_name -> google.protobuf.Timestamp
-	61, // 51: ironflow.v1.ProjectionDefinition.event_handlers:type_name -> ironflow.v1.ProjectionDefinition.EventHandlersEntry
-	54, // 52: ironflow.v1.ProjectionService.ListProjectionHistory:input_type -> ironflow.v1.ListProjectionHistoryRequest
-	56, // 53: ironflow.v1.ProjectionService.GetProjectionRevision:input_type -> ironflow.v1.GetProjectionRevisionRequest
+	56, // 47: ironflow.v1.ListProjectionHistoryResponse.entries:type_name -> ironflow.v1.ProjectionHistoryEntry
+	56, // 48: ironflow.v1.GetProjectionRevisionResponse.entry:type_name -> ironflow.v1.ProjectionHistoryEntry
+	57, // 49: ironflow.v1.ProjectionHistoryEntry.previous_definition:type_name -> ironflow.v1.ProjectionDefinition
+	62, // 50: ironflow.v1.ProjectionHistoryEntry.recorded_at:type_name -> google.protobuf.Timestamp
+	59, // 51: ironflow.v1.ProjectionDefinition.event_handlers:type_name -> ironflow.v1.ProjectionDefinition.EventHandlersEntry
+	52, // 52: ironflow.v1.ProjectionService.ListProjectionHistory:input_type -> ironflow.v1.ListProjectionHistoryRequest
+	54, // 53: ironflow.v1.ProjectionService.GetProjectionRevision:input_type -> ironflow.v1.GetProjectionRevisionRequest
 	2,  // 54: ironflow.v1.ProjectionService.RegisterProjection:input_type -> ironflow.v1.RegisterProjectionRequest
 	4,  // 55: ironflow.v1.ProjectionService.UnregisterProjection:input_type -> ironflow.v1.UnregisterProjectionRequest
 	6,  // 56: ironflow.v1.ProjectionService.PollProjectionEvents:input_type -> ironflow.v1.PollProjectionEventsRequest
@@ -4458,43 +4345,41 @@ var file_ironflow_v1_projection_proto_depIdxs = []int32{
 	28, // 66: ironflow.v1.ProjectionService.RebuildProjection:input_type -> ironflow.v1.RebuildProjectionRequest
 	31, // 67: ironflow.v1.ProjectionService.GetRebuildJob:input_type -> ironflow.v1.GetRebuildJobRequest
 	33, // 68: ironflow.v1.ProjectionService.CancelRebuild:input_type -> ironflow.v1.CancelRebuildRequest
-	35, // 69: ironflow.v1.ProjectionService.ReportRebuildProgress:input_type -> ironflow.v1.ReportRebuildProgressRequest
-	37, // 70: ironflow.v1.ProjectionService.PauseProjection:input_type -> ironflow.v1.PauseProjectionRequest
-	39, // 71: ironflow.v1.ProjectionService.ResumeProjection:input_type -> ironflow.v1.ResumeProjectionRequest
-	41, // 72: ironflow.v1.ProjectionService.CreateSQLProjection:input_type -> ironflow.v1.CreateSQLProjectionRequest
-	43, // 73: ironflow.v1.ProjectionService.QuerySQLProjection:input_type -> ironflow.v1.QuerySQLProjectionRequest
-	46, // 74: ironflow.v1.ProjectionService.WaitProjectionCatchup:input_type -> ironflow.v1.WaitProjectionCatchupRequest
-	49, // 75: ironflow.v1.ProjectionService.WaitProjectionCatchupBatch:input_type -> ironflow.v1.WaitProjectionCatchupBatchRequest
-	52, // 76: ironflow.v1.ProjectionService.WaitForEvent:input_type -> ironflow.v1.WaitForEventRequest
-	46, // 77: ironflow.v1.ProjectionService.WaitProjectionCatchupStream:input_type -> ironflow.v1.WaitProjectionCatchupRequest
-	55, // 78: ironflow.v1.ProjectionService.ListProjectionHistory:output_type -> ironflow.v1.ListProjectionHistoryResponse
-	57, // 79: ironflow.v1.ProjectionService.GetProjectionRevision:output_type -> ironflow.v1.GetProjectionRevisionResponse
-	3,  // 80: ironflow.v1.ProjectionService.RegisterProjection:output_type -> ironflow.v1.RegisterProjectionResponse
-	5,  // 81: ironflow.v1.ProjectionService.UnregisterProjection:output_type -> ironflow.v1.UnregisterProjectionResponse
-	8,  // 82: ironflow.v1.ProjectionService.PollProjectionEvents:output_type -> ironflow.v1.PollProjectionEventsResponse
-	7,  // 83: ironflow.v1.ProjectionService.StreamProjectionEvents:output_type -> ironflow.v1.ProjectionEvent
-	11, // 84: ironflow.v1.ProjectionService.SaveProjectionState:output_type -> ironflow.v1.SaveProjectionStateResponse
-	13, // 85: ironflow.v1.ProjectionService.AckProjectionEvents:output_type -> ironflow.v1.AckProjectionEventsResponse
-	16, // 86: ironflow.v1.ProjectionService.AcquireProjectionLease:output_type -> ironflow.v1.AcquireProjectionLeaseResponse
-	18, // 87: ironflow.v1.ProjectionService.RenewProjectionLease:output_type -> ironflow.v1.RenewProjectionLeaseResponse
-	20, // 88: ironflow.v1.ProjectionService.ReleaseProjectionLease:output_type -> ironflow.v1.ReleaseProjectionLeaseResponse
-	22, // 89: ironflow.v1.ProjectionService.GetProjection:output_type -> ironflow.v1.GetProjectionResponse
-	25, // 90: ironflow.v1.ProjectionService.ListProjections:output_type -> ironflow.v1.ListProjectionsResponse
-	27, // 91: ironflow.v1.ProjectionService.GetProjectionStatus:output_type -> ironflow.v1.GetProjectionStatusResponse
-	29, // 92: ironflow.v1.ProjectionService.RebuildProjection:output_type -> ironflow.v1.RebuildProjectionResponse
-	32, // 93: ironflow.v1.ProjectionService.GetRebuildJob:output_type -> ironflow.v1.GetRebuildJobResponse
-	34, // 94: ironflow.v1.ProjectionService.CancelRebuild:output_type -> ironflow.v1.CancelRebuildResponse
-	36, // 95: ironflow.v1.ProjectionService.ReportRebuildProgress:output_type -> ironflow.v1.ReportRebuildProgressResponse
-	38, // 96: ironflow.v1.ProjectionService.PauseProjection:output_type -> ironflow.v1.PauseProjectionResponse
-	40, // 97: ironflow.v1.ProjectionService.ResumeProjection:output_type -> ironflow.v1.ResumeProjectionResponse
-	42, // 98: ironflow.v1.ProjectionService.CreateSQLProjection:output_type -> ironflow.v1.CreateSQLProjectionResponse
-	44, // 99: ironflow.v1.ProjectionService.QuerySQLProjection:output_type -> ironflow.v1.QuerySQLProjectionResponse
-	47, // 100: ironflow.v1.ProjectionService.WaitProjectionCatchup:output_type -> ironflow.v1.WaitProjectionCatchupResponse
-	51, // 101: ironflow.v1.ProjectionService.WaitProjectionCatchupBatch:output_type -> ironflow.v1.WaitProjectionCatchupBatchResponse
-	47, // 102: ironflow.v1.ProjectionService.WaitForEvent:output_type -> ironflow.v1.WaitProjectionCatchupResponse
-	53, // 103: ironflow.v1.ProjectionService.WaitProjectionCatchupStream:output_type -> ironflow.v1.WaitProjectionCatchupStreamResponse
-	78, // [78:104] is the sub-list for method output_type
-	52, // [52:78] is the sub-list for method input_type
+	35, // 69: ironflow.v1.ProjectionService.PauseProjection:input_type -> ironflow.v1.PauseProjectionRequest
+	37, // 70: ironflow.v1.ProjectionService.ResumeProjection:input_type -> ironflow.v1.ResumeProjectionRequest
+	39, // 71: ironflow.v1.ProjectionService.CreateSQLProjection:input_type -> ironflow.v1.CreateSQLProjectionRequest
+	41, // 72: ironflow.v1.ProjectionService.QuerySQLProjection:input_type -> ironflow.v1.QuerySQLProjectionRequest
+	44, // 73: ironflow.v1.ProjectionService.WaitProjectionCatchup:input_type -> ironflow.v1.WaitProjectionCatchupRequest
+	47, // 74: ironflow.v1.ProjectionService.WaitProjectionCatchupBatch:input_type -> ironflow.v1.WaitProjectionCatchupBatchRequest
+	50, // 75: ironflow.v1.ProjectionService.WaitForEvent:input_type -> ironflow.v1.WaitForEventRequest
+	44, // 76: ironflow.v1.ProjectionService.WaitProjectionCatchupStream:input_type -> ironflow.v1.WaitProjectionCatchupRequest
+	53, // 77: ironflow.v1.ProjectionService.ListProjectionHistory:output_type -> ironflow.v1.ListProjectionHistoryResponse
+	55, // 78: ironflow.v1.ProjectionService.GetProjectionRevision:output_type -> ironflow.v1.GetProjectionRevisionResponse
+	3,  // 79: ironflow.v1.ProjectionService.RegisterProjection:output_type -> ironflow.v1.RegisterProjectionResponse
+	5,  // 80: ironflow.v1.ProjectionService.UnregisterProjection:output_type -> ironflow.v1.UnregisterProjectionResponse
+	8,  // 81: ironflow.v1.ProjectionService.PollProjectionEvents:output_type -> ironflow.v1.PollProjectionEventsResponse
+	7,  // 82: ironflow.v1.ProjectionService.StreamProjectionEvents:output_type -> ironflow.v1.ProjectionEvent
+	11, // 83: ironflow.v1.ProjectionService.SaveProjectionState:output_type -> ironflow.v1.SaveProjectionStateResponse
+	13, // 84: ironflow.v1.ProjectionService.AckProjectionEvents:output_type -> ironflow.v1.AckProjectionEventsResponse
+	16, // 85: ironflow.v1.ProjectionService.AcquireProjectionLease:output_type -> ironflow.v1.AcquireProjectionLeaseResponse
+	18, // 86: ironflow.v1.ProjectionService.RenewProjectionLease:output_type -> ironflow.v1.RenewProjectionLeaseResponse
+	20, // 87: ironflow.v1.ProjectionService.ReleaseProjectionLease:output_type -> ironflow.v1.ReleaseProjectionLeaseResponse
+	22, // 88: ironflow.v1.ProjectionService.GetProjection:output_type -> ironflow.v1.GetProjectionResponse
+	25, // 89: ironflow.v1.ProjectionService.ListProjections:output_type -> ironflow.v1.ListProjectionsResponse
+	27, // 90: ironflow.v1.ProjectionService.GetProjectionStatus:output_type -> ironflow.v1.GetProjectionStatusResponse
+	29, // 91: ironflow.v1.ProjectionService.RebuildProjection:output_type -> ironflow.v1.RebuildProjectionResponse
+	32, // 92: ironflow.v1.ProjectionService.GetRebuildJob:output_type -> ironflow.v1.GetRebuildJobResponse
+	34, // 93: ironflow.v1.ProjectionService.CancelRebuild:output_type -> ironflow.v1.CancelRebuildResponse
+	36, // 94: ironflow.v1.ProjectionService.PauseProjection:output_type -> ironflow.v1.PauseProjectionResponse
+	38, // 95: ironflow.v1.ProjectionService.ResumeProjection:output_type -> ironflow.v1.ResumeProjectionResponse
+	40, // 96: ironflow.v1.ProjectionService.CreateSQLProjection:output_type -> ironflow.v1.CreateSQLProjectionResponse
+	42, // 97: ironflow.v1.ProjectionService.QuerySQLProjection:output_type -> ironflow.v1.QuerySQLProjectionResponse
+	45, // 98: ironflow.v1.ProjectionService.WaitProjectionCatchup:output_type -> ironflow.v1.WaitProjectionCatchupResponse
+	49, // 99: ironflow.v1.ProjectionService.WaitProjectionCatchupBatch:output_type -> ironflow.v1.WaitProjectionCatchupBatchResponse
+	45, // 100: ironflow.v1.ProjectionService.WaitForEvent:output_type -> ironflow.v1.WaitProjectionCatchupResponse
+	51, // 101: ironflow.v1.ProjectionService.WaitProjectionCatchupStream:output_type -> ironflow.v1.WaitProjectionCatchupStreamResponse
+	77, // [77:102] is the sub-list for method output_type
+	52, // [52:77] is the sub-list for method input_type
 	52, // [52:52] is the sub-list for extension type_name
 	52, // [52:52] is the sub-list for extension extendee
 	0,  // [0:52] is the sub-list for field type_name
@@ -4512,7 +4397,7 @@ func file_ironflow_v1_projection_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ironflow_v1_projection_proto_rawDesc), len(file_ironflow_v1_projection_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   60,
+			NumMessages:   58,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

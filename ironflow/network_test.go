@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -536,84 +537,52 @@ func TestCustomTransport(t *testing.T) {
 }
 
 func TestExponentialBackoff(t *testing.T) {
-	t.Run("backoff increases exponentially", func(t *testing.T) {
-		var requestTimes []time.Time
-
+	// Assert the computed delay (RetryEvent.Delay), not wall-clock gaps between
+	// requests: under make ci load a gap ran 250ms against a 150ms cap.
+	retryDelays := func(t *testing.T, cfg ClientRetryConfig) []time.Duration {
+		t.Helper()
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			requestTimes = append(requestTimes, time.Now())
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(`{"code":"ERROR","message":"error"}`))
 		}))
 		defer server.Close()
 
+		var delays []time.Duration
+		cfg.OnRetry = func(event RetryEvent) { delays = append(delays, event.Delay) }
 		client := &Client{
-			serverURL:  server.URL,
-			httpClient: &http.Client{},
-			retryConfig: &ClientRetryConfig{
-				MaxAttempts:       4,
-				InitialDelay:      100 * time.Millisecond,
-				MaxDelay:          2 * time.Second,
-				BackoffMultiplier: 2.0,
-			},
-			logger: NewNoopLogger(),
+			serverURL:   server.URL,
+			httpClient:  &http.Client{},
+			retryConfig: &cfg,
+			logger:      NewNoopLogger(),
 		}
-
-		ctx := context.Background()
 		var result map[string]string
-		_ = client.request(ctx, "GET", "/test", nil, &result)
+		_ = client.request(context.Background(), "GET", "/test", nil, &result)
+		return delays
+	}
 
-		if len(requestTimes) < 3 {
-			t.Fatalf("Expected at least 3 requests, got %d", len(requestTimes))
-		}
-
-		// Check delays increase
-		delay1 := requestTimes[1].Sub(requestTimes[0])
-		delay2 := requestTimes[2].Sub(requestTimes[1])
-
-		// Second delay should be roughly 2x first delay (with some tolerance)
-		ratio := float64(delay2) / float64(delay1)
-		if ratio < 1.5 || ratio > 2.5 {
-			t.Errorf("Expected exponential backoff (ratio ~2), got ratio %v (delays: %v, %v)", ratio, delay1, delay2)
+	t.Run("backoff increases exponentially", func(t *testing.T) {
+		got := retryDelays(t, ClientRetryConfig{
+			MaxAttempts:       4,
+			InitialDelay:      10 * time.Millisecond,
+			MaxDelay:          2 * time.Second,
+			BackoffMultiplier: 2.0,
+		})
+		want := []time.Duration{10 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond}
+		if !slices.Equal(got, want) {
+			t.Errorf("retry delays = %v, want %v", got, want)
 		}
 	})
 
 	t.Run("backoff capped at max delay", func(t *testing.T) {
-		var requestTimes []time.Time
-
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			requestTimes = append(requestTimes, time.Now())
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(`{"code":"ERROR","message":"error"}`))
-		}))
-		defer server.Close()
-
-		client := &Client{
-			serverURL:  server.URL,
-			httpClient: &http.Client{},
-			retryConfig: &ClientRetryConfig{
-				MaxAttempts:       5,
-				InitialDelay:      100 * time.Millisecond,
-				MaxDelay:          150 * time.Millisecond, // Low cap
-				BackoffMultiplier: 2.0,
-			},
-			logger: NewNoopLogger(),
-		}
-
-		ctx := context.Background()
-		var result map[string]string
-		_ = client.request(ctx, "GET", "/test", nil, &result)
-
-		if len(requestTimes) < 4 {
-			t.Fatalf("Expected at least 4 requests, got %d", len(requestTimes))
-		}
-
-		// Later delays should be capped
-		for i := 2; i < len(requestTimes)-1; i++ {
-			delay := requestTimes[i+1].Sub(requestTimes[i])
-			// Should not exceed max delay by much (allow some tolerance)
-			if delay > 200*time.Millisecond {
-				t.Errorf("Delay %d (%v) exceeded max delay cap", i, delay)
-			}
+		got := retryDelays(t, ClientRetryConfig{
+			MaxAttempts:       5,
+			InitialDelay:      10 * time.Millisecond,
+			MaxDelay:          15 * time.Millisecond, // Low cap
+			BackoffMultiplier: 2.0,
+		})
+		want := []time.Duration{10 * time.Millisecond, 15 * time.Millisecond, 15 * time.Millisecond, 15 * time.Millisecond}
+		if !slices.Equal(got, want) {
+			t.Errorf("retry delays = %v, want %v", got, want)
 		}
 	})
 }

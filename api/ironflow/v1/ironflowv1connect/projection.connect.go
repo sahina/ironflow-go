@@ -84,9 +84,6 @@ const (
 	// ProjectionServiceCancelRebuildProcedure is the fully-qualified name of the ProjectionService's
 	// CancelRebuild RPC.
 	ProjectionServiceCancelRebuildProcedure = "/ironflow.v1.ProjectionService/CancelRebuild"
-	// ProjectionServiceReportRebuildProgressProcedure is the fully-qualified name of the
-	// ProjectionService's ReportRebuildProgress RPC.
-	ProjectionServiceReportRebuildProgressProcedure = "/ironflow.v1.ProjectionService/ReportRebuildProgress"
 	// ProjectionServicePauseProjectionProcedure is the fully-qualified name of the ProjectionService's
 	// PauseProjection RPC.
 	ProjectionServicePauseProjectionProcedure = "/ironflow.v1.ProjectionService/PauseProjection"
@@ -147,7 +144,6 @@ type ProjectionServiceClient interface {
 	RebuildProjection(context.Context, *connect.Request[v1.RebuildProjectionRequest]) (*connect.Response[v1.RebuildProjectionResponse], error)
 	GetRebuildJob(context.Context, *connect.Request[v1.GetRebuildJobRequest]) (*connect.Response[v1.GetRebuildJobResponse], error)
 	CancelRebuild(context.Context, *connect.Request[v1.CancelRebuildRequest]) (*connect.Response[v1.CancelRebuildResponse], error)
-	ReportRebuildProgress(context.Context, *connect.Request[v1.ReportRebuildProgressRequest]) (*connect.Response[v1.ReportRebuildProgressResponse], error)
 	// Pause/Resume
 	PauseProjection(context.Context, *connect.Request[v1.PauseProjectionRequest]) (*connect.Response[v1.PauseProjectionResponse], error)
 	ResumeProjection(context.Context, *connect.Request[v1.ResumeProjectionRequest]) (*connect.Response[v1.ResumeProjectionResponse], error)
@@ -290,12 +286,6 @@ func NewProjectionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(projectionServiceMethods.ByName("CancelRebuild")),
 			connect.WithClientOptions(opts...),
 		),
-		reportRebuildProgress: connect.NewClient[v1.ReportRebuildProgressRequest, v1.ReportRebuildProgressResponse](
-			httpClient,
-			baseURL+ProjectionServiceReportRebuildProgressProcedure,
-			connect.WithSchema(projectionServiceMethods.ByName("ReportRebuildProgress")),
-			connect.WithClientOptions(opts...),
-		),
 		pauseProjection: connect.NewClient[v1.PauseProjectionRequest, v1.PauseProjectionResponse](
 			httpClient,
 			baseURL+ProjectionServicePauseProjectionProcedure,
@@ -367,7 +357,6 @@ type projectionServiceClient struct {
 	rebuildProjection           *connect.Client[v1.RebuildProjectionRequest, v1.RebuildProjectionResponse]
 	getRebuildJob               *connect.Client[v1.GetRebuildJobRequest, v1.GetRebuildJobResponse]
 	cancelRebuild               *connect.Client[v1.CancelRebuildRequest, v1.CancelRebuildResponse]
-	reportRebuildProgress       *connect.Client[v1.ReportRebuildProgressRequest, v1.ReportRebuildProgressResponse]
 	pauseProjection             *connect.Client[v1.PauseProjectionRequest, v1.PauseProjectionResponse]
 	resumeProjection            *connect.Client[v1.ResumeProjectionRequest, v1.ResumeProjectionResponse]
 	createSQLProjection         *connect.Client[v1.CreateSQLProjectionRequest, v1.CreateSQLProjectionResponse]
@@ -463,11 +452,6 @@ func (c *projectionServiceClient) CancelRebuild(ctx context.Context, req *connec
 	return c.cancelRebuild.CallUnary(ctx, req)
 }
 
-// ReportRebuildProgress calls ironflow.v1.ProjectionService.ReportRebuildProgress.
-func (c *projectionServiceClient) ReportRebuildProgress(ctx context.Context, req *connect.Request[v1.ReportRebuildProgressRequest]) (*connect.Response[v1.ReportRebuildProgressResponse], error) {
-	return c.reportRebuildProgress.CallUnary(ctx, req)
-}
-
 // PauseProjection calls ironflow.v1.ProjectionService.PauseProjection.
 func (c *projectionServiceClient) PauseProjection(ctx context.Context, req *connect.Request[v1.PauseProjectionRequest]) (*connect.Response[v1.PauseProjectionResponse], error) {
 	return c.pauseProjection.CallUnary(ctx, req)
@@ -542,7 +526,6 @@ type ProjectionServiceHandler interface {
 	RebuildProjection(context.Context, *connect.Request[v1.RebuildProjectionRequest]) (*connect.Response[v1.RebuildProjectionResponse], error)
 	GetRebuildJob(context.Context, *connect.Request[v1.GetRebuildJobRequest]) (*connect.Response[v1.GetRebuildJobResponse], error)
 	CancelRebuild(context.Context, *connect.Request[v1.CancelRebuildRequest]) (*connect.Response[v1.CancelRebuildResponse], error)
-	ReportRebuildProgress(context.Context, *connect.Request[v1.ReportRebuildProgressRequest]) (*connect.Response[v1.ReportRebuildProgressResponse], error)
 	// Pause/Resume
 	PauseProjection(context.Context, *connect.Request[v1.PauseProjectionRequest]) (*connect.Response[v1.PauseProjectionResponse], error)
 	ResumeProjection(context.Context, *connect.Request[v1.ResumeProjectionRequest]) (*connect.Response[v1.ResumeProjectionResponse], error)
@@ -681,12 +664,6 @@ func NewProjectionServiceHandler(svc ProjectionServiceHandler, opts ...connect.H
 		connect.WithSchema(projectionServiceMethods.ByName("CancelRebuild")),
 		connect.WithHandlerOptions(opts...),
 	)
-	projectionServiceReportRebuildProgressHandler := connect.NewUnaryHandler(
-		ProjectionServiceReportRebuildProgressProcedure,
-		svc.ReportRebuildProgress,
-		connect.WithSchema(projectionServiceMethods.ByName("ReportRebuildProgress")),
-		connect.WithHandlerOptions(opts...),
-	)
 	projectionServicePauseProjectionHandler := connect.NewUnaryHandler(
 		ProjectionServicePauseProjectionProcedure,
 		svc.PauseProjection,
@@ -772,8 +749,6 @@ func NewProjectionServiceHandler(svc ProjectionServiceHandler, opts ...connect.H
 			projectionServiceGetRebuildJobHandler.ServeHTTP(w, r)
 		case ProjectionServiceCancelRebuildProcedure:
 			projectionServiceCancelRebuildHandler.ServeHTTP(w, r)
-		case ProjectionServiceReportRebuildProgressProcedure:
-			projectionServiceReportRebuildProgressHandler.ServeHTTP(w, r)
 		case ProjectionServicePauseProjectionProcedure:
 			projectionServicePauseProjectionHandler.ServeHTTP(w, r)
 		case ProjectionServiceResumeProjectionProcedure:
@@ -865,10 +840,6 @@ func (UnimplementedProjectionServiceHandler) GetRebuildJob(context.Context, *con
 
 func (UnimplementedProjectionServiceHandler) CancelRebuild(context.Context, *connect.Request[v1.CancelRebuildRequest]) (*connect.Response[v1.CancelRebuildResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.ProjectionService.CancelRebuild is not implemented"))
-}
-
-func (UnimplementedProjectionServiceHandler) ReportRebuildProgress(context.Context, *connect.Request[v1.ReportRebuildProgressRequest]) (*connect.Response[v1.ReportRebuildProgressResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.ProjectionService.ReportRebuildProgress is not implemented"))
 }
 
 func (UnimplementedProjectionServiceHandler) PauseProjection(context.Context, *connect.Request[v1.PauseProjectionRequest]) (*connect.Response[v1.PauseProjectionResponse], error) {

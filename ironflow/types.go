@@ -217,8 +217,9 @@ type DebounceConfig struct {
 	// floor is 1s — entries cannot expire reliably between ticks.
 	Period time.Duration
 
-	// Key is the JSON path for per-key debouncing (e.g., "userId",
-	// "data.customerId"). Same extraction rules as ConcurrencyConfig.Key.
+	// Key is the path inside the event data for per-key debouncing (e.g.,
+	// "userId", "customer.id"). Unlike ConcurrencyConfig.Key, a "data."
+	// prefix is not stripped, so "data.userId" finds nothing.
 	// Empty Key collapses all events for the function into a single
 	// debounce lane (global key sentinel).
 	Key string
