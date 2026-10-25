@@ -12,7 +12,7 @@ import (
 
 // TestRegisterFunctions_SendsMaxDelayMs pins #2160: registerFunctions
 // omitted maxDelayMs from the RegisterFunction body, so the server fell
-// back to its 5-minute DefaultRetryMaxDelay and every declared MaxDelay
+// back to the server's 5-minute default max delay and every declared MaxDelay
 // was silently discarded. A function that declares one must have it
 // reach the wire.
 func TestRegisterFunctions_SendsMaxDelayMs(t *testing.T) {

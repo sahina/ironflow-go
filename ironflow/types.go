@@ -99,10 +99,14 @@ type FunctionConfig struct {
 	// Triggers are the event triggers that invoke this function.
 	Triggers []Trigger
 
-	// Retry is the retry configuration for failed steps.
+	// Retry is the retry configuration for failed steps. Only the fields you
+	// set are sent at registration; every unset field resolves on the server
+	// (spec.engine.retry.*) when each run is created.
 	Retry *RetryConfig
 
-	// Timeout is the function timeout.
+	// Timeout is the function timeout. Zero means unset: nothing is sent and
+	// the engine applies its own limits (push is bounded by the push timeout,
+	// pull is unlimited).
 	Timeout time.Duration
 
 	// StepTimeout is the default timeout for all step.run() calls.
@@ -116,6 +120,15 @@ type FunctionConfig struct {
 	// after a quiet period. Async-only — TriggerSync rejects debounced
 	// functions with FailedPrecondition. Issue #545.
 	Debounce *DebounceConfig
+
+	// CircuitBreaker overrides the push-endpoint circuit breaker for this
+	// function. Unset fields keep the server's spec.engine.circuitBreaker
+	// defaults.
+	CircuitBreaker *CircuitBreakerConfig
+
+	// Throttle is a soft start-rate limit: runs over the limit wait in the
+	// queue, they are never dropped.
+	Throttle *ThrottleConfig
 
 	// CancelOn declares cancel-on-event specs. When any spec matches an
 	// incoming event whose match-path value equals the corresponding field
@@ -175,19 +188,75 @@ type Trigger struct {
 	Cron string
 }
 
-// RetryConfig defines retry behavior for step failures.
+// What the engine does with a run whose retryable failure has used every
+// attempt. See [RetryConfig.OnExhausted].
+const (
+	// OnExhaustedPause holds the run, with its completed steps, until someone
+	// resumes it (`ironflow run resume`). This is the server default.
+	OnExhaustedPause = "pause"
+
+	// OnExhaustedFail ends the run as failed. The SDK also runs the handler's
+	// compensations on the final attempt.
+	OnExhaustedFail = "fail"
+)
+
+// RetryConfig defines retry behavior for failed runs. Every field is optional:
+// zero means unset, and an unset field is not sent, so the server's
+// spec.engine.retry.* value applies when each run is created (default: 25
+// attempts, 1s initial delay, factor 2.0, 5m max delay, pause on exhaustion).
 type RetryConfig struct {
-	// MaxAttempts is the maximum number of retry attempts (default: 3).
+	// MaxAttempts is the total number of attempts, including the first.
 	MaxAttempts int
 
-	// InitialDelay is the initial delay between retries (default: 1s).
+	// InitialDelay is the delay before the first retry.
 	InitialDelay time.Duration
 
-	// BackoffFactor is the backoff multiplier (default: 2.0).
+	// BackoffFactor is the backoff multiplier. Must be at least 1 when set.
 	BackoffFactor float64
 
-	// MaxDelay is the maximum delay between retries (default: 5m).
+	// MaxDelay is the maximum delay between retries.
 	MaxDelay time.Duration
+
+	// OnExhausted is what happens when a retryable failure has used every
+	// attempt: [OnExhaustedPause] or [OnExhaustedFail]. Empty keeps the
+	// server default (pause).
+	OnExhausted string
+}
+
+// CircuitBreakerConfig tunes the push-endpoint circuit breaker. A zero field
+// keeps the server default (spec.engine.circuitBreaker.*). The server raises an
+// open window shorter than the longest probe (21.3s with the default push
+// timeout) to that minimum, and an OpenDuration above the inherited cap keeps a
+// fixed window.
+type CircuitBreakerConfig struct {
+	// FailureThreshold is the number of consecutive failed execution attempts
+	// that opens the circuit.
+	FailureThreshold int
+
+	// OpenDuration is the first open window. Each failed probe doubles it up
+	// to MaxOpenDuration.
+	OpenDuration time.Duration
+
+	// MaxOpenDuration caps the doubling open window. When both are set it
+	// must be at least OpenDuration.
+	MaxOpenDuration time.Duration
+}
+
+// ThrottleConfig is a soft start-rate limit: at most Limit runs start per
+// Period, per Key value when Key is set. Retries and resumed runs are not
+// throttled. A run over the limit waits in the queue and is never dropped.
+type ThrottleConfig struct {
+	// Limit is the number of runs allowed to start per Period. Must be >= 1.
+	Limit int
+
+	// Period is the window length. Floor: 1 second.
+	Period time.Duration
+
+	// Key is a path into the event data (e.g. "customerId" or "customer.id"),
+	// not "event.data.customerId". Empty throttles the whole function. A key
+	// that does not resolve to a scalar fails the run with
+	// THROTTLE_KEY_UNRESOLVED.
+	Key string
 }
 
 // ConcurrencyConfig defines concurrency control.
@@ -340,10 +409,15 @@ type RunInfo struct {
 	// lock, stamp a terminal row, or emit a final event — must branch on
 	// this, never on a compiled constant (#2160).
 	//
-	// Zero against an engine older than this field. Fall back to your
-	// declared value: min(ctx.Run.MaxAttempts, declared) when it is
-	// positive, declared otherwise.
+	// Zero against an engine older than this field: the budget is unknown.
+	// Fall back to your declared value if you set one (the declaration is
+	// optional, so it may be unset too).
 	MaxAttempts int
+
+	// OnExhausted is this run's snapshotted exhaustion policy
+	// ([OnExhaustedPause] or [OnExhaustedFail]). Empty against an engine that
+	// predates the field.
+	OnExhausted string
 
 	// StartedAt is when the run started.
 	StartedAt time.Time
@@ -500,7 +574,9 @@ type PushRequest struct {
 	FunctionID string `json:"function_id"`
 	Attempt    int    `json:"attempt"`
 	// MaxAttempts is this run's retry budget; see [RunInfo.MaxAttempts].
-	MaxAttempts int               `json:"max_attempts,omitempty"`
+	MaxAttempts int `json:"max_attempts,omitempty"`
+	// OnExhausted is this run's exhaustion policy; see [RunInfo.OnExhausted].
+	OnExhausted string            `json:"on_exhausted,omitempty"`
 	Event       PushEvent         `json:"event"`
 	Steps       []CompletedStep   `json:"steps"`
 	Resume      *ResumeContext    `json:"resume,omitempty"`
@@ -542,6 +618,9 @@ type PushError struct {
 	StepID    string `json:"step_id,omitempty"`
 	Retryable bool   `json:"retryable"`
 	Stack     string `json:"stack,omitempty"`
+	// RetryAfterMs asks the engine to wait this long before the next attempt
+	// (see [NewRetryAfterError]). Zero means use the retry policy's backoff.
+	RetryAfterMs int64 `json:"retry_after_ms,omitempty"`
 }
 
 // YieldInfo contains yield information for sleep/waitForEvent/invoke.
@@ -592,7 +671,10 @@ type publishConfig struct {
 	idempotencyKey string
 }
 
-// WithPublishIdempotencyKey sets an idempotency key for deduplication.
+// WithPublishIdempotencyKey sets an idempotency key for deduplication. It
+// overrides the default step-derived key that workflow Publish sends. The server
+// keeps the key for IRONFLOW_RUN_RETENTION_DAYS days (forever when unset or 0).
+// A repeat returns the original event ID. See ADR 0132.
 func WithPublishIdempotencyKey(key string) PublishOption {
 	return func(c *publishConfig) {
 		c.idempotencyKey = key

@@ -167,6 +167,7 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 			FunctionID:  job.FunctionID,
 			Attempt:     job.Attempt,
 			MaxAttempts: job.MaxAttempts,
+			OnExhausted: job.OnExhausted,
 			StartedAt:   time.Now(),
 			Environment: exec.environment,
 		},
@@ -228,8 +229,8 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 	if execErr != nil {
 		retryable := IsRetryable(execErr)
 
-		// Run compensations only if error is not retryable (terminal failure)
-		if exec.hasCompensations() && !retryable {
+		// Run compensations only on a terminal failure
+		if exec.hasCompensations() && isTerminalFailure(retryable, job.Attempt, job.MaxAttempts, job.OnExhausted) {
 			exec.executeCompensations()
 		}
 
@@ -254,7 +255,7 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 			}
 			exec.executedStepsMu.Unlock()
 		}
-		pushErr := &PushError{Message: execErr.Error(), Retryable: retryable}
+		pushErr := &PushError{Message: execErr.Error(), Retryable: retryable, RetryAfterMs: retryAfterMs(execErr, retryable)}
 		var ironErr *IronflowError
 		if errors.As(execErr, &ironErr) && ironErr.Code == codeSerializationError {
 			pushErr.Code = codeSerializationError
@@ -427,7 +428,9 @@ type jobAssignment struct {
 	Attempt    int    `json:"attempt"`
 	// MaxAttempts is this run's retry budget; see [RunInfo.MaxAttempts].
 	// Zero from an engine that predates the field.
-	MaxAttempts      int             `json:"max_attempts,omitempty"`
+	MaxAttempts int `json:"max_attempts,omitempty"`
+	// OnExhausted is this run's exhaustion policy; see [RunInfo.OnExhausted].
+	OnExhausted      string          `json:"on_exhausted,omitempty"`
 	Event            jobEvent        `json:"event"`
 	CompletedSteps   []completedStep `json:"completed_steps"`
 	StepSequenceBase int             `json:"step_sequence_base,omitempty"`

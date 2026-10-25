@@ -44,6 +44,12 @@ type HandlerOptions struct {
 	// rejects debounced functions. Issue #545.
 	Debounce *DebounceConfig
 
+	// CircuitBreaker overrides the push-endpoint circuit breaker.
+	CircuitBreaker *CircuitBreakerConfig
+
+	// Throttle is a soft start-rate limit; see [ThrottleConfig].
+	Throttle *ThrottleConfig
+
 	// Timeout is the handler timeout.
 	Timeout time.Duration
 
@@ -252,6 +258,12 @@ func CreateHandler[TEvent any](config HandlerConfig[TEvent]) Function {
 		}
 		if config.Options.Debounce != nil {
 			fnConfig.Debounce = config.Options.Debounce
+		}
+		if config.Options.CircuitBreaker != nil {
+			fnConfig.CircuitBreaker = config.Options.CircuitBreaker
+		}
+		if config.Options.Throttle != nil {
+			fnConfig.Throttle = config.Options.Throttle
 		}
 		if config.Options.Timeout > 0 {
 			fnConfig.Timeout = config.Options.Timeout

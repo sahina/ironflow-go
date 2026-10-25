@@ -34,15 +34,27 @@ func (f fakeProjectionStream) StreamProjectionEvents(ctx context.Context, req *c
 }
 
 // newProjectionStreamServer serves StreamProjectionEvents over Connect (when
-// stream is set) and every other path with the JSON fake unary. It has no
-// lease RPCs, as an older server, so the runner runs unguarded.
+// stream is set) and every other path with the JSON fake unary, behind leaseRPCs.
 func newProjectionStreamServer(t *testing.T, stream streamFunc, unary http.HandlerFunc) *httptest.Server {
 	t.Helper()
-	mux := http.NewServeMux()
-	for _, rpc := range []string{"Acquire", "Renew", "Release"} {
-		mux.Handle(projectionServicePath+rpc+"ProjectionLease", http.NotFoundHandler())
+	return newProjectionServer(t, http.NewServeMux(), stream, leaseRPCs(unary))
+}
+
+// leaseRPCs grants the lease at once and never fences it, and passes every
+// other path to next. projection_runner_lease_test.go covers the lease.
+func leaseRPCs(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch strings.TrimPrefix(r.URL.Path, projectionServicePath) {
+		case "AcquireProjectionLease":
+			_, _ = w.Write([]byte(`{"granted":true,"lease":{"token":"sdk:1","epoch":"1"},"ttl":"30s"}`))
+		case "RenewProjectionLease":
+			_, _ = w.Write([]byte(`{"ttl":"30s"}`))
+		case "ReleaseProjectionLease":
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			next(w, r)
+		}
 	}
-	return newProjectionServer(t, mux, stream, unary)
 }
 
 // newProjectionServer adds the stream and the unary fake to mux.

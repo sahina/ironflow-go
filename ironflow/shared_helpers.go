@@ -74,17 +74,8 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 			body["description"] = fn.Config.Description
 		}
 
-		if fn.Config.Retry != nil {
-			body["retry"] = map[string]any{
-				"maxAttempts":    fn.Config.Retry.MaxAttempts,
-				"initialDelayMs": fn.Config.Retry.InitialDelay.Milliseconds(),
-				"backoffFactor":  fn.Config.Retry.BackoffFactor,
-				// Omitted until #2160, so the server fell back to its own
-				// DefaultRetryMaxDelay and every declared MaxDelay was
-				// silently discarded. normalizeFunctionConfig always sets
-				// this, so it is never zero here.
-				"maxDelayMs": fn.Config.Retry.MaxDelay.Milliseconds(),
-			}
+		if retry := retryRegisterBody(fn.Config.Retry); len(retry) > 0 {
+			body["retry"] = retry
 		}
 		if fn.Config.Timeout > 0 {
 			body["timeoutMs"] = fn.Config.Timeout.Milliseconds()
@@ -104,6 +95,20 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 				dbn["max_wait_ms"] = fn.Config.Debounce.MaxWait.Milliseconds()
 			}
 			body["debounce"] = dbn
+		}
+		if cb := fn.Config.CircuitBreaker; cb != nil {
+			body["circuitBreaker"] = map[string]any{
+				"failureThreshold":  cb.FailureThreshold,
+				"openDurationMs":    cb.OpenDuration.Milliseconds(),
+				"maxOpenDurationMs": cb.MaxOpenDuration.Milliseconds(),
+			}
+		}
+		if th := fn.Config.Throttle; th != nil {
+			body["throttle"] = map[string]any{
+				"limit":    th.Limit,
+				"periodMs": th.Period.Milliseconds(),
+				"key":      th.Key,
+			}
 		}
 		if fn.Config.ActorKey != "" {
 			body["actorKey"] = fn.Config.ActorKey
@@ -175,6 +180,33 @@ func registerFunctions(ctx context.Context, serverURL string, headers map[string
 		logger.Info("Registered function", "functionId", id)
 	}
 	return nil
+}
+
+// retryRegisterBody is the RegisterFunction retry object. It carries only the
+// fields the user set: the server stores an unset field as 0 and resolves it
+// when each run is created, so sending a default here would override the
+// operator's spec.engine.retry.* (#3151).
+func retryRegisterBody(r *RetryConfig) map[string]any {
+	if r == nil {
+		return nil
+	}
+	m := map[string]any{}
+	if r.MaxAttempts > 0 {
+		m["maxAttempts"] = r.MaxAttempts
+	}
+	if r.InitialDelay > 0 {
+		m["initialDelayMs"] = r.InitialDelay.Milliseconds()
+	}
+	if r.BackoffFactor > 0 {
+		m["backoffFactor"] = r.BackoffFactor
+	}
+	if r.MaxDelay > 0 {
+		m["maxDelayMs"] = r.MaxDelay.Milliseconds()
+	}
+	if r.OnExhausted != "" {
+		m["onExhausted"] = r.OnExhausted
+	}
+	return m
 }
 
 // generateWorkerID generates a unique worker ID.

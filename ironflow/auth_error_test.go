@@ -81,10 +81,19 @@ type envHintLogger struct {
 	errors chan string
 }
 
-func (l envHintLogger) Error(msg string, args ...any) { l.errors <- msg }
+// Error must not block: a worker that reconnects logs more lines than the
+// buffer holds.
+func (l envHintLogger) Error(msg string, args ...any) {
+	select {
+	case l.errors <- msg:
+	default:
+	}
+}
 
 // The stream itself 403s after registration succeeds: the log line must name
-// the environment, not only the API key (#2472).
+// the environment, not only the API key (#2472). A first attempt can fail in
+// transport before the 403 arrives (#3155); the worker reconnects, so the test
+// looks for the auth line rather than the first error.
 func TestStreamingWorker_403NamesEnvironment(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -104,10 +113,11 @@ func TestStreamingWorker_403NamesEnvironment(t *testing.T) {
 	logs := envHintLogger{Logger: NewNoopLogger(), errors: make(chan string, 8)}
 	fn := CreateFunction(FunctionConfig{ID: "fn"}, func(ctx Context) (any, error) { return nil, nil })
 	w := NewStreamingWorker(WorkerConfig{
-		ServerURL:   srv.URL,
-		Environment: "env_other",
-		Functions:   []Function{fn},
-		Logger:      logs,
+		ServerURL:      srv.URL,
+		Environment:    "env_other",
+		Functions:      []Function{fn},
+		Logger:         logs,
+		ReconnectDelay: 10 * time.Millisecond,
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -115,8 +125,19 @@ func TestStreamingWorker_403NamesEnvironment(t *testing.T) {
 	if err := w.Run(ctx); err == nil {
 		t.Fatal("want an auth error")
 	}
-	msg := <-logs.errors
-	if !strings.Contains(msg, `"env_other"`) || !strings.Contains(msg, "IRONFLOW_API_KEY") {
-		t.Errorf("want environment and API-key hints, got: %s", msg)
+	var seen []string
+	for {
+		select {
+		case msg := <-logs.errors:
+			if strings.Contains(msg, "authentication failed") {
+				if !strings.Contains(msg, `"env_other"`) || !strings.Contains(msg, "IRONFLOW_API_KEY") {
+					t.Errorf("want environment and API-key hints, got: %s", msg)
+				}
+				return
+			}
+			seen = append(seen, msg)
+		default:
+			t.Fatalf("no authentication-failed log line, got: %q", seen)
+		}
 	}
 }

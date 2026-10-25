@@ -11,6 +11,7 @@ Go SDK for [Ironflow](https://docs.ironflow.run) -- an event-driven backend plat
 - [Function Definition](#function-definition)
 - [Step Primitives](#step-primitives)
 - [Saga Compensation Pattern](#saga-compensation-pattern)
+- [Retry Delay (`NewRetryAfterError`)](#retry-delay-newretryaftererror)
 - [HTTP Handler (Push Mode)](#http-handler-push-mode)
 - [Worker (Pull Mode)](#worker-pull-mode)
 - [Client](#client)
@@ -135,15 +136,30 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
 
     // Optional
     Name:     "My Function",          // display name (defaults to ID)
-    Timeout:  5 * time.Minute,        // function timeout (default: 10m)
+    Timeout:  5 * time.Minute,        // function timeout (default: unset, the engine applies its own limits)
     StepTimeout: 30 * time.Second,    // default timeout for all steps (overridable per-step)
     Mode:     ironflow.PullMode,      // "push" or "pull" (default: "push"); a Worker registers every function as pull regardless
 
+    // Every Retry field is optional. An unset field is not sent; the server
+    // resolves it when each run is created (spec.engine.retry.*).
     Retry: &ironflow.RetryConfig{
-        MaxAttempts:   5,             // default: 3
-        InitialDelay:  2 * time.Second, // default: 1s
-        BackoffFactor: 2.0,           // default: 2.0
-        MaxDelay:      10 * time.Minute, // default: 5m
+        MaxAttempts:   5,             // server default: 25
+        InitialDelay:  2 * time.Second, // server default: 1s
+        BackoffFactor: 2.0,           // server default: 2.0
+        MaxDelay:      10 * time.Minute, // server default: 5m
+        OnExhausted:   ironflow.OnExhaustedFail, // OnExhaustedPause (server default) holds the run for `ironflow run resume`; OnExhaustedFail ends it
+    },
+
+    CircuitBreaker: &ironflow.CircuitBreakerConfig{ // push endpoints; a zero field keeps the server default
+        FailureThreshold: 5,                // server default: 5
+        OpenDuration:     time.Minute,      // server default: 60s; doubles on each failed probe
+        MaxOpenDuration:  10 * time.Minute, // server default: 10m
+    },
+
+    Throttle: &ironflow.ThrottleConfig{ // soft limit: runs over it wait in the queue, never dropped
+        Limit:  100,                  // runs allowed to start per Period (>= 1)
+        Period: time.Minute,          // >= 1s
+        Key:    "customerId",         // optional path into the event data; empty throttles the whole function
     },
 
     Concurrency: &ironflow.ConcurrencyConfig{
@@ -378,7 +394,7 @@ err := ironflow.Publish(ctx, "order.processed", map[string]any{
 
 ### Compensate -- Saga Rollback
 
-Registers a compensation handler for a previously completed step. Compensations run in reverse order on terminal (non-retryable) failure.
+Registers a compensation handler for a previously completed step. Compensations run in reverse order on terminal failure: a non-retryable error, or a retryable one on the last attempt of a run whose `OnExhausted` is `fail`.
 
 ```go
 ironflow.Compensate(ctx, "step-name", func() error {
@@ -434,10 +450,24 @@ var ProcessOrder = ironflow.CreateFunction(ironflow.FunctionConfig{
 ```
 
 **Key behavior:**
-- Compensations only run on **non-retryable** (terminal) errors.
+- Compensations only run on **terminal** failures: a non-retryable error, or a retryable error on the last attempt (`ctx.Run.Attempt >= ctx.Run.MaxAttempts`) when `ctx.Run.OnExhausted` is `"fail"`. With `"pause"` (the server default) the run is held for `ironflow run resume`, so its completed work stays. Against an older engine that sends no `OnExhausted`, retryable errors never compensate.
 - Compensations execute in **reverse registration order**.
 - Each compensation is recorded as a durable step (`compensate:step-name`).
 - Compensation failures are recorded but do not stop remaining compensations.
+
+---
+
+## Retry Delay (`NewRetryAfterError`)
+
+Return `NewRetryAfterError` to make the engine wait a specific time before the next attempt, in place of the retry policy's backoff. The engine caps the delay at the policy's max delay.
+
+```go
+if resp.StatusCode == http.StatusTooManyRequests {
+    return nil, ironflow.NewRetryAfterError("upstream rate limited", 30*time.Second)
+}
+```
+
+Setting `RetryAfter` on a retryable `IronflowError` has the same effect, and a wrapped error still counts. The delay goes out as `retry_after_ms` on push responses, REST job updates and streaming `JobFailed`. It is ignored on a non-retryable error.
 
 ---
 
@@ -1135,7 +1165,7 @@ Projections build read models from event streams. Two modes:
 - **Managed**: Pure reducer. Maintains state via `InitialState` + handler.
 - **External**: Side effects only (send email, call API). No maintained state.
 
-A runner holds an exclusive lease on its projection (ADR 0120), so only one replica reads events and the other replicas wait as standbys. Upgrade every replica of a runner at the same time: a replica on an older SDK runs without the lease and can take events from the lease holder. The server logs a warning when it sees this.
+A runner holds an exclusive lease on its projection (ADR 0120), so only one replica reads events and the other replicas wait as standbys. The lease is required: on a server older than v0.44.0, which has no lease RPCs, the runner logs a `SERVER_TOO_OLD` error and stops.
 
 ```go
 // Managed projection (state is maintained automatically)
@@ -2111,16 +2141,9 @@ ironflow.ErrCodeServerTooOld // "SERVER_TOO_OLD" -- IronflowError.Code for a cal
 
 // Timeouts
 ironflow.DefaultClientTimeout       // 30s
-ironflow.DefaultFunctionTimeout     // 10m
 ironflow.DefaultEmitSyncTimeout     // 30s -- EmitSync and InvokeSync
 ironflow.DefaultSignatureTolerance  // 5m
 ironflow.DefaultCommandDedupTTL     // 7d -- the recommended CommandDedupOptions.TTL
-
-// Function retry defaults
-ironflow.DefaultRetryMaxAttempts    // 3
-ironflow.DefaultRetryInitialDelay   // 1s
-ironflow.DefaultRetryBackoffFactor  // 2.0
-ironflow.DefaultRetryMaxDelay       // 5m
 
 // Client retry defaults
 ironflow.DefaultClientRetryMaxAttempts       // 3

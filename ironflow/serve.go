@@ -190,6 +190,7 @@ func (h *serveHandler) executeHandler(fn Function, req *PushRequest) *PushRespon
 			FunctionID:  req.FunctionID,
 			Attempt:     req.Attempt,
 			MaxAttempts: req.MaxAttempts,
+			OnExhausted: req.OnExhausted,
 			StartedAt:   time.Now(),
 			Environment: exec.environment,
 		},
@@ -248,8 +249,8 @@ func (h *serveHandler) executeHandler(fn Function, req *PushRequest) *PushRespon
 			retryable = ironflowErr.Retryable
 		}
 
-		// Run compensations only if error is not retryable (terminal failure)
-		if exec.hasCompensations() && !retryable {
+		// Run compensations only on a terminal failure
+		if exec.hasCompensations() && isTerminalFailure(retryable, req.Attempt, req.MaxAttempts, req.OnExhausted) {
 			exec.executeCompensations()
 		}
 
@@ -260,6 +261,8 @@ func (h *serveHandler) executeHandler(fn Function, req *PushRequest) *PushRespon
 				Message:   execErr.Error(),
 				Code:      code,
 				Retryable: retryable,
+
+				RetryAfterMs: retryAfterMs(execErr, retryable),
 			},
 		}
 	}

@@ -356,7 +356,7 @@ type PollProjectionEventsRequest struct {
 	Name      string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	BatchSize int32                  `protobuf:"varint,2,opt,name=batch_size,json=batchSize,proto3" json:"batch_size,omitempty"`
 	Partition string                 `protobuf:"bytes,3,opt,name=partition,proto3" json:"partition,omitempty"`
-	// Absent: unguarded, as before ADR 0120.
+	// Required on a managed or external projection (ADR 0120). Absent: failed_precondition.
 	Lease         *ProjectionLease `protobuf:"bytes,4,opt,name=lease,proto3" json:"lease,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -616,7 +616,7 @@ type StreamProjectionEventsRequest struct {
 	// get closed by proxies or client socket idle timers. Older clients
 	// that don't understand heartbeat frames should leave this false.
 	AcceptHeartbeats bool `protobuf:"varint,4,opt,name=accept_heartbeats,json=acceptHeartbeats,proto3" json:"accept_heartbeats,omitempty"`
-	// Absent: unguarded, as before ADR 0120.
+	// Required on a managed or external projection (ADR 0120). Absent: failed_precondition.
 	Lease         *ProjectionLease `protobuf:"bytes,5,opt,name=lease,proto3" json:"lease,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -700,7 +700,7 @@ type SaveProjectionStateRequest struct {
 	LastEventId   string                 `protobuf:"bytes,4,opt,name=last_event_id,json=lastEventId,proto3" json:"last_event_id,omitempty"`
 	LastEventSeq  int64                  `protobuf:"varint,5,opt,name=last_event_seq,json=lastEventSeq,proto3" json:"last_event_seq,omitempty"`
 	LastEventTime *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=last_event_time,json=lastEventTime,proto3" json:"last_event_time,omitempty"`
-	// Absent: unguarded, as before ADR 0120.
+	// Required on a managed or external projection (ADR 0120). Absent: failed_precondition.
 	Lease         *ProjectionLease `protobuf:"bytes,8,opt,name=lease,proto3" json:"lease,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -841,7 +841,7 @@ type AckProjectionEventsRequest struct {
 	Name         string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	LastEventId  string                 `protobuf:"bytes,2,opt,name=last_event_id,json=lastEventId,proto3" json:"last_event_id,omitempty"`
 	LastEventSeq int64                  `protobuf:"varint,3,opt,name=last_event_seq,json=lastEventSeq,proto3" json:"last_event_seq,omitempty"`
-	// Absent: unguarded, as before ADR 0120.
+	// Required on a managed or external projection (ADR 0120). Absent: failed_precondition.
 	Lease         *ProjectionLease `protobuf:"bytes,4,opt,name=lease,proto3" json:"lease,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

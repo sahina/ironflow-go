@@ -94,11 +94,10 @@ type ProjectionRunner struct {
 	// and the Release after Stop use it.
 	detached context.Context
 	done     chan struct{}
-	// lease is the held lease, or nil when the runner is unguarded. lost
-	// closes when Renew returns Aborted. Only the run goroutine writes them.
-	lease     *projectionLease
-	lost      chan struct{}
-	unguarded bool // the server has no lease RPCs
+	// lease is the held lease, or nil in standby. lost closes when Renew
+	// returns Aborted. Only the run goroutine writes them.
+	lease *projectionLease
+	lost  chan struct{}
 }
 
 // NewProjectionRunner creates a new projection runner.
@@ -141,8 +140,7 @@ func (r *ProjectionRunner) Start() error {
 // opens a new one. A handler cannot be cancelled: past the limit, Stop cancels
 // the batch requests and returns. The runner keeps renewing its lease until the
 // handler returns, so no other runner reads the same events meanwhile. A handler
-// that never returns holds the lease until the process exits. An unguarded
-// runner (a server without lease RPCs) has no such protection.
+// that never returns holds the lease until the process exits.
 func (r *ProjectionRunner) Stop() {
 	r.cancel()
 	defer r.cancelWork()
@@ -181,7 +179,7 @@ func (r *ProjectionRunner) run(registerErr error) {
 	for {
 		ttl, err := r.acquireLease()
 		if err != nil {
-			r.logger.Error(err.Error())
+			r.logger.Error(err.Error(), "projection", r.projection.Config.Name)
 			return
 		}
 		if r.ctx.Err() != nil {
@@ -215,14 +213,11 @@ func (r *ProjectionRunner) run(registerErr error) {
 }
 
 // acquireLease waits as a hot standby until the server grants the lease
-// (ADR 0120). It sets r.lease, or leaves it nil when the server has no lease
-// RPCs. It returns the server TTL, or an auth error. On Stop it returns no
+// (ADR 0120) and sets r.lease. It returns the server TTL, an auth error, or
+// SERVER_TOO_OLD when the server has no lease RPCs. On Stop it returns no
 // error and no lease.
 func (r *ProjectionRunner) acquireLease() (time.Duration, error) {
 	r.lease, r.lost = nil, nil
-	if r.unguarded {
-		return 0, nil
-	}
 	name := r.projection.Config.Name
 	standby := false
 	for r.ctx.Err() == nil {
@@ -237,9 +232,7 @@ func (r *ProjectionRunner) acquireLease() (time.Duration, error) {
 		err := r.post(r.work, "AcquireProjectionLease", map[string]any{"name": name}, &resp)
 		switch {
 		case errors.Is(err, errProjectionUnimplemented):
-			r.logger.Warn("Projection lease unsupported by the server, running unguarded", "projection", name)
-			r.unguarded = true
-			return 0, nil
+			return 0, newServerTooOld("AcquireProjectionLease", minServerVersionProjectionLease, "upgrade the server", err)
 		case errors.Is(err, ErrUnauthorized), errors.Is(err, ErrForbidden):
 			return 0, err
 		case err != nil:
@@ -350,8 +343,7 @@ func (r *ProjectionRunner) leaseLost() bool {
 	}
 }
 
-// withLease adds the held lease to a request body. An unguarded runner sends
-// no lease: the server rejects an empty one.
+// withLease adds the held lease to a request body.
 func (r *ProjectionRunner) withLease(body map[string]any) map[string]any {
 	if r.lease != nil {
 		body["lease"] = r.lease

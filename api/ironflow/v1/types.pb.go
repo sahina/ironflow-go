@@ -386,14 +386,19 @@ func (x *Trigger) GetCron() string {
 
 type RetryConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Max attempts (default: 3)
+	// Total attempts, including the first. Zero means unset: the server's
+	// spec.engine.retry.maxAttempts (default: 25) applies when each run is created.
 	MaxAttempts int32 `protobuf:"varint,1,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
-	// Initial delay in milliseconds (default: 1000)
+	// Initial delay in milliseconds. Zero means unset (server default: 1000).
 	InitialDelayMs int32 `protobuf:"varint,2,opt,name=initial_delay_ms,json=initialDelayMs,proto3" json:"initial_delay_ms,omitempty"`
-	// Backoff factor (default: 2.0)
+	// Backoff factor. Zero means unset (server default: 2.0).
 	BackoffFactor float64 `protobuf:"fixed64,3,opt,name=backoff_factor,json=backoffFactor,proto3" json:"backoff_factor,omitempty"`
-	// Max delay in milliseconds (default: 300000 = 5 min)
-	MaxDelayMs    int32 `protobuf:"varint,4,opt,name=max_delay_ms,json=maxDelayMs,proto3" json:"max_delay_ms,omitempty"`
+	// Max delay in milliseconds. Zero means unset (server default: 300000 = 5 min).
+	MaxDelayMs int32 `protobuf:"varint,4,opt,name=max_delay_ms,json=maxDelayMs,proto3" json:"max_delay_ms,omitempty"`
+	// What happens when a retryable failure has used every attempt: "pause"
+	// holds the run with its completed steps for `ironflow run resume`, "fail"
+	// ends it. Empty means unset (server default: "pause").
+	OnExhausted   string `protobuf:"bytes,5,opt,name=on_exhausted,json=onExhausted,proto3" json:"on_exhausted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -456,6 +461,147 @@ func (x *RetryConfig) GetMaxDelayMs() int32 {
 	return 0
 }
 
+func (x *RetryConfig) GetOnExhausted() string {
+	if x != nil {
+		return x.OnExhausted
+	}
+	return ""
+}
+
+// CircuitBreakerConfig tunes the push-endpoint circuit breaker. Zero fields
+// mean unset; the server's spec.engine.circuitBreaker defaults apply.
+type CircuitBreakerConfig struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Consecutive failed execution attempts that open the circuit (default: 5).
+	FailureThreshold int32 `protobuf:"varint,1,opt,name=failure_threshold,json=failureThreshold,proto3" json:"failure_threshold,omitempty"`
+	// First open window in milliseconds (default: 60000). Each failed probe
+	// doubles the window up to max_open_duration_ms.
+	OpenDurationMs int32 `protobuf:"varint,2,opt,name=open_duration_ms,json=openDurationMs,proto3" json:"open_duration_ms,omitempty"`
+	// Cap for the doubling open window in milliseconds (default: 600000).
+	MaxOpenDurationMs int32 `protobuf:"varint,3,opt,name=max_open_duration_ms,json=maxOpenDurationMs,proto3" json:"max_open_duration_ms,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *CircuitBreakerConfig) Reset() {
+	*x = CircuitBreakerConfig{}
+	mi := &file_ironflow_v1_types_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CircuitBreakerConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CircuitBreakerConfig) ProtoMessage() {}
+
+func (x *CircuitBreakerConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_types_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CircuitBreakerConfig.ProtoReflect.Descriptor instead.
+func (*CircuitBreakerConfig) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CircuitBreakerConfig) GetFailureThreshold() int32 {
+	if x != nil {
+		return x.FailureThreshold
+	}
+	return 0
+}
+
+func (x *CircuitBreakerConfig) GetOpenDurationMs() int32 {
+	if x != nil {
+		return x.OpenDurationMs
+	}
+	return 0
+}
+
+func (x *CircuitBreakerConfig) GetMaxOpenDurationMs() int32 {
+	if x != nil {
+		return x.MaxOpenDurationMs
+	}
+	return 0
+}
+
+// ThrottleConfig is a soft start-rate limit: at most `limit` runs start per
+// `period_ms` (per key value when `key` is set). Runs over the limit wait in
+// the queue; they are never dropped.
+type ThrottleConfig struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Runs allowed to start per period. Must be >= 1.
+	Limit int32 `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	// Window length in milliseconds. Must be >= 1000.
+	PeriodMs int32 `protobuf:"varint,2,opt,name=period_ms,json=periodMs,proto3" json:"period_ms,omitempty"`
+	// Optional path into the event data (e.g. "customerId"); empty throttles the
+	// whole function. A key that does not resolve fails the run with
+	// THROTTLE_KEY_UNRESOLVED.
+	Key           string `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ThrottleConfig) Reset() {
+	*x = ThrottleConfig{}
+	mi := &file_ironflow_v1_types_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ThrottleConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ThrottleConfig) ProtoMessage() {}
+
+func (x *ThrottleConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_types_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ThrottleConfig.ProtoReflect.Descriptor instead.
+func (*ThrottleConfig) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ThrottleConfig) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ThrottleConfig) GetPeriodMs() int32 {
+	if x != nil {
+		return x.PeriodMs
+	}
+	return 0
+}
+
+func (x *ThrottleConfig) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
 type ConcurrencyConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Max concurrent executions
@@ -468,7 +614,7 @@ type ConcurrencyConfig struct {
 
 func (x *ConcurrencyConfig) Reset() {
 	*x = ConcurrencyConfig{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[2]
+	mi := &file_ironflow_v1_types_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -480,7 +626,7 @@ func (x *ConcurrencyConfig) String() string {
 func (*ConcurrencyConfig) ProtoMessage() {}
 
 func (x *ConcurrencyConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[2]
+	mi := &file_ironflow_v1_types_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -493,7 +639,7 @@ func (x *ConcurrencyConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConcurrencyConfig.ProtoReflect.Descriptor instead.
 func (*ConcurrencyConfig) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{2}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ConcurrencyConfig) GetLimit() int32 {
@@ -526,7 +672,7 @@ type CancelOnSpec struct {
 
 func (x *CancelOnSpec) Reset() {
 	*x = CancelOnSpec{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[3]
+	mi := &file_ironflow_v1_types_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -538,7 +684,7 @@ func (x *CancelOnSpec) String() string {
 func (*CancelOnSpec) ProtoMessage() {}
 
 func (x *CancelOnSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[3]
+	mi := &file_ironflow_v1_types_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -551,7 +697,7 @@ func (x *CancelOnSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOnSpec.ProtoReflect.Descriptor instead.
 func (*CancelOnSpec) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{3}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CancelOnSpec) GetEvent() string {
@@ -589,7 +735,7 @@ type DebounceConfig struct {
 
 func (x *DebounceConfig) Reset() {
 	*x = DebounceConfig{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[4]
+	mi := &file_ironflow_v1_types_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -601,7 +747,7 @@ func (x *DebounceConfig) String() string {
 func (*DebounceConfig) ProtoMessage() {}
 
 func (x *DebounceConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[4]
+	mi := &file_ironflow_v1_types_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -614,7 +760,7 @@ func (x *DebounceConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DebounceConfig.ProtoReflect.Descriptor instead.
 func (*DebounceConfig) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{4}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DebounceConfig) GetPeriodMs() int32 {
@@ -685,14 +831,18 @@ type Function struct {
 	// and that event's match-path value equals the running run's
 	// corresponding field, the run is auto-cancelled with cause
 	// "cancel-on-event". Issue #546 P3 / #572.
-	CancelOn      []*CancelOnSpec `protobuf:"bytes,21,rep,name=cancel_on,json=cancelOn,proto3" json:"cancel_on,omitempty"`
+	CancelOn []*CancelOnSpec `protobuf:"bytes,21,rep,name=cancel_on,json=cancelOn,proto3" json:"cancel_on,omitempty"`
+	// Circuit-breaker overrides (optional).
+	CircuitBreaker *CircuitBreakerConfig `protobuf:"bytes,24,opt,name=circuit_breaker,json=circuitBreaker,proto3" json:"circuit_breaker,omitempty"`
+	// Start-rate throttle (optional).
+	Throttle      *ThrottleConfig `protobuf:"bytes,25,opt,name=throttle,proto3" json:"throttle,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Function) Reset() {
 	*x = Function{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[5]
+	mi := &file_ironflow_v1_types_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -704,7 +854,7 @@ func (x *Function) String() string {
 func (*Function) ProtoMessage() {}
 
 func (x *Function) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[5]
+	mi := &file_ironflow_v1_types_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -717,7 +867,7 @@ func (x *Function) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Function.ProtoReflect.Descriptor instead.
 func (*Function) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{5}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Function) GetId() string {
@@ -860,6 +1010,20 @@ func (x *Function) GetCancelOn() []*CancelOnSpec {
 	return nil
 }
 
+func (x *Function) GetCircuitBreaker() *CircuitBreakerConfig {
+	if x != nil {
+		return x.CircuitBreaker
+	}
+	return nil
+}
+
+func (x *Function) GetThrottle() *ThrottleConfig {
+	if x != nil {
+		return x.Throttle
+	}
+	return nil
+}
+
 type Event struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Event ID
@@ -897,7 +1061,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[6]
+	mi := &file_ironflow_v1_types_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -909,7 +1073,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[6]
+	mi := &file_ironflow_v1_types_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -922,7 +1086,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{6}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Event) GetId() string {
@@ -1085,7 +1249,7 @@ type Run struct {
 
 func (x *Run) Reset() {
 	*x = Run{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[7]
+	mi := &file_ironflow_v1_types_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1097,7 +1261,7 @@ func (x *Run) String() string {
 func (*Run) ProtoMessage() {}
 
 func (x *Run) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[7]
+	mi := &file_ironflow_v1_types_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1110,7 +1274,7 @@ func (x *Run) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Run.ProtoReflect.Descriptor instead.
 func (*Run) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{7}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Run) GetId() string {
@@ -1408,7 +1572,7 @@ type Step struct {
 
 func (x *Step) Reset() {
 	*x = Step{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[8]
+	mi := &file_ironflow_v1_types_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1420,7 +1584,7 @@ func (x *Step) String() string {
 func (*Step) ProtoMessage() {}
 
 func (x *Step) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[8]
+	mi := &file_ironflow_v1_types_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1433,7 +1597,7 @@ func (x *Step) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Step.ProtoReflect.Descriptor instead.
 func (*Step) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{8}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Step) GetId() string {
@@ -1657,14 +1821,17 @@ type Error struct {
 	// Whether the error is retryable
 	Retryable bool `protobuf:"varint,4,opt,name=retryable,proto3" json:"retryable,omitempty"`
 	// Additional error details
-	Details       *structpb.Struct `protobuf:"bytes,5,opt,name=details,proto3" json:"details,omitempty"`
+	Details *structpb.Struct `protobuf:"bytes,5,opt,name=details,proto3" json:"details,omitempty"`
+	// Delay before the next attempt requested by the handler (RetryAfterError).
+	// Zero means use the retry policy's backoff. Capped at the policy's max delay.
+	RetryAfterMs  int64 `protobuf:"varint,6,opt,name=retry_after_ms,json=retryAfterMs,proto3" json:"retry_after_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Error) Reset() {
 	*x = Error{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[9]
+	mi := &file_ironflow_v1_types_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1676,7 +1843,7 @@ func (x *Error) String() string {
 func (*Error) ProtoMessage() {}
 
 func (x *Error) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[9]
+	mi := &file_ironflow_v1_types_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1689,7 +1856,7 @@ func (x *Error) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Error.ProtoReflect.Descriptor instead.
 func (*Error) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{9}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Error) GetMessage() string {
@@ -1727,6 +1894,13 @@ func (x *Error) GetDetails() *structpb.Struct {
 	return nil
 }
 
+func (x *Error) GetRetryAfterMs() int64 {
+	if x != nil {
+		return x.RetryAfterMs
+	}
+	return 0
+}
+
 // ErrorInfo for detailed error responses
 type ErrorInfo struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1742,7 +1916,7 @@ type ErrorInfo struct {
 
 func (x *ErrorInfo) Reset() {
 	*x = ErrorInfo{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[10]
+	mi := &file_ironflow_v1_types_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1754,7 +1928,7 @@ func (x *ErrorInfo) String() string {
 func (*ErrorInfo) ProtoMessage() {}
 
 func (x *ErrorInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[10]
+	mi := &file_ironflow_v1_types_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1767,7 +1941,7 @@ func (x *ErrorInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorInfo.ProtoReflect.Descriptor instead.
 func (*ErrorInfo) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{10}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ErrorInfo) GetResourceType() string {
@@ -1801,13 +1975,22 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\n" +
 	"expression\x18\x02 \x01(\tR\n" +
 	"expression\x12\x12\n" +
-	"\x04cron\x18\x03 \x01(\tR\x04cron\"\xa3\x01\n" +
+	"\x04cron\x18\x03 \x01(\tR\x04cron\"\xc6\x01\n" +
 	"\vRetryConfig\x12!\n" +
 	"\fmax_attempts\x18\x01 \x01(\x05R\vmaxAttempts\x12(\n" +
 	"\x10initial_delay_ms\x18\x02 \x01(\x05R\x0einitialDelayMs\x12%\n" +
 	"\x0ebackoff_factor\x18\x03 \x01(\x01R\rbackoffFactor\x12 \n" +
 	"\fmax_delay_ms\x18\x04 \x01(\x05R\n" +
-	"maxDelayMs\";\n" +
+	"maxDelayMs\x12!\n" +
+	"\fon_exhausted\x18\x05 \x01(\tR\vonExhausted\"\x9e\x01\n" +
+	"\x14CircuitBreakerConfig\x12+\n" +
+	"\x11failure_threshold\x18\x01 \x01(\x05R\x10failureThreshold\x12(\n" +
+	"\x10open_duration_ms\x18\x02 \x01(\x05R\x0eopenDurationMs\x12/\n" +
+	"\x14max_open_duration_ms\x18\x03 \x01(\x05R\x11maxOpenDurationMs\"U\n" +
+	"\x0eThrottleConfig\x12\x14\n" +
+	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x1b\n" +
+	"\tperiod_ms\x18\x02 \x01(\x05R\bperiodMs\x12\x10\n" +
+	"\x03key\x18\x03 \x01(\tR\x03key\";\n" +
 	"\x11ConcurrencyConfig\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\":\n" +
@@ -1817,7 +2000,7 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\x0eDebounceConfig\x12\x1b\n" +
 	"\tperiod_ms\x18\x01 \x01(\x05R\bperiodMs\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x1e\n" +
-	"\vmax_wait_ms\x18\x03 \x01(\x03R\tmaxWaitMs\"\xd0\a\n" +
+	"\vmax_wait_ms\x18\x03 \x01(\x03R\tmaxWaitMs\"\xd5\b\n" +
 	"\bFunction\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -1842,7 +2025,9 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\bnext_run\x18\x17 \x01(\v2\x1a.google.protobuf.TimestampR\anextRun\x123\n" +
 	"\bmetadata\x18\x12 \x01(\v2\x17.google.protobuf.StructR\bmetadata\x127\n" +
 	"\bdebounce\x18\x13 \x01(\v2\x1b.ironflow.v1.DebounceConfigR\bdebounce\x126\n" +
-	"\tcancel_on\x18\x15 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOnJ\x04\b\x10\x10\x11J\x04\b\x11\x10\x12J\x04\b\x14\x10\x15R\x13recording_retentionR\x0epause_behaviorR\x14compensate_on_cancel\"\xdd\x03\n" +
+	"\tcancel_on\x18\x15 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOn\x12J\n" +
+	"\x0fcircuit_breaker\x18\x18 \x01(\v2!.ironflow.v1.CircuitBreakerConfigR\x0ecircuitBreaker\x127\n" +
+	"\bthrottle\x18\x19 \x01(\v2\x1b.ironflow.v1.ThrottleConfigR\bthrottleJ\x04\b\x10\x10\x11J\x04\b\x11\x10\x12J\x04\b\x14\x10\x15R\x13recording_retentionR\x0epause_behaviorR\x14compensate_on_cancel\"\xdd\x03\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12+\n" +
@@ -1948,13 +2133,14 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"\rstored_status\x18\x1d \x01(\tR\fstoredStatus\x12 \n" +
 	"\fchild_run_id\x18\x1e \x01(\tR\n" +
 	"childRunIdB\x13\n" +
-	"\x11_duration_ms_full\"\x9c\x01\n" +
+	"\x11_duration_ms_full\"\xc2\x01\n" +
 	"\x05Error\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x14\n" +
 	"\x05stack\x18\x03 \x01(\tR\x05stack\x12\x1c\n" +
 	"\tretryable\x18\x04 \x01(\bR\tretryable\x121\n" +
-	"\adetails\x18\x05 \x01(\v2\x17.google.protobuf.StructR\adetails\"\xd0\x01\n" +
+	"\adetails\x18\x05 \x01(\v2\x17.google.protobuf.StructR\adetails\x12$\n" +
+	"\x0eretry_after_ms\x18\x06 \x01(\x03R\fretryAfterMs\"\xd0\x01\n" +
 	"\tErrorInfo\x12#\n" +
 	"\rresource_type\x18\x01 \x01(\tR\fresourceType\x12\x1f\n" +
 	"\vresource_id\x18\x02 \x01(\tR\n" +
@@ -2014,7 +2200,7 @@ func file_ironflow_v1_types_proto_rawDescGZIP() []byte {
 }
 
 var file_ironflow_v1_types_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_ironflow_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_ironflow_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_ironflow_v1_types_proto_goTypes = []any{
 	(FunctionStatus)(0),           // 0: ironflow.v1.FunctionStatus
 	(ExecutionMode)(0),            // 1: ironflow.v1.ExecutionMode
@@ -2023,74 +2209,78 @@ var file_ironflow_v1_types_proto_goTypes = []any{
 	(StepType)(0),                 // 4: ironflow.v1.StepType
 	(*Trigger)(nil),               // 5: ironflow.v1.Trigger
 	(*RetryConfig)(nil),           // 6: ironflow.v1.RetryConfig
-	(*ConcurrencyConfig)(nil),     // 7: ironflow.v1.ConcurrencyConfig
-	(*CancelOnSpec)(nil),          // 8: ironflow.v1.CancelOnSpec
-	(*DebounceConfig)(nil),        // 9: ironflow.v1.DebounceConfig
-	(*Function)(nil),              // 10: ironflow.v1.Function
-	(*Event)(nil),                 // 11: ironflow.v1.Event
-	(*Run)(nil),                   // 12: ironflow.v1.Run
-	(*Step)(nil),                  // 13: ironflow.v1.Step
-	(*Error)(nil),                 // 14: ironflow.v1.Error
-	(*ErrorInfo)(nil),             // 15: ironflow.v1.ErrorInfo
-	nil,                           // 16: ironflow.v1.ErrorInfo.MetadataEntry
-	(*timestamppb.Timestamp)(nil), // 17: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),       // 18: google.protobuf.Struct
-	(*structpb.Value)(nil),        // 19: google.protobuf.Value
+	(*CircuitBreakerConfig)(nil),  // 7: ironflow.v1.CircuitBreakerConfig
+	(*ThrottleConfig)(nil),        // 8: ironflow.v1.ThrottleConfig
+	(*ConcurrencyConfig)(nil),     // 9: ironflow.v1.ConcurrencyConfig
+	(*CancelOnSpec)(nil),          // 10: ironflow.v1.CancelOnSpec
+	(*DebounceConfig)(nil),        // 11: ironflow.v1.DebounceConfig
+	(*Function)(nil),              // 12: ironflow.v1.Function
+	(*Event)(nil),                 // 13: ironflow.v1.Event
+	(*Run)(nil),                   // 14: ironflow.v1.Run
+	(*Step)(nil),                  // 15: ironflow.v1.Step
+	(*Error)(nil),                 // 16: ironflow.v1.Error
+	(*ErrorInfo)(nil),             // 17: ironflow.v1.ErrorInfo
+	nil,                           // 18: ironflow.v1.ErrorInfo.MetadataEntry
+	(*timestamppb.Timestamp)(nil), // 19: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),       // 20: google.protobuf.Struct
+	(*structpb.Value)(nil),        // 21: google.protobuf.Value
 }
 var file_ironflow_v1_types_proto_depIdxs = []int32{
 	5,  // 0: ironflow.v1.Function.triggers:type_name -> ironflow.v1.Trigger
 	6,  // 1: ironflow.v1.Function.retry:type_name -> ironflow.v1.RetryConfig
-	7,  // 2: ironflow.v1.Function.concurrency:type_name -> ironflow.v1.ConcurrencyConfig
+	9,  // 2: ironflow.v1.Function.concurrency:type_name -> ironflow.v1.ConcurrencyConfig
 	1,  // 3: ironflow.v1.Function.preferred_mode:type_name -> ironflow.v1.ExecutionMode
 	0,  // 4: ironflow.v1.Function.status:type_name -> ironflow.v1.FunctionStatus
-	17, // 5: ironflow.v1.Function.created_at:type_name -> google.protobuf.Timestamp
-	17, // 6: ironflow.v1.Function.updated_at:type_name -> google.protobuf.Timestamp
-	17, // 7: ironflow.v1.Function.next_run:type_name -> google.protobuf.Timestamp
-	18, // 8: ironflow.v1.Function.metadata:type_name -> google.protobuf.Struct
-	9,  // 9: ironflow.v1.Function.debounce:type_name -> ironflow.v1.DebounceConfig
-	8,  // 10: ironflow.v1.Function.cancel_on:type_name -> ironflow.v1.CancelOnSpec
-	18, // 11: ironflow.v1.Event.data:type_name -> google.protobuf.Struct
-	19, // 12: ironflow.v1.Event.data_value:type_name -> google.protobuf.Value
-	17, // 13: ironflow.v1.Event.timestamp:type_name -> google.protobuf.Timestamp
-	18, // 14: ironflow.v1.Event.metadata:type_name -> google.protobuf.Struct
-	1,  // 15: ironflow.v1.Run.execution_mode:type_name -> ironflow.v1.ExecutionMode
-	18, // 16: ironflow.v1.Run.input:type_name -> google.protobuf.Struct
-	19, // 17: ironflow.v1.Run.input_value:type_name -> google.protobuf.Value
-	18, // 18: ironflow.v1.Run.output:type_name -> google.protobuf.Struct
-	19, // 19: ironflow.v1.Run.output_value:type_name -> google.protobuf.Value
-	14, // 20: ironflow.v1.Run.error:type_name -> ironflow.v1.Error
-	2,  // 21: ironflow.v1.Run.status:type_name -> ironflow.v1.RunStatus
-	17, // 22: ironflow.v1.Run.started_at:type_name -> google.protobuf.Timestamp
-	17, // 23: ironflow.v1.Run.ended_at:type_name -> google.protobuf.Timestamp
-	17, // 24: ironflow.v1.Run.created_at:type_name -> google.protobuf.Timestamp
-	17, // 25: ironflow.v1.Run.updated_at:type_name -> google.protobuf.Timestamp
-	17, // 26: ironflow.v1.Run.timeout_at:type_name -> google.protobuf.Timestamp
-	17, // 27: ironflow.v1.Run.claimed_at:type_name -> google.protobuf.Timestamp
-	19, // 28: ironflow.v1.Run.error_value:type_name -> google.protobuf.Value
-	4,  // 29: ironflow.v1.Step.step_type:type_name -> ironflow.v1.StepType
-	3,  // 30: ironflow.v1.Step.status:type_name -> ironflow.v1.StepStatus
-	18, // 31: ironflow.v1.Step.input:type_name -> google.protobuf.Struct
-	19, // 32: ironflow.v1.Step.input_value:type_name -> google.protobuf.Value
-	18, // 33: ironflow.v1.Step.output:type_name -> google.protobuf.Struct
-	19, // 34: ironflow.v1.Step.output_value:type_name -> google.protobuf.Value
-	14, // 35: ironflow.v1.Step.error:type_name -> ironflow.v1.Error
-	17, // 36: ironflow.v1.Step.started_at:type_name -> google.protobuf.Timestamp
-	17, // 37: ironflow.v1.Step.ended_at:type_name -> google.protobuf.Timestamp
-	18, // 38: ironflow.v1.Step.original_output:type_name -> google.protobuf.Struct
-	19, // 39: ironflow.v1.Step.original_output_value:type_name -> google.protobuf.Value
-	17, // 40: ironflow.v1.Step.patched_at:type_name -> google.protobuf.Timestamp
-	17, // 41: ironflow.v1.Step.sleep_until:type_name -> google.protobuf.Timestamp
-	17, // 42: ironflow.v1.Step.wait_timeout:type_name -> google.protobuf.Timestamp
-	17, // 43: ironflow.v1.Step.created_at:type_name -> google.protobuf.Timestamp
-	17, // 44: ironflow.v1.Step.updated_at:type_name -> google.protobuf.Timestamp
-	19, // 45: ironflow.v1.Step.error_value:type_name -> google.protobuf.Value
-	18, // 46: ironflow.v1.Error.details:type_name -> google.protobuf.Struct
-	16, // 47: ironflow.v1.ErrorInfo.metadata:type_name -> ironflow.v1.ErrorInfo.MetadataEntry
-	48, // [48:48] is the sub-list for method output_type
-	48, // [48:48] is the sub-list for method input_type
-	48, // [48:48] is the sub-list for extension type_name
-	48, // [48:48] is the sub-list for extension extendee
-	0,  // [0:48] is the sub-list for field type_name
+	19, // 5: ironflow.v1.Function.created_at:type_name -> google.protobuf.Timestamp
+	19, // 6: ironflow.v1.Function.updated_at:type_name -> google.protobuf.Timestamp
+	19, // 7: ironflow.v1.Function.next_run:type_name -> google.protobuf.Timestamp
+	20, // 8: ironflow.v1.Function.metadata:type_name -> google.protobuf.Struct
+	11, // 9: ironflow.v1.Function.debounce:type_name -> ironflow.v1.DebounceConfig
+	10, // 10: ironflow.v1.Function.cancel_on:type_name -> ironflow.v1.CancelOnSpec
+	7,  // 11: ironflow.v1.Function.circuit_breaker:type_name -> ironflow.v1.CircuitBreakerConfig
+	8,  // 12: ironflow.v1.Function.throttle:type_name -> ironflow.v1.ThrottleConfig
+	20, // 13: ironflow.v1.Event.data:type_name -> google.protobuf.Struct
+	21, // 14: ironflow.v1.Event.data_value:type_name -> google.protobuf.Value
+	19, // 15: ironflow.v1.Event.timestamp:type_name -> google.protobuf.Timestamp
+	20, // 16: ironflow.v1.Event.metadata:type_name -> google.protobuf.Struct
+	1,  // 17: ironflow.v1.Run.execution_mode:type_name -> ironflow.v1.ExecutionMode
+	20, // 18: ironflow.v1.Run.input:type_name -> google.protobuf.Struct
+	21, // 19: ironflow.v1.Run.input_value:type_name -> google.protobuf.Value
+	20, // 20: ironflow.v1.Run.output:type_name -> google.protobuf.Struct
+	21, // 21: ironflow.v1.Run.output_value:type_name -> google.protobuf.Value
+	16, // 22: ironflow.v1.Run.error:type_name -> ironflow.v1.Error
+	2,  // 23: ironflow.v1.Run.status:type_name -> ironflow.v1.RunStatus
+	19, // 24: ironflow.v1.Run.started_at:type_name -> google.protobuf.Timestamp
+	19, // 25: ironflow.v1.Run.ended_at:type_name -> google.protobuf.Timestamp
+	19, // 26: ironflow.v1.Run.created_at:type_name -> google.protobuf.Timestamp
+	19, // 27: ironflow.v1.Run.updated_at:type_name -> google.protobuf.Timestamp
+	19, // 28: ironflow.v1.Run.timeout_at:type_name -> google.protobuf.Timestamp
+	19, // 29: ironflow.v1.Run.claimed_at:type_name -> google.protobuf.Timestamp
+	21, // 30: ironflow.v1.Run.error_value:type_name -> google.protobuf.Value
+	4,  // 31: ironflow.v1.Step.step_type:type_name -> ironflow.v1.StepType
+	3,  // 32: ironflow.v1.Step.status:type_name -> ironflow.v1.StepStatus
+	20, // 33: ironflow.v1.Step.input:type_name -> google.protobuf.Struct
+	21, // 34: ironflow.v1.Step.input_value:type_name -> google.protobuf.Value
+	20, // 35: ironflow.v1.Step.output:type_name -> google.protobuf.Struct
+	21, // 36: ironflow.v1.Step.output_value:type_name -> google.protobuf.Value
+	16, // 37: ironflow.v1.Step.error:type_name -> ironflow.v1.Error
+	19, // 38: ironflow.v1.Step.started_at:type_name -> google.protobuf.Timestamp
+	19, // 39: ironflow.v1.Step.ended_at:type_name -> google.protobuf.Timestamp
+	20, // 40: ironflow.v1.Step.original_output:type_name -> google.protobuf.Struct
+	21, // 41: ironflow.v1.Step.original_output_value:type_name -> google.protobuf.Value
+	19, // 42: ironflow.v1.Step.patched_at:type_name -> google.protobuf.Timestamp
+	19, // 43: ironflow.v1.Step.sleep_until:type_name -> google.protobuf.Timestamp
+	19, // 44: ironflow.v1.Step.wait_timeout:type_name -> google.protobuf.Timestamp
+	19, // 45: ironflow.v1.Step.created_at:type_name -> google.protobuf.Timestamp
+	19, // 46: ironflow.v1.Step.updated_at:type_name -> google.protobuf.Timestamp
+	21, // 47: ironflow.v1.Step.error_value:type_name -> google.protobuf.Value
+	20, // 48: ironflow.v1.Error.details:type_name -> google.protobuf.Struct
+	18, // 49: ironflow.v1.ErrorInfo.metadata:type_name -> ironflow.v1.ErrorInfo.MetadataEntry
+	50, // [50:50] is the sub-list for method output_type
+	50, // [50:50] is the sub-list for method input_type
+	50, // [50:50] is the sub-list for extension type_name
+	50, // [50:50] is the sub-list for extension extendee
+	0,  // [0:50] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_types_proto_init() }
@@ -2098,14 +2288,14 @@ func file_ironflow_v1_types_proto_init() {
 	if File_ironflow_v1_types_proto != nil {
 		return
 	}
-	file_ironflow_v1_types_proto_msgTypes[8].OneofWrappers = []any{}
+	file_ironflow_v1_types_proto_msgTypes[10].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ironflow_v1_types_proto_rawDesc), len(file_ironflow_v1_types_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

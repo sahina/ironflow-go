@@ -14,10 +14,25 @@ import (
 	"github.com/sahina/ironflow-go/api/ironflow/v1/ironflowv1connect"
 )
 
-// deploymentSnapshotSchemaVersion is the ExecutionSnapshot schema this SDK's
-// generated code knows. The server refuses a newer one rather than store an
-// identity it cannot represent (ADR 0081). Raise it with the proto.
-const deploymentSnapshotSchemaVersion int32 = 1
+// deploymentSnapshotSchemaVersion is the highest ExecutionSnapshot schema this
+// SDK's generated code knows. The server refuses a newer one rather than store
+// an identity it cannot represent (ADR 0081). Raise it with the proto.
+//
+// It is the ceiling, not what Register declares: a request declares the lowest
+// schema that can represent its snapshot (see snapshotSchemaVersionFor), so a
+// snapshot without schema-2 fields still registers against an older engine.
+const deploymentSnapshotSchemaVersion int32 = 2
+
+// snapshotSchemaVersionFor returns 2 only when the snapshot carries a field
+// added in schema 2 (circuit_breaker, throttle, retry.on_exhausted), else 1.
+// Declaring 2 unconditionally would make every registration fail against an
+// engine that predates schema 2, which refuses any version above its own.
+func snapshotSchemaVersionFor(s *ironflowv1.ExecutionSnapshot) int32 {
+	if s.GetCircuitBreaker() != nil || s.GetThrottle() != nil || s.GetRetry().GetOnExhausted() != "" {
+		return deploymentSnapshotSchemaVersion
+	}
+	return 1
+}
 
 // DeploymentClient registers and reads executable deployments (ADR 0081).
 type DeploymentClient struct {
@@ -111,13 +126,14 @@ func (dc *DeploymentClient) Register(ctx context.Context, input RegisterDeployme
 		ArtifactDigest:        input.ArtifactDigest,
 		Mode:                  executionModeToProto(input.Mode),
 		EndpointUrl:           input.EndpointURL,
-		SnapshotSchemaVersion: deploymentSnapshotSchemaVersion,
+		SnapshotSchemaVersion: 1,
 	}
 	if len(input.Snapshot) > 0 {
 		req.Snapshot = &ironflowv1.ExecutionSnapshot{}
 		if err := protojson.Unmarshal(input.Snapshot, req.Snapshot); err != nil {
 			return nil, NewError(fmt.Sprintf("invalid snapshot: %v", err), "invalid_argument", false)
 		}
+		req.SnapshotSchemaVersion = snapshotSchemaVersionFor(req.Snapshot)
 	}
 	// sdkcoverage: POST /ironflow.v1.DeploymentService/RegisterDeployment
 	resp, err := dc.rpc().RegisterDeployment(ctx, connect.NewRequest(req))

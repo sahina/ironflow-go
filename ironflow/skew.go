@@ -18,6 +18,11 @@ const headerSDK = "X-Ironflow-SDK"
 // carry the same value; scripts/skew/check-min-versions.sh keeps them equal.
 const minServerVersionSubscribeBidirectional = "0.48.0"
 
+// minServerVersionProjectionLease is the first server with the projection
+// runner lease RPCs (ADR 0120). The runner needs them; the other SDKs carry the
+// same value and scripts/skew/check-min-versions.sh keeps them equal.
+const minServerVersionProjectionLease = "0.44.0"
+
 // ErrCodeServerTooOld is the IronflowError code for a call the server is too
 // old to serve.
 const ErrCodeServerTooOld = "SERVER_TOO_OLD"
@@ -81,7 +86,12 @@ func serverTooOld(err error) error {
 	if err == nil || connect.CodeOf(err) != connect.CodeUnimplemented {
 		return err
 	}
-	e := NewError(fmt.Sprintf("SubscribeBidirectional needs Ironflow server >= %s; upgrade the server or use the WebSocket transport", minServerVersionSubscribeBidirectional), ErrCodeServerTooOld, false)
-	e.Cause = err
+	return newServerTooOld("SubscribeBidirectional", minServerVersionSubscribeBidirectional, "upgrade the server or use the WebSocket transport", err)
+}
+
+// newServerTooOld is the SERVER_TOO_OLD error for rpc. It is not retryable.
+func newServerTooOld(rpc, minVersion, remedy string, cause error) *IronflowError {
+	e := NewError(fmt.Sprintf("%s needs Ironflow server >= %s; %s", rpc, minVersion, remedy), ErrCodeServerTooOld, false)
+	e.Cause = cause
 	return e
 }

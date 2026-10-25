@@ -3,6 +3,8 @@ package ironflow
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -381,6 +383,13 @@ func runWithTimeout[T any](fn func() (T, error), timeout time.Duration, stepID, 
 //	    return fetchData(ctx.Event.Data)
 //	})
 func Run[T any](ctx Context, name string, fn func() (T, error), opts ...StepOption) (T, error) {
+	return runWithStepID(ctx, name, func(string) (T, error) { return fn() }, opts...)
+}
+
+// runWithStepID is Run with the memoized step ID handed to fn. The ID is
+// computed exactly once: a second generateStepID call would bump the per-name
+// counter and shift every later step ID.
+func runWithStepID[T any](ctx Context, name string, fn func(stepID string) (T, error), opts ...StepOption) (T, error) {
 	var zero T
 	exec := ctx.exec
 	if err := exec.cancellationErr(); err != nil {
@@ -439,7 +448,7 @@ func Run[T any](ctx Context, name string, fn func() (T, error), opts ...StepOpti
 		}
 	}
 
-	result, err, timedOut := runWithTimeout(fn, timeout, stepID, name, startedAt, recordStep)
+	result, err, timedOut := runWithTimeout(func() (T, error) { return fn(stepID) }, timeout, stepID, name, startedAt, recordStep)
 	if timedOut {
 		return zero, err
 	}
@@ -525,19 +534,36 @@ func Compensate(ctx Context, stepName string, fn func() error) {
 // This is a durable step -- memoized, retried, and observable like any other step.
 // Unlike the standalone client.Publish(), this is tracked in step history.
 //
+// Without WithPublishIdempotencyKey the step sends a default key derived from
+// its step ID (and the payload), so a retry of the same step after a lost
+// response does not publish twice. The server keeps the key for
+// IRONFLOW_RUN_RETENTION_DAYS days (forever when unset or 0), so a late retry
+// also returns the original event ID (ADR 0132). One rare gap remains: if the
+// server stores the message but cannot record it, a retry after 2 minutes
+// stores a second copy under the same event ID. An explicit key wins.
+//
 // Example:
 //
 //	err := ironflow.Publish(ctx, "order.processed", map[string]any{
 //	    "orderId": event.Data.OrderID,
 //	}, ironflow.WithPublishIdempotencyKey(event.Data.OrderID))
 func Publish(ctx Context, topic string, data any, opts ...PublishOption) error {
-	_, err := Run[any](ctx, publishStepName(topic), func() (any, error) {
-		return doPublish(ctx.exec, topic, data, opts...)
+	_, err := runWithStepID[any](ctx, publishStepName(topic), func(stepID string) (any, error) {
+		// A root-scoped Publish inside Parallel draws its index from the
+		// run-wide counter, so which branch gets ":0" can flip between runs
+		// (#1792). The payload in the digest makes a flipped index miss dedup
+		// instead of dropping another branch's message.
+		payload, err := json.Marshal(data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal publish data: %w", err)
+		}
+		return doPublish(ctx.exec, topic, data, defaultKey(stepID+"\x00"+string(payload)), opts)
 	})
 	return err
 }
 
-// PublishWithBranch is the branch-scoped equivalent of Publish.
+// PublishWithBranch is the branch-scoped equivalent of Publish, including the
+// default step-ID idempotency key and its durable server dedup.
 //
 // WHY: Publish is a durable step under the hood, named "publish:{topic}". From
 // inside a branch the root-scoped form recorded that step at the function's top
@@ -551,10 +577,17 @@ func Publish(ctx Context, topic string, data any, opts ...PublishOption) error {
 // escaped — a topic without a colon still yields legacy == id and takes
 // preferLegacyStepID's early-return path, same as a plain step name.
 func PublishWithBranch(b *BranchContext, topic string, data any, opts ...PublishOption) error {
-	_, err := RunWithBranch[any](b, publishStepName(topic), func() (any, error) {
-		return doPublish(b.parent, topic, data, opts...)
+	_, err := runBranchWithStepID[any](b, publishStepName(topic), func(stepID string) (any, error) {
+		return doPublish(b.parent, topic, data, defaultKey(stepID), opts)
 	})
 	return err
+}
+
+// defaultKey hashes the seed so the key stays within the server's 255-byte
+// limit and free of whitespace/control chars, whatever the topic or branch name.
+func defaultKey(seed string) string {
+	sum := sha256.Sum256([]byte(seed))
+	return "step-" + hex.EncodeToString(sum[:])
 }
 
 // publishStepName is the step name a publish is memoized under. One definition
@@ -566,7 +599,7 @@ func publishStepName(topic string) string {
 // doPublish performs the publish HTTP call. It reads only run-wide config, so
 // it is identical at the root and inside a branch; the scoping lives entirely
 // in which Run variant wraps it.
-func doPublish(exec *executionContext, topic string, data any, opts ...PublishOption) (any, error) {
+func doPublish(exec *executionContext, topic string, data any, defaultKey string, opts []PublishOption) (any, error) {
 	serverURL := exec.serverURL
 	if serverURL == "" {
 		return nil, fmt.Errorf("server URL not configured for publish step")
@@ -575,6 +608,10 @@ func doPublish(exec *executionContext, topic string, data any, opts ...PublishOp
 	cfg := &publishConfig{}
 	for _, opt := range opts {
 		opt(cfg)
+	}
+
+	if cfg.idempotencyKey == "" {
+		cfg.idempotencyKey = defaultKey
 	}
 
 	reqBody := map[string]any{

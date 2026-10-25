@@ -2133,6 +2133,14 @@ type PublishRequest struct {
 	DataValue *structpb.Value `protobuf:"bytes,4,opt,name=data_value,json=dataValue,proto3" json:"data_value,omitempty"`
 	// Optional idempotency key for deduplication. At most 255 bytes, with no
 	// whitespace or control characters; anything else is InvalidArgument.
+	// Scoped to the environment and topic. The server records the key durably,
+	// so a retry deduplicates for IRONFLOW_RUN_RETENTION_DAYS days after the
+	// first publish (kept forever when unset or 0), not only inside the
+	// stream's two-minute window. One gap remains: the record stays incomplete
+	// whenever the server cannot record the publish after the message is stored
+	// (a store error, a lost ack, a failed read of the stored ID, or a crash). A
+	// retry past the two-minute window then stores the message again, under the
+	// same event_id.
 	IdempotencyKey string `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -2203,8 +2211,8 @@ type PublishResponse struct {
 	EventId string `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	// JetStream sequence number
 	Sequence uint64 `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
-	// True when the idempotency key matched an earlier publish inside the
-	// stream's deduplication window and this publish stored nothing.
+	// True when the idempotency key matched an earlier publish and this
+	// publish stored nothing.
 	Duplicate     bool `protobuf:"varint,3,opt,name=duplicate,proto3" json:"duplicate,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

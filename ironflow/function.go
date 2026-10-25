@@ -158,22 +158,75 @@ func validateFunctionConfig(config FunctionConfig) error {
 		}
 	}
 
+	// Every retry field is optional: zero means unset and the server resolves it.
 	if config.Retry != nil {
-		if config.Retry.MaxAttempts <= 0 {
+		if config.Retry.MaxAttempts < 0 {
 			return fmt.Errorf("retry maxAttempts must be positive")
 		}
 		if config.Retry.InitialDelay < 0 {
 			return fmt.Errorf("retry initialDelay must be non-negative")
 		}
-		if config.Retry.BackoffFactor < 1 {
+		if config.Retry.BackoffFactor != 0 && config.Retry.BackoffFactor < 1 {
 			return fmt.Errorf("retry backoffFactor must be at least 1")
+		}
+		if config.Retry.MaxDelay < 0 {
+			return fmt.Errorf("retry maxDelay must be non-negative")
+		}
+		switch config.Retry.OnExhausted {
+		case "", OnExhaustedPause, OnExhaustedFail:
+		default:
+			return fmt.Errorf("retry onExhausted must be %q or %q (got %q)", OnExhaustedPause, OnExhaustedFail, config.Retry.OnExhausted)
+		}
+	}
+
+	if cb := config.CircuitBreaker; cb != nil {
+		if cb.FailureThreshold < 0 || cb.OpenDuration < 0 || cb.MaxOpenDuration < 0 {
+			return fmt.Errorf("circuitBreaker fields must not be negative")
+		}
+		if cb.OpenDuration > 0 && cb.MaxOpenDuration > 0 && cb.MaxOpenDuration < cb.OpenDuration {
+			return fmt.Errorf("circuitBreaker maxOpenDuration must be zero or at least openDuration (got maxOpenDuration=%s, openDuration=%s)", cb.MaxOpenDuration, cb.OpenDuration)
+		}
+	}
+
+	if th := config.Throttle; th != nil {
+		if th.Limit < 1 {
+			return fmt.Errorf("throttle limit must be >= 1 (got %d)", th.Limit)
+		}
+		if th.Period < time.Second {
+			return fmt.Errorf("throttle period must be >= 1s (got %s)", th.Period)
+		}
+		if th.Key != "" {
+			if err := validateEventPath(th.Key); err != nil {
+				return fmt.Errorf("throttle key: %w", err)
+			}
 		}
 	}
 
 	return nil
 }
 
-// normalizeFunctionConfig applies default values to the config.
+// validateEventPath mirrors the server's eventpath.ValidatePath, the syntactic
+// check applied to throttle and cancelOn keys at registration. Duplicated for
+// the same reason as validateFunctionID: this module must not import the
+// server. Keep the rules in step.
+func validateEventPath(path string) error {
+	path = strings.TrimPrefix(path, "$.")
+	if path == "" {
+		return fmt.Errorf("path is empty")
+	}
+	if strings.HasPrefix(path, ".") || strings.HasSuffix(path, ".") {
+		return fmt.Errorf("path must not start or end with '.'")
+	}
+	if strings.Contains(path, "..") {
+		return fmt.Errorf("path must not contain empty segments ('..')")
+	}
+	return nil
+}
+
+// normalizeFunctionConfig applies the defaults that are local to the SDK.
+// Retry and Timeout are deliberately left alone: the server owns those defaults
+// (spec.engine.retry.*), and a value filled in here would override the
+// operator's YAML on every registration (#3151, #3148).
 func normalizeFunctionConfig(config FunctionConfig) FunctionConfig {
 	normalized := config
 
@@ -182,34 +235,37 @@ func normalizeFunctionConfig(config FunctionConfig) FunctionConfig {
 		normalized.Name = normalized.ID
 	}
 
-	// Default timeout
-	if normalized.Timeout == 0 {
-		normalized.Timeout = 10 * time.Minute
-	}
-
 	// Default mode
 	if normalized.Mode == "" {
 		normalized.Mode = PushMode
 	}
 
-	// Default retry config
-	if normalized.Retry == nil {
-		normalized.Retry = &RetryConfig{}
-	}
-	if normalized.Retry.MaxAttempts == 0 {
-		normalized.Retry.MaxAttempts = 3
-	}
-	if normalized.Retry.InitialDelay == 0 {
-		normalized.Retry.InitialDelay = time.Second
-	}
-	if normalized.Retry.BackoffFactor == 0 {
-		normalized.Retry.BackoffFactor = 2.0
-	}
-	if normalized.Retry.MaxDelay == 0 {
-		normalized.Retry.MaxDelay = 5 * time.Minute
-	}
-
 	return normalized
+}
+
+// retryMetadata is the snake_case retry object for GetFunctionMetadata. A field
+// the user left unset is absent, never a zero, so the server's default applies.
+func retryMetadata(r *RetryConfig) map[string]any {
+	if r == nil {
+		return nil
+	}
+	m := map[string]any{}
+	if r.MaxAttempts > 0 {
+		m["max_attempts"] = r.MaxAttempts
+	}
+	if r.InitialDelay > 0 {
+		m["initial_delay_ms"] = r.InitialDelay.Milliseconds()
+	}
+	if r.BackoffFactor > 0 {
+		m["backoff_factor"] = r.BackoffFactor
+	}
+	if r.MaxDelay > 0 {
+		m["max_delay_ms"] = r.MaxDelay.Milliseconds()
+	}
+	if r.OnExhausted != "" {
+		m["on_exhausted"] = r.OnExhausted
+	}
+	return m
 }
 
 // GetFunctionMetadata returns the function metadata for registration.
@@ -226,17 +282,31 @@ func GetFunctionMetadata(fn Function) map[string]any {
 	}
 
 	metadata := map[string]any{
-		"id":       config.ID,
-		"name":     config.Name,
-		"triggers": triggers,
-		"retry": map[string]any{
-			"max_attempts":     config.Retry.MaxAttempts,
-			"initial_delay_ms": config.Retry.InitialDelay.Milliseconds(),
-			"backoff_factor":   config.Retry.BackoffFactor,
-			"max_delay_ms":     config.Retry.MaxDelay.Milliseconds(),
-		},
+		"id":         config.ID,
+		"name":       config.Name,
+		"triggers":   triggers,
 		"timeout_ms": config.Timeout.Milliseconds(),
 		"mode":       string(config.Mode),
+	}
+
+	if retry := retryMetadata(config.Retry); len(retry) > 0 {
+		metadata["retry"] = retry
+	}
+
+	if cb := config.CircuitBreaker; cb != nil {
+		metadata["circuit_breaker"] = map[string]any{
+			"failure_threshold":    cb.FailureThreshold,
+			"open_duration_ms":     cb.OpenDuration.Milliseconds(),
+			"max_open_duration_ms": cb.MaxOpenDuration.Milliseconds(),
+		}
+	}
+
+	if th := config.Throttle; th != nil {
+		metadata["throttle"] = map[string]any{
+			"limit":     th.Limit,
+			"period_ms": th.Period.Milliseconds(),
+			"key":       th.Key,
+		}
 	}
 
 	if config.Description != "" {

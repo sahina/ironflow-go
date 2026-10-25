@@ -3,7 +3,6 @@ package ironflow
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestCreateFunction(t *testing.T) {
@@ -129,7 +128,7 @@ func TestNormalizeFunctionConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("applies default timeout", func(t *testing.T) {
+	t.Run("leaves timeout unset", func(t *testing.T) {
 		fn := CreateFunction(FunctionConfig{
 			ID:       "test-function",
 			Triggers: []Trigger{{Event: "test.event"}},
@@ -137,12 +136,12 @@ func TestNormalizeFunctionConfig(t *testing.T) {
 			return nil, nil
 		})
 
-		if fn.Config.Timeout != 10*time.Minute {
-			t.Errorf("expected Timeout 10m, got %v", fn.Config.Timeout)
+		if fn.Config.Timeout != 0 {
+			t.Errorf("expected Timeout 0 (unset, #3148), got %v", fn.Config.Timeout)
 		}
 	})
 
-	t.Run("applies default retry config", func(t *testing.T) {
+	t.Run("leaves retry config unset", func(t *testing.T) {
 		fn := CreateFunction(FunctionConfig{
 			ID:       "test-function",
 			Triggers: []Trigger{{Event: "test.event"}},
@@ -150,20 +149,10 @@ func TestNormalizeFunctionConfig(t *testing.T) {
 			return nil, nil
 		})
 
-		if fn.Config.Retry == nil {
-			t.Fatal("expected Retry to be set")
-		}
-		if fn.Config.Retry.MaxAttempts != 3 {
-			t.Errorf("expected MaxAttempts 3, got %d", fn.Config.Retry.MaxAttempts)
-		}
-		if fn.Config.Retry.InitialDelay != time.Second {
-			t.Errorf("expected InitialDelay 1s, got %v", fn.Config.Retry.InitialDelay)
-		}
-		if fn.Config.Retry.BackoffFactor != 2.0 {
-			t.Errorf("expected BackoffFactor 2.0, got %f", fn.Config.Retry.BackoffFactor)
-		}
-		if fn.Config.Retry.MaxDelay != 5*time.Minute {
-			t.Errorf("expected MaxDelay 5m, got %v", fn.Config.Retry.MaxDelay)
+		// The server owns the retry defaults (#3151); filling them here would
+		// override spec.engine.retry.* on every registration.
+		if fn.Config.Retry != nil {
+			t.Errorf("expected Retry to stay nil, got %+v", fn.Config.Retry)
 		}
 	})
 

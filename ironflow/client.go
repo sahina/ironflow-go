@@ -2491,15 +2491,18 @@ func isRateLimited(err *IronflowError) bool {
 }
 
 // parseRetryAfter parses the Retry-After header value.
+//
+// A negative delta or a date in the past clamps to 0, so a caller never sees a
+// negative RetryAfter.
 func parseRetryAfter(value string) time.Duration {
 	// Try to parse as seconds
 	if seconds, err := time.ParseDuration(value + "s"); err == nil {
-		return seconds
+		return max(seconds, 0)
 	}
 
 	// Try to parse as HTTP date
 	if t, err := http.ParseTime(value); err == nil {
-		return time.Until(t)
+		return max(time.Until(t), 0)
 	}
 
 	return 0

@@ -2132,7 +2132,12 @@ type JobAssignment struct {
 	// terminal row) MUST read it here rather than from a compiled constant
 	// — during a rolling deploy the two disagree (#2160). Zero from an
 	// engine older than this field; callers fall back to their own default.
-	MaxAttempts   int32 `protobuf:"varint,12,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
+	MaxAttempts int32 `protobuf:"varint,12,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
+	// The run's exhaustion policy, "pause" or "fail". Under "pause" the final
+	// attempt is not terminal: an exhausted run is held for resume, so a saga
+	// must not treat attempt >= max_attempts as the end. Empty from an older
+	// engine; treat it as "fail".
+	OnExhausted   string `protobuf:"bytes,13,opt,name=on_exhausted,json=onExhausted,proto3" json:"on_exhausted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2249,6 +2254,13 @@ func (x *JobAssignment) GetMaxAttempts() int32 {
 		return x.MaxAttempts
 	}
 	return 0
+}
+
+func (x *JobAssignment) GetOnExhausted() string {
+	if x != nil {
+		return x.OnExhausted
+	}
+	return ""
 }
 
 type CompletedStep struct {
@@ -2839,7 +2851,7 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	"\x05state\x18\x03 \x01(\x0e2\x17.ironflow.v1.LeaseStateR\x05state\"c\n" +
 	"\x10WorkerRegistered\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x122\n" +
-	"\x15heartbeat_interval_ms\x18\x02 \x01(\x05R\x13heartbeatIntervalMs\"\xe4\x03\n" +
+	"\x15heartbeat_interval_ms\x18\x02 \x01(\x05R\x13heartbeatIntervalMs\"\x87\x04\n" +
 	"\rJobAssignment\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x15\n" +
 	"\x06run_id\x18\x02 \x01(\tR\x05runId\x12\x1f\n" +
@@ -2855,7 +2867,8 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	" \x01(\tR\n" +
 	"leaseToken\x12D\n" +
 	"\x10lease_expires_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x0eleaseExpiresAt\x12!\n" +
-	"\fmax_attempts\x18\f \x01(\x05R\vmaxAttempts\"\x80\x02\n" +
+	"\fmax_attempts\x18\f \x01(\x05R\vmaxAttempts\x12!\n" +
+	"\fon_exhausted\x18\r \x01(\tR\vonExhausted\"\x80\x02\n" +
 	"\rCompletedStep\x12\x17\n" +
 	"\astep_id\x18\x01 \x01(\tR\x06stepId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12/\n" +

@@ -207,9 +207,6 @@ func (f *leaseFake) unary(w http.ResponseWriter, req *http.Request) {
 }
 
 func (f *leaseFake) stream(ctx context.Context, req *connect.Request[ironflowv1.StreamProjectionEventsRequest], s *connect.ServerStream[ironflowv1.ProjectionEvent]) error {
-	if f.noLease && req.Msg.Lease != nil {
-		return connect.NewError(connect.CodeInvalidArgument, errors.New("old server got a lease"))
-	}
 	var epoch int64
 	if req.Msg.Lease != nil {
 		epoch = req.Msg.Lease.Epoch
@@ -465,22 +462,32 @@ func TestProjectionLease_StreamAbortedDropsPendingFrames(t *testing.T) {
 	}
 }
 
-func TestProjectionLease_OldServerRunsUnguarded(t *testing.T) {
+func TestProjectionLease_OldServerStops(t *testing.T) {
 	for _, transport := range leaseTransports {
 		t.Run(transport, func(t *testing.T) {
 			f := newLeaseFake(t, []leaseEvent{{"e1", 1, ""}})
 			f.noLease = true
 			log := &leaseLogger{}
 			runner := startLeaseRunner(t, f.server(t, transport), log)
-			waitFor(t, "an unguarded save", func() bool { _, saves, _ := f.snapshot(); return len(saves) == 1 })
-			runner.Stop()
-
-			pulls, saves, _ := f.snapshot()
-			if slices.ContainsFunc(pulls, func(e int64) bool { return e != 0 }) || saves[0].epoch != 0 {
-				t.Errorf("pulls = %v, saves = %v, want no lease on any request", pulls, saves)
+			select {
+			case <-runner.done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the runner did not stop on a server without the lease RPCs")
 			}
-			if n := log.count("Projection lease unsupported by the server, running unguarded"); n != 1 {
-				t.Errorf("unguarded warnings = %d, want 1", n)
+			want := "AcquireProjectionLease needs Ironflow server >= 0.44.0; upgrade the server"
+			log.mu.Lock()
+			n := 0
+			for _, m := range log.msgs {
+				if strings.HasPrefix(m, want) {
+					n++
+				}
+			}
+			log.mu.Unlock()
+			if n != 1 {
+				t.Errorf("%q logged %d times, want 1", want, n)
+			}
+			if pulls, saves, _ := f.snapshot(); len(pulls) != 0 || len(saves) != 0 {
+				t.Errorf("pulls = %v, saves = %v, want no Poll, Stream, Save or Ack", pulls, saves)
 			}
 		})
 	}

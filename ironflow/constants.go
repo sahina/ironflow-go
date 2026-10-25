@@ -61,26 +61,8 @@ const (
 	// DefaultClientTimeout is the default client HTTP timeout.
 	DefaultClientTimeout = 30 * time.Second
 
-	// DefaultFunctionTimeout is the default function timeout.
-	DefaultFunctionTimeout = 10 * time.Minute
-
 	// DefaultEmitSyncTimeout is the default EmitSync timeout.
 	DefaultEmitSyncTimeout = 30 * time.Second
-)
-
-// Default retry configuration for function steps
-const (
-	// DefaultRetryMaxAttempts is the default maximum retry attempts.
-	DefaultRetryMaxAttempts = 3
-
-	// DefaultRetryInitialDelay is the default initial retry delay.
-	DefaultRetryInitialDelay = 1 * time.Second
-
-	// DefaultRetryBackoffFactor is the default retry backoff factor.
-	DefaultRetryBackoffFactor = 2.0
-
-	// DefaultRetryMaxDelay is the default maximum retry delay.
-	DefaultRetryMaxDelay = 5 * time.Minute
 )
 
 // Default client retry configuration for HTTP requests

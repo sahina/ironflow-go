@@ -799,6 +799,8 @@ func (r *streamJobReporter) ReportFailed(ctx context.Context, jobID string, push
 					Message:   pushErr.Message,
 					Code:      pushErr.Code,
 					Retryable: pushErr.Retryable,
+
+					RetryAfterMs: pushErr.RetryAfterMs,
 				},
 				Steps: protoSteps,
 			},
@@ -1134,6 +1136,7 @@ func protoToJobAssignment(pa *ironflowv1.JobAssignment) (*jobAssignment, error) 
 		FunctionID:  pa.GetFunctionId(),
 		Attempt:     int(pa.GetAttempt()),
 		MaxAttempts: int(pa.GetMaxAttempts()),
+		OnExhausted: pa.GetOnExhausted(),
 		Event: jobEvent{
 			ID:             pa.GetEvent().GetId(),
 			Name:           pa.GetEvent().GetName(),

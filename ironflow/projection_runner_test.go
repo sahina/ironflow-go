@@ -25,7 +25,7 @@ func TestProjectionRunner_ManagedPartitionsResumeAcrossBatches(t *testing.T) {
 	}
 	loads := map[string]int{}
 	var mu sync.Mutex
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, req *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 		var body map[string]any
@@ -94,7 +94,7 @@ func TestProjectionRunner_ManagedPartitionMissingAndEmptyState(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var saved map[string]any
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, req *http.Request) {
 				if strings.HasSuffix(req.URL.Path, "/GetProjection") {
 					_, _ = w.Write([]byte(tc.response))
 					return
@@ -144,7 +144,7 @@ func TestProjectionRunner_ManagedSavesRunsInSeqOrder(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var saves []string
 			attempts := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, req *http.Request) {
 				if strings.HasSuffix(req.URL.Path, "/GetProjection") {
 					_, _ = w.Write([]byte(`{}`))
 					return
@@ -185,7 +185,7 @@ func TestProjectionRunner_ManagedSavesRunsInSeqOrder(t *testing.T) {
 
 func TestProjectionRunner_ManagedPartitionNonObjectStateIsNotOverwritten(t *testing.T) {
 	saved := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, req *http.Request) {
 		if strings.HasSuffix(req.URL.Path, "/GetProjection") {
 			_, _ = w.Write([]byte(`{"stateValue":[1,2]}`))
 			return
@@ -225,7 +225,7 @@ func TestProjectionRunner_ManagedGlobalNonObjectStateIsNotOverwritten(t *testing
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var saved atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, req *http.Request) {
 				var body map[string]any
 				_ = json.NewDecoder(req.Body).Decode(&body)
 				switch strings.TrimPrefix(req.URL.Path, projectionServicePath) {
@@ -287,7 +287,7 @@ func TestProjectionRunner_ManagedPartitionLoadFailureDoesNotSave(t *testing.T) {
 	for _, status := range []int{http.StatusNotFound, http.StatusServiceUnavailable, http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			var handled, saved atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, req *http.Request) {
 				if strings.HasSuffix(req.URL.Path, "/GetProjection") {
 					var body map[string]any
 					_ = json.NewDecoder(req.Body).Decode(&body)
@@ -335,7 +335,7 @@ func TestProjectionRunner_Register(t *testing.T) {
 	var receivedPath string
 	var receivedContentType string
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 		receivedPath = r.URL.Path
@@ -405,7 +405,7 @@ func TestProjectionRunner_Register_SetsCustomHeaders(t *testing.T) {
 	var mu sync.Mutex
 	var receivedHeaders http.Header
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		receivedHeaders = r.Header.Clone()
 		mu.Unlock()
@@ -441,7 +441,7 @@ func TestProjectionRunner_Register_SetsCustomHeaders(t *testing.T) {
 }
 
 func TestProjectionRunner_Register_Error(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`internal error`))
 	}))
@@ -478,7 +478,7 @@ func TestProjectionRunner_ManagedMode_PollAndSaveState(t *testing.T) {
 	var saveStateBody map[string]any
 	pollCount := 0
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -621,7 +621,7 @@ func TestProjectionRunner_ManagedMode_UsesInitialStateWhenServerReturnsNil(t *te
 	var saveStateBody map[string]any
 	pollCount := 0
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -720,7 +720,7 @@ func TestProjectionRunner_ExternalMode_PollAndAck(t *testing.T) {
 	var ackBody map[string]any
 	pollCount := 0
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -845,7 +845,7 @@ func TestProjectionRunner_EmptyPoll_NoSaveOrAck(t *testing.T) {
 	var ackCalled bool
 	pollCount := 0
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -917,7 +917,7 @@ func TestProjectionRunner_Stop_TerminatesPollLoop(t *testing.T) {
 	var mu sync.Mutex
 	pollCount := 0
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -983,7 +983,7 @@ func TestProjectionRunner_Start_FailsOnAuthRegistrationError(t *testing.T) {
 	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			var registers atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, _ *http.Request) {
 				registers.Add(1)
 				w.WriteHeader(status)
 			}))
@@ -1016,7 +1016,7 @@ func TestProjectionRunner_HandlerContextPopulated(t *testing.T) {
 	var saveStateCalled bool
 	pollCount := 0
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -1131,7 +1131,7 @@ func TestProjectionRunner_PollSendsBatchSize(t *testing.T) {
 	var mu sync.Mutex
 	var pollBody map[string]any
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -1205,7 +1205,7 @@ func TestProjectionRunner_Register_OmitsPartitionKeyWhenEmpty(t *testing.T) {
 	var mu sync.Mutex
 	var receivedBody map[string]any
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 		body, _ := io.ReadAll(r.Body)

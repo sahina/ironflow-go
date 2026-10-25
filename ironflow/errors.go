@@ -265,6 +265,53 @@ func WrapNonRetryable(err error) *NonRetryableError {
 	}
 }
 
+// NewRetryAfterError creates a retryable error that asks the engine to wait
+// `after` before the next attempt instead of using the retry policy's backoff.
+// The engine caps the delay at the policy's max delay. A zero or negative
+// `after` falls back to the normal backoff.
+func NewRetryAfterError(message string, after time.Duration) *IronflowError {
+	return &IronflowError{
+		Message:    message,
+		Code:       "RETRY_AFTER",
+		Retryable:  true,
+		RetryAfter: after,
+	}
+}
+
+// retryAfterMs is the delay the engine should wait before the next attempt, in
+// milliseconds, or 0 for the policy's backoff. It looks through wrapped errors
+// so a step that wraps a NewRetryAfterError cause still reaches the wire. A
+// delay only means something on a retryable failure.
+func retryAfterMs(err error, retryable bool) int64 {
+	if !retryable {
+		return 0
+	}
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if ife, ok := e.(*IronflowError); ok && ife.RetryAfter > 0 {
+			// Round up: a sub-millisecond delay must not truncate to "no delay".
+			// Divide first so a huge duration cannot overflow into a negative.
+			ms := int64(ife.RetryAfter / time.Millisecond)
+			if ife.RetryAfter%time.Millisecond != 0 {
+				ms++
+			}
+			return ms
+		}
+	}
+	return 0
+}
+
+// isTerminalFailure reports whether a failed attempt is the end of the run, so
+// compensations should run. A non-retryable error always is. A retryable one is
+// only when it used the last attempt and the run's policy is "fail"; with
+// "pause" the run is held for resume, not over. An empty onExhausted (an engine
+// that predates the field) or an unknown budget keeps the old behavior.
+func isTerminalFailure(retryable bool, attempt, maxAttempts int, onExhausted string) bool {
+	if !retryable {
+		return true
+	}
+	return onExhausted == OnExhaustedFail && maxAttempts > 0 && attempt >= maxAttempts
+}
+
 // yieldSignal is an internal signal to yield execution.
 // It is not a real error but uses the error interface for control flow.
 type yieldSignal struct {

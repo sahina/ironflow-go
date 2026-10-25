@@ -452,6 +452,12 @@ func mapBranches[T, R any](items []T, fn func(T, *BranchContext, int) (R, error)
 //	    return fetchData()
 //	})
 func RunWithBranch[T any](b *BranchContext, name string, fn func() (T, error), opts ...StepOption) (T, error) {
+	return runBranchWithStepID(b, name, func(string) (T, error) { return fn() }, opts...)
+}
+
+// runBranchWithStepID is RunWithBranch with the memoized step ID handed to fn;
+// see runWithStepID.
+func runBranchWithStepID[T any](b *BranchContext, name string, fn func(stepID string) (T, error), opts ...StepOption) (T, error) {
 	b.markScopedUsed()
 
 	var zero T
@@ -509,7 +515,7 @@ func RunWithBranch[T any](b *BranchContext, name string, fn func() (T, error), o
 		}
 	}
 
-	result, err, timedOut := runWithTimeout(fn, timeout, stepID, name, startedAt, recordStep)
+	result, err, timedOut := runWithTimeout(func() (T, error) { return fn(stepID) }, timeout, stepID, name, startedAt, recordStep)
 	if timedOut {
 		return zero, err
 	}

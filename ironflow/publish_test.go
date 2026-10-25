@@ -456,7 +456,7 @@ func TestPublish_SendsIdempotencyKey(t *testing.T) {
 	}
 }
 
-func TestPublish_OmitsEmptyIdempotencyKey(t *testing.T) {
+func TestPublish_EmptyKeyFallsBackToDefault(t *testing.T) {
 	for name, opts := range map[string][]PublishOption{
 		"no option": nil,
 		"empty key": {WithPublishIdempotencyKey("")},
@@ -465,8 +465,8 @@ func TestPublish_OmitsEmptyIdempotencyKey(t *testing.T) {
 			body := capturePublishBody(t, func(ctx Context) error {
 				return Publish(ctx, "order.processed", map[string]any{"orderId": "123"}, opts...)
 			})
-			if _, present := body["idempotencyKey"]; present {
-				t.Fatalf("idempotencyKey must be absent; body was %v", body)
+			if k, _ := body["idempotencyKey"].(string); !strings.HasPrefix(k, "step-") {
+				t.Fatalf("want default step- key; body was %v", body)
 			}
 		})
 	}

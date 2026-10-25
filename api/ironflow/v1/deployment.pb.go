@@ -97,9 +97,11 @@ type ExecutionSnapshot struct {
 	CancelOn    []*CancelOnSpec    `protobuf:"bytes,5,rep,name=cancel_on,json=cancelOn,proto3" json:"cancel_on,omitempty"`
 	Debounce    *DebounceConfig    `protobuf:"bytes,6,opt,name=debounce,proto3" json:"debounce,omitempty"`
 	// Step-related and execution metadata carried verbatim.
-	Metadata      *structpb.Struct `protobuf:"bytes,7,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Metadata       *structpb.Struct      `protobuf:"bytes,7,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	CircuitBreaker *CircuitBreakerConfig `protobuf:"bytes,8,opt,name=circuit_breaker,json=circuitBreaker,proto3" json:"circuit_breaker,omitempty"`
+	Throttle       *ThrottleConfig       `protobuf:"bytes,9,opt,name=throttle,proto3" json:"throttle,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ExecutionSnapshot) Reset() {
@@ -177,6 +179,20 @@ func (x *ExecutionSnapshot) GetDebounce() *DebounceConfig {
 func (x *ExecutionSnapshot) GetMetadata() *structpb.Struct {
 	if x != nil {
 		return x.Metadata
+	}
+	return nil
+}
+
+func (x *ExecutionSnapshot) GetCircuitBreaker() *CircuitBreakerConfig {
+	if x != nil {
+		return x.CircuitBreaker
+	}
+	return nil
+}
+
+func (x *ExecutionSnapshot) GetThrottle() *ThrottleConfig {
+	if x != nil {
+		return x.Throttle
 	}
 	return nil
 }
@@ -803,7 +819,7 @@ var File_ironflow_v1_deployment_proto protoreflect.FileDescriptor
 
 const file_ironflow_v1_deployment_proto_rawDesc = "" +
 	"\n" +
-	"\x1cironflow/v1/deployment.proto\x12\vironflow.v1\x1a\x17ironflow/v1/types.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xfc\x02\n" +
+	"\x1cironflow/v1/deployment.proto\x12\vironflow.v1\x1a\x17ironflow/v1/types.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x81\x04\n" +
 	"\x11ExecutionSnapshot\x120\n" +
 	"\btriggers\x18\x01 \x03(\v2\x14.ironflow.v1.TriggerR\btriggers\x12.\n" +
 	"\x05retry\x18\x02 \x01(\v2\x18.ironflow.v1.RetryConfigR\x05retry\x12\x1d\n" +
@@ -812,7 +828,9 @@ const file_ironflow_v1_deployment_proto_rawDesc = "" +
 	"\vconcurrency\x18\x04 \x01(\v2\x1e.ironflow.v1.ConcurrencyConfigR\vconcurrency\x126\n" +
 	"\tcancel_on\x18\x05 \x03(\v2\x19.ironflow.v1.CancelOnSpecR\bcancelOn\x127\n" +
 	"\bdebounce\x18\x06 \x01(\v2\x1b.ironflow.v1.DebounceConfigR\bdebounce\x123\n" +
-	"\bmetadata\x18\a \x01(\v2\x17.google.protobuf.StructR\bmetadata\"\x8b\x03\n" +
+	"\bmetadata\x18\a \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12J\n" +
+	"\x0fcircuit_breaker\x18\b \x01(\v2!.ironflow.v1.CircuitBreakerConfigR\x0ecircuitBreaker\x127\n" +
+	"\bthrottle\x18\t \x01(\v2\x1b.ironflow.v1.ThrottleConfigR\bthrottle\"\x8b\x03\n" +
 	"\n" +
 	"Deployment\x12%\n" +
 	"\x0eenvironment_id\x18\x01 \x01(\tR\renvironmentId\x12\x1f\n" +
@@ -912,8 +930,10 @@ var file_ironflow_v1_deployment_proto_goTypes = []any{
 	(*CancelOnSpec)(nil),                        // 14: ironflow.v1.CancelOnSpec
 	(*DebounceConfig)(nil),                      // 15: ironflow.v1.DebounceConfig
 	(*structpb.Struct)(nil),                     // 16: google.protobuf.Struct
-	(ExecutionMode)(0),                          // 17: ironflow.v1.ExecutionMode
-	(*timestamppb.Timestamp)(nil),               // 18: google.protobuf.Timestamp
+	(*CircuitBreakerConfig)(nil),                // 17: ironflow.v1.CircuitBreakerConfig
+	(*ThrottleConfig)(nil),                      // 18: ironflow.v1.ThrottleConfig
+	(ExecutionMode)(0),                          // 19: ironflow.v1.ExecutionMode
+	(*timestamppb.Timestamp)(nil),               // 20: google.protobuf.Timestamp
 }
 var file_ironflow_v1_deployment_proto_depIdxs = []int32{
 	11, // 0: ironflow.v1.ExecutionSnapshot.triggers:type_name -> ironflow.v1.Trigger
@@ -922,30 +942,32 @@ var file_ironflow_v1_deployment_proto_depIdxs = []int32{
 	14, // 3: ironflow.v1.ExecutionSnapshot.cancel_on:type_name -> ironflow.v1.CancelOnSpec
 	15, // 4: ironflow.v1.ExecutionSnapshot.debounce:type_name -> ironflow.v1.DebounceConfig
 	16, // 5: ironflow.v1.ExecutionSnapshot.metadata:type_name -> google.protobuf.Struct
-	1,  // 6: ironflow.v1.Deployment.snapshot:type_name -> ironflow.v1.ExecutionSnapshot
-	17, // 7: ironflow.v1.Deployment.mode:type_name -> ironflow.v1.ExecutionMode
-	18, // 8: ironflow.v1.Deployment.created_at:type_name -> google.protobuf.Timestamp
-	1,  // 9: ironflow.v1.RegisterDeploymentRequest.snapshot:type_name -> ironflow.v1.ExecutionSnapshot
-	17, // 10: ironflow.v1.RegisterDeploymentRequest.mode:type_name -> ironflow.v1.ExecutionMode
-	2,  // 11: ironflow.v1.RegisterDeploymentResponse.deployment:type_name -> ironflow.v1.Deployment
-	2,  // 12: ironflow.v1.GetDeploymentResponse.deployment:type_name -> ironflow.v1.Deployment
-	2,  // 13: ironflow.v1.ListDeploymentsResponse.deployments:type_name -> ironflow.v1.Deployment
-	0,  // 14: ironflow.v1.GetFunctionExecutionRoutingResponse.mode:type_name -> ironflow.v1.FunctionRoutingMode
-	18, // 15: ironflow.v1.GetFunctionExecutionRoutingResponse.transition_started_at:type_name -> google.protobuf.Timestamp
-	18, // 16: ironflow.v1.GetFunctionExecutionRoutingResponse.updated_at:type_name -> google.protobuf.Timestamp
-	3,  // 17: ironflow.v1.DeploymentService.RegisterDeployment:input_type -> ironflow.v1.RegisterDeploymentRequest
-	5,  // 18: ironflow.v1.DeploymentService.GetDeployment:input_type -> ironflow.v1.GetDeploymentRequest
-	7,  // 19: ironflow.v1.DeploymentService.ListDeployments:input_type -> ironflow.v1.ListDeploymentsRequest
-	9,  // 20: ironflow.v1.DeploymentService.GetFunctionExecutionRouting:input_type -> ironflow.v1.GetFunctionExecutionRoutingRequest
-	4,  // 21: ironflow.v1.DeploymentService.RegisterDeployment:output_type -> ironflow.v1.RegisterDeploymentResponse
-	6,  // 22: ironflow.v1.DeploymentService.GetDeployment:output_type -> ironflow.v1.GetDeploymentResponse
-	8,  // 23: ironflow.v1.DeploymentService.ListDeployments:output_type -> ironflow.v1.ListDeploymentsResponse
-	10, // 24: ironflow.v1.DeploymentService.GetFunctionExecutionRouting:output_type -> ironflow.v1.GetFunctionExecutionRoutingResponse
-	21, // [21:25] is the sub-list for method output_type
-	17, // [17:21] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	17, // 6: ironflow.v1.ExecutionSnapshot.circuit_breaker:type_name -> ironflow.v1.CircuitBreakerConfig
+	18, // 7: ironflow.v1.ExecutionSnapshot.throttle:type_name -> ironflow.v1.ThrottleConfig
+	1,  // 8: ironflow.v1.Deployment.snapshot:type_name -> ironflow.v1.ExecutionSnapshot
+	19, // 9: ironflow.v1.Deployment.mode:type_name -> ironflow.v1.ExecutionMode
+	20, // 10: ironflow.v1.Deployment.created_at:type_name -> google.protobuf.Timestamp
+	1,  // 11: ironflow.v1.RegisterDeploymentRequest.snapshot:type_name -> ironflow.v1.ExecutionSnapshot
+	19, // 12: ironflow.v1.RegisterDeploymentRequest.mode:type_name -> ironflow.v1.ExecutionMode
+	2,  // 13: ironflow.v1.RegisterDeploymentResponse.deployment:type_name -> ironflow.v1.Deployment
+	2,  // 14: ironflow.v1.GetDeploymentResponse.deployment:type_name -> ironflow.v1.Deployment
+	2,  // 15: ironflow.v1.ListDeploymentsResponse.deployments:type_name -> ironflow.v1.Deployment
+	0,  // 16: ironflow.v1.GetFunctionExecutionRoutingResponse.mode:type_name -> ironflow.v1.FunctionRoutingMode
+	20, // 17: ironflow.v1.GetFunctionExecutionRoutingResponse.transition_started_at:type_name -> google.protobuf.Timestamp
+	20, // 18: ironflow.v1.GetFunctionExecutionRoutingResponse.updated_at:type_name -> google.protobuf.Timestamp
+	3,  // 19: ironflow.v1.DeploymentService.RegisterDeployment:input_type -> ironflow.v1.RegisterDeploymentRequest
+	5,  // 20: ironflow.v1.DeploymentService.GetDeployment:input_type -> ironflow.v1.GetDeploymentRequest
+	7,  // 21: ironflow.v1.DeploymentService.ListDeployments:input_type -> ironflow.v1.ListDeploymentsRequest
+	9,  // 22: ironflow.v1.DeploymentService.GetFunctionExecutionRouting:input_type -> ironflow.v1.GetFunctionExecutionRoutingRequest
+	4,  // 23: ironflow.v1.DeploymentService.RegisterDeployment:output_type -> ironflow.v1.RegisterDeploymentResponse
+	6,  // 24: ironflow.v1.DeploymentService.GetDeployment:output_type -> ironflow.v1.GetDeploymentResponse
+	8,  // 25: ironflow.v1.DeploymentService.ListDeployments:output_type -> ironflow.v1.ListDeploymentsResponse
+	10, // 26: ironflow.v1.DeploymentService.GetFunctionExecutionRouting:output_type -> ironflow.v1.GetFunctionExecutionRoutingResponse
+	23, // [23:27] is the sub-list for method output_type
+	19, // [19:23] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_deployment_proto_init() }
