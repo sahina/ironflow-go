@@ -363,7 +363,7 @@ func runWithTimeout[T any](fn func() (T, error), timeout time.Duration, stepID, 
 			Duration:  duration,
 			Error: &StepErrorInfo{
 				Message:   timeoutErr.Error(),
-				Retryable: true,
+				Retryable: IsRetryable(timeoutErr),
 			},
 		}
 		recordStep(stepResult)
@@ -1096,6 +1096,10 @@ func invokeAsyncImpl(sc StepContext, functionID string, input any) (InvokeAsyncR
 // parseInvokeError converts a raw memoized error value into an *InvokeError.
 func parseInvokeError(functionID string, errRaw any) *InvokeError {
 	errJSON, _ := json.Marshal(errRaw)
+	// Push mode sends the error object as a JSON string; pull sends the object.
+	if s, ok := errRaw.(string); ok && json.Valid([]byte(s)) {
+		errJSON = []byte(s)
+	}
 	var e struct {
 		Message    string `json:"message"`
 		FunctionID string `json:"function_id"`

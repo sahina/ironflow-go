@@ -241,12 +241,14 @@ func (h *serveHandler) executeHandler(fn Function, req *PushRequest) *PushRespon
 	// Handle error
 	if execErr != nil {
 		code := "ERROR"
-		retryable := true
+		retryable := IsRetryable(execErr)
 
 		var ironflowErr *IronflowError
+		var invokeErr *InvokeError
 		if errors.As(execErr, &ironflowErr) {
 			code = ironflowErr.Code
-			retryable = ironflowErr.Retryable
+		} else if errors.As(execErr, &invokeErr) {
+			code = codeInvokeFailed
 		}
 
 		// Run compensations only on a terminal failure

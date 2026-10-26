@@ -316,6 +316,8 @@ result, err := ironflow.Invoke[ShippingResult](ctx, "calculate-shipping", input,
 )
 ```
 
+A failed or timed-out child returns `*InvokeError`. `IsRetryable` reports it as non-retryable. If you return it, the parent run fails at once, with no retries.
+
 ### InvokeAsync -- Fire-and-Forget
 
 Returns immediately with the child run ID.
@@ -2071,7 +2073,7 @@ return nil, ironflow.WrapNonRetryable(err)
 | `*StepError`          | Step failure with StepID, StepName             |
 | `*StepTimeoutError`   | Step timeout with StepName, Timeout            |
 | `*NonRetryableError`  | Wraps error as non-retryable                   |
-| `*InvokeError`        | Invoke failure with FunctionID, ChildRunID, Cause |
+| `*InvokeError`        | Invoke failure with FunctionID, ChildRunID, Cause. Not retryable. |
 | `*SubscriptionError`  | Subscription error with Code, Message, Retrying |
 
 ### Creating Errors

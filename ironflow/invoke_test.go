@@ -1,6 +1,8 @@
 package ironflow
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -119,6 +121,33 @@ func TestInvoke_ReturnsInvokeErrorWhenFailed(t *testing.T) {
 	if invokeErr.Cause != "card declined" {
 		t.Errorf("expected Cause 'card declined', got '%s'", invokeErr.Cause)
 	}
+	// A retry would only replay the memoized failure, so the caller must fail
+	// at once, as in the Node and Python SDKs (#3185).
+	if IsRetryable(err) || IsRetryable(fmt.Errorf("wrapped: %w", err)) {
+		t.Error("a failed invoke child must be non-retryable")
+	}
+}
+
+// TestInvoke_ReturnsInvokeErrorFromPushErrorString covers push mode, which
+// sends the failed step's error object as a JSON string.
+func TestInvoke_ReturnsInvokeErrorFromPushErrorString(t *testing.T) {
+	ctx := Context{
+		exec: newExecutionContext(&PushRequest{RunID: "run-123", Steps: []CompletedStep{{
+			ID:     "run-123:charge-card:0",
+			Name:   "charge-card",
+			Status: "failed",
+			Error:  `{"message":"invoked function 'charge-card' failed","function_id":"charge-card","child_run_id":"run-child-1","cause":"card declined","retryable":false}`,
+		}}}),
+	}
+
+	_, err := Invoke[map[string]any](ctx, "charge-card", map[string]any{"amount": 100})
+	var invokeErr *InvokeError
+	if !errors.As(err, &invokeErr) {
+		t.Fatalf("expected *InvokeError, got %T: %v", err, err)
+	}
+	if invokeErr.ChildRunID != "run-child-1" || invokeErr.Cause != "card declined" {
+		t.Errorf("got ChildRunID %q, Cause %q; want run-child-1, card declined", invokeErr.ChildRunID, invokeErr.Cause)
+	}
 }
 
 // TestInvoke_ReturnsInvokeErrorWhenTimedOut verifies that Invoke() returns an
@@ -149,6 +178,9 @@ func TestInvoke_ReturnsInvokeErrorWhenTimedOut(t *testing.T) {
 	}
 	if invokeErr.Cause != "invoke timed out" {
 		t.Errorf("expected cause 'invoke timed out', got %q", invokeErr.Cause)
+	}
+	if IsRetryable(err) {
+		t.Error("a timed-out invoke must be non-retryable")
 	}
 }
 

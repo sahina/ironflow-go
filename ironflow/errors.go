@@ -357,11 +357,20 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%ds", int(d.Seconds()))
 }
 
+// codeInvokeFailed is the error code of a failed or timed-out Invoke child; the
+// Node and Python SDKs report the same code.
+const codeInvokeFailed = "INVOKE_FAILED"
+
 // IsRetryable checks if an error is retryable.
 func IsRetryable(err error) bool {
 	var ironflowErr *IronflowError
 	if errors.As(err, &ironflowErr) {
 		return ironflowErr.Retryable
+	}
+	// A retry replays the memoized child failure, so it can never succeed (#3185).
+	var invokeErr *InvokeError
+	if errors.As(err, &invokeErr) {
+		return false
 	}
 	// Default to retryable for unknown errors
 	return true

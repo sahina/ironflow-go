@@ -268,6 +268,10 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 				pushErr = stepErr
 			}
 		}
+		var invokeErr *InvokeError
+		if pushErr.Code == "" && errors.As(execErr, &invokeErr) {
+			pushErr.Code = codeInvokeFailed
+		}
 		return reportFailed(ctx, reporter, job.JobID, pushErr, steps, offset)
 	}
 

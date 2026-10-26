@@ -91,3 +91,25 @@ func TestPullWorker_UnencodableResultRunsCompensations(t *testing.T) {
 		t.Fatalf("compensated=%v failed=%+v", compensated, rep.failed)
 	}
 }
+
+// A failed Invoke child is a terminal failure in pull and streaming mode too:
+// non-retryable, INVOKE_FAILED, and compensations run at once (#3185).
+func TestPullWorker_InvokeErrorIsTerminal(t *testing.T) {
+	compensated := false
+	fn := Function{Config: FunctionConfig{ID: "fn"}, Handler: func(ctx Context) (any, error) {
+		if _, err := Run(ctx, "charge", func() (int, error) { return 1, nil }); err != nil {
+			return nil, err
+		}
+		Compensate(ctx, "charge", func() error { compensated = true; return nil })
+		return nil, &InvokeError{FunctionID: "child", Cause: "child boom"}
+	}}
+	exec := &jobExecutor{functions: map[string]Function{"fn": fn}, logger: NewNoopLogger()}
+	job := jobAssignment{JobID: "job-1", RunID: "run-1", FunctionID: "fn", Attempt: 1, MaxAttempts: 25}
+	rep := &recordingReporter{}
+	if err := exec.execute(context.Background(), &job, rep); err != nil {
+		t.Fatal(err)
+	}
+	if !compensated || rep.failed == nil || rep.failed.Retryable || rep.failed.Code != "INVOKE_FAILED" {
+		t.Fatalf("compensated=%v failed=%+v, want a non-retryable INVOKE_FAILED failure with compensation", compensated, rep.failed)
+	}
+}

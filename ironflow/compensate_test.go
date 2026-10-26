@@ -310,6 +310,7 @@ func TestServeHTTP_CompensationOnNonRetryableError(t *testing.T) {
 // TestServeHTTP_NonRetryableBehindAnotherType covers a non-retryable error that
 // the handler returns outside a step, where the *IronflowError is not the
 // concrete type: embedded in NonRetryableError, or wrapped with %w (#2444).
+// A failed Invoke child has no *IronflowError at all (#3185).
 func TestServeHTTP_NonRetryableBehindAnotherType(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -318,6 +319,7 @@ func TestServeHTTP_NonRetryableBehindAnotherType(t *testing.T) {
 	}{
 		{"NonRetryableError returned directly", NewNonRetryableError("card declined"), "NON_RETRYABLE"},
 		{"wrapped IronflowError", fmt.Errorf("ship: %w", NewError("no stock", "NO_STOCK", false)), "NO_STOCK"},
+		{"InvokeError returned directly", &InvokeError{FunctionID: "charge-card", Cause: "card declined"}, "INVOKE_FAILED"},
 	}
 
 	for _, tc := range cases {
