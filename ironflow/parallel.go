@@ -605,65 +605,16 @@ func SleepWithBranch(b *BranchContext, name string, duration time.Duration) erro
 //
 // This is the branch-scoped equivalent of ironflow.WaitForEvent() for use within parallel branches.
 func WaitForEventWithBranch(b *BranchContext, name string, filter EventFilter) (Event, error) {
-	if err := b.parent.cancellationErr(); err != nil {
+	event, err := waitForEventImpl(b, name, filter, false)
+	if event == nil {
 		return Event{}, err
 	}
+	return *event, err
+}
 
-	b.markScopedUsed()
-
-	if b.parent.testInterceptor != nil {
-		event, err := b.parent.testInterceptor.WaitForEventStep(name, filter)
-		b.parent.testInterceptor.RecordStep(name, "waitForEvent", event, err)
-		if err != nil {
-			return Event{}, err
-		}
-		return event, nil
-	}
-
-	stepID := b.generateStepID(name)
-
-	// Check if resuming from this wait with the event data
-	if b.isResumingFrom(stepID, "wait_for_event") {
-		b.markResumeHandled()
-
-		// The resume data contains the event that matched
-		if data := b.getResumeData(); data != nil {
-			eventBytes, err := json.Marshal(data)
-			if err != nil {
-				return Event{}, NewStepError(fmt.Sprintf("failed to marshal resume event: %v", err), stepID, name, false, err)
-			}
-
-			var event Event
-			if err := json.Unmarshal(eventBytes, &event); err != nil {
-				return Event{}, NewStepError(fmt.Sprintf("failed to unmarshal resume event: %v", err), stepID, name, false, err)
-			}
-
-			return event, nil
-		}
-	}
-
-	// Check if step is already completed (memoized)
-	if completed, ok := b.getCompletedStep(stepID); ok && completed.Status == "completed" {
-		eventBytes, err := json.Marshal(completed.Output)
-		if err != nil {
-			return Event{}, NewStepError(fmt.Sprintf("failed to marshal memoized event: %v", err), stepID, name, false, err)
-		}
-
-		var event Event
-		if err := json.Unmarshal(eventBytes, &event); err != nil {
-			return Event{}, NewStepError(fmt.Sprintf("failed to unmarshal memoized event: %v", err), stepID, name, false, err)
-		}
-
-		return event, nil
-	}
-
-	// Apply default timeout
-	if filter.Timeout == 0 {
-		filter.Timeout = 7 * 24 * time.Hour
-	}
-
-	// Throw yield signal
-	panic(newWaitEventYield(stepID, &filter))
+// WaitForEventOptionalWithBranch is the branch-scoped nullable wait.
+func WaitForEventOptionalWithBranch(b *BranchContext, name string, filter EventFilter) (*Event, error) {
+	return waitForEventImpl(b, name, filter, true)
 }
 
 // ParallelWithBranch executes multiple branches in parallel within a branch context (for nested parallel).

@@ -95,7 +95,7 @@ type Worker struct {
 	state             atomic.Int32 // workerState
 	stopOnce          sync.Once
 	jobsMu            sync.Mutex
-	activeJobs        sync.Map // map[string]*activeJob
+	activeJobs        sync.Map // map[activeJobKey]*activeJob
 	jobCount          atomic.Int32
 	stopCh            chan struct{}
 	runMu             sync.Mutex
@@ -141,6 +141,12 @@ func storeStateUnlessDraining(state *atomic.Int32, next workerState) {
 			return
 		}
 	}
+}
+
+// Recovered segments reuse the job ID while an older execution may still run.
+type activeJobKey struct {
+	jobID        string
+	executionSeq int64
 }
 
 type activeJob struct {
@@ -724,6 +730,13 @@ func (w *Worker) processJob(ctx context.Context, job *jobAssignment) {
 		return
 	}
 
+	key := activeJobKey{job.JobID, job.ExecutionSeq}
+	if _, exists := w.activeJobs.Load(key); exists {
+		w.jobsMu.Unlock()
+		cancel()
+		return
+	}
+
 	aj := &activeJob{
 		jobID:     job.JobID,
 		runID:     job.RunID,
@@ -732,7 +745,7 @@ func (w *Worker) processJob(ctx context.Context, job *jobAssignment) {
 		ctx:       jobCtx,
 	}
 
-	w.activeJobs.Store(job.JobID, aj)
+	w.activeJobs.Store(key, aj)
 	w.jobCount.Add(1)
 	w.jobsMu.Unlock()
 
@@ -745,7 +758,7 @@ func (w *Worker) processJob(ctx context.Context, job *jobAssignment) {
 
 	go func() {
 		defer func() {
-			w.activeJobs.Delete(job.JobID)
+			w.activeJobs.CompareAndDelete(key, aj)
 			w.jobCount.Add(-1)
 			cancel()
 		}()

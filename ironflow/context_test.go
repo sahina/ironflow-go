@@ -74,6 +74,10 @@ func TestContextCancellation(t *testing.T) {
 		var requestCount atomic.Int32
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost || r.URL.Path != "/test" {
+				http.NotFound(w, r)
+				return
+			}
 			requestCount.Add(1)
 			// Return 500 to trigger retry
 			w.WriteHeader(http.StatusInternalServerError)

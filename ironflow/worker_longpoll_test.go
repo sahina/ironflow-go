@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,6 +22,10 @@ func pollServer(t *testing.T, header string, onPoll func(n int32)) (*httptest.Se
 	var wait atomic.Value
 	wait.Store("")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.Path, "/api/v1/workers/") || !strings.HasSuffix(r.URL.Path, "/jobs") {
+			http.NotFound(w, r)
+			return
+		}
 		wait.Store(r.URL.RawQuery)
 		if header != "" {
 			w.Header().Set("Ironflow-Poll-Wait", header)

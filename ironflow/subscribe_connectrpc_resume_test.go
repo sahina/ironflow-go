@@ -4,15 +4,12 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
 	"github.com/sahina/ironflow-go/api/ironflow/v1/ironflowv1connect"
@@ -44,8 +41,7 @@ func TestGrpcSubscriptionClient_SubscribeWithZeroResumeCursor(t *testing.T) {
 	path, handler := ironflowv1connect.NewPubSubServiceHandler(capturePubSubServer{request: requests})
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
-	server := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
-	server.Start()
+	server := newH2CTestServer(mux)
 	defer server.Close()
 
 	client := NewGrpcSubscriptionClient(GrpcSubscriptionClientConfig{
@@ -118,8 +114,7 @@ func TestGrpcSubscriptionClient_ReconnectAdvancesResumeCursor(t *testing.T) {
 	path, handler := ironflowv1connect.NewPubSubServiceHandler(service)
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
-	server := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
-	server.Start()
+	server := newH2CTestServer(mux)
 	defer server.Close()
 
 	client := NewGrpcSubscriptionClient(GrpcSubscriptionClientConfig{
@@ -175,8 +170,7 @@ func TestGrpcSubscriptionClient_UnpositionedStreamKeepsEndingOnFailure(t *testin
 	path, handler := ironflowv1connect.NewPubSubServiceHandler(service)
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
-	server := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
-	server.Start()
+	server := newH2CTestServer(mux)
 	defer server.Close()
 
 	client := NewGrpcSubscriptionClient(GrpcSubscriptionClientConfig{
@@ -290,8 +284,7 @@ func TestGrpcSubscriptionClient_ResumeCursorRejections(t *testing.T) {
 			path, handler := ironflowv1connect.NewPubSubServiceHandler(rejectingPubSubServer{})
 			mux := http.NewServeMux()
 			mux.Handle(path, handler)
-			server := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
-			server.Start()
+			server := newH2CTestServer(mux)
 			defer server.Close()
 
 			client := NewGrpcSubscriptionClient(GrpcSubscriptionClientConfig{
@@ -325,8 +318,7 @@ func TestGrpcSubscriptionClient_PreservesReplayUntilCursorRequestAccepted(t *tes
 	path, handler := ironflowv1connect.NewPubSubServiceHandler(service)
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
-	server := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
-	server.Start()
+	server := newH2CTestServer(mux)
 	defer server.Close()
 
 	client := NewGrpcSubscriptionClient(GrpcSubscriptionClientConfig{
@@ -416,8 +408,7 @@ func TestGrpcSubscriptionClient_FullBufferWaitsInsteadOfSkipping(t *testing.T) {
 	path, handler := ironflowv1connect.NewPubSubServiceHandler(service)
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
-	server := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
-	server.Start()
+	server := newH2CTestServer(mux)
 	defer server.Close()
 
 	client := NewGrpcSubscriptionClient(GrpcSubscriptionClientConfig{
@@ -470,8 +461,7 @@ func TestGrpcSubscriptionClient_CanceledContextEndsAWaitingCursorStream(t *testi
 	path, handler := ironflowv1connect.NewPubSubServiceHandler(service)
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
-	server := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
-	server.Start()
+	server := newH2CTestServer(mux)
 	defer server.Close()
 
 	client := NewGrpcSubscriptionClient(GrpcSubscriptionClientConfig{

@@ -122,7 +122,11 @@ func TestWriteRetryOnlyWhenRateLimited(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var hits atomic.Int32
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != tc.method || r.URL.Path != "/x" {
+					http.NotFound(w, r)
+					return
+				}
 				hits.Add(1)
 				w.WriteHeader(tc.status)
 				_, _ = w.Write([]byte(`{"error":"x","retryable":true}`))
@@ -161,7 +165,11 @@ func TestWriteNotResentAfterNetworkFailure(t *testing.T) {
 
 func TestRetryAfterClampedToMaxDelay(t *testing.T) {
 	var hits atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/x" {
+			http.NotFound(w, r)
+			return
+		}
 		hits.Add(1)
 		w.Header().Set("Retry-After", "3600")
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -224,7 +232,11 @@ func TestReadRPCOverPOSTRetries5xx(t *testing.T) {
 		"/ironflow.v1.IronflowService/Trigger": 1,
 	} {
 		var hits atomic.Int32
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost || r.URL.Path != path {
+				http.NotFound(w, r)
+				return
+			}
 			hits.Add(1)
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(`{"error":"busy"}`))

@@ -432,6 +432,7 @@ type RunInfo struct {
 
 // EventFilter defines a filter for waitForEvent.
 type EventFilter struct {
+	onTimeout string
 	// Payload is request data stored as the waiting step input for approvers.
 	Payload any `json:"payload,omitempty"`
 

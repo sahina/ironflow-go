@@ -1262,3 +1262,35 @@ func TestNewProjectionRunner_Defaults(t *testing.T) {
 		t.Errorf("expected baseURL=http://localhost:9123, got %q", runner.baseURL)
 	}
 }
+
+func TestProjectionEntityIdentityReachesHandler(t *testing.T) {
+	for _, transport := range []string{"poll", "stream"} {
+		t.Run(transport, func(t *testing.T) {
+			server := httptest.NewServer(leaseRPCs(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{}`)) }))
+			defer server.Close()
+			var event pollEvent
+			if transport == "poll" {
+				if err := json.Unmarshal([]byte(`{"id":"entity","name":"seat.held","seq":"41","entityId":"seat-1","entityType":"seat","entityVersion":"2","data":{"entityId":"spoof","entityVersion":999}}`), &event); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				event = toPollEvent(&ironflowv1.ProjectionEvent{Id: "entity", Name: "seat.held", Seq: 41, EntityId: "seat-1", EntityType: "seat", EntityVersion: 2})
+			}
+			var seen []ProjectionEvent
+			proj := CreateProjection(ProjectionConfig{Name: "identity", Events: []string{"seat.held"}, Mode: ProjectionModeExternal, Handler: func(_ map[string]any, event ProjectionEvent, _ ProjectionContext) (map[string]any, error) {
+				seen = append(seen, event)
+				return nil, nil
+			}})
+			runner := NewProjectionRunner(proj, server.URL, nil, nil)
+			if _, err := runner.processExternal(proj.Config, pollResponse{Events: []pollEvent{event, {ID: "ordinary", Seq: 42}}}); err != nil {
+				t.Fatal(err)
+			}
+			if len(seen) != 2 || seen[0].EntityID != "seat-1" || seen[0].EntityType != "seat" || seen[0].EntityVersion != 2 || seen[0].Seq != 41 {
+				t.Fatalf("events=%+v", seen)
+			}
+			if seen[1].EntityID != "" || seen[1].EntityVersion != 0 {
+				t.Fatalf("ordinary=%+v", seen[1])
+			}
+		})
+	}
+}

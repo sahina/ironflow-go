@@ -681,6 +681,10 @@ func TestPolicySet_K01_K02_GoSDK(t *testing.T) {
 	status := 200
 	hits := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/v1/policy-set") || (r.Method != http.MethodGet && r.Method != http.MethodPut && r.Method != http.MethodPost) {
+			http.NotFound(w, r)
+			return
+		}
 		hits++
 		gotMethod, gotPath, gotIfMatch = r.Method, r.URL.Path, r.Header.Get("If-Match")
 		gotBody = nil
@@ -734,6 +738,10 @@ func TestPolicySet_K01_K02_GoSDK(t *testing.T) {
 func TestPolicySet_NotPropagatedSurfacesItsCodeAndIsNotResent(t *testing.T) {
 	hits := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/api/v1/policy-set" {
+			http.NotFound(w, r)
+			return
+		}
 		hits++
 		w.Header().Set("Retry-After", "1")
 		w.WriteHeader(http.StatusServiceUnavailable)

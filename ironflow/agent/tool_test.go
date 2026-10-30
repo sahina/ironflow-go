@@ -266,8 +266,7 @@ func TestToolByName_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ToolNotFoundError")
 	}
-	var nf *ToolNotFoundError
-	if !errors.As(err, &nf) {
+	if _, ok := errors.AsType[*ToolNotFoundError](err); !ok {
 		t.Fatalf("err is not ToolNotFoundError: %T %v", err, err)
 	}
 	if !strings.Contains(err.Error(), "missing") {

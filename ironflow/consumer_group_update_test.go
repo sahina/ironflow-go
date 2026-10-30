@@ -62,6 +62,10 @@ func TestUpdateConsumerGroupRejectsEmptyInput(t *testing.T) {
 func TestListConsumerGroupsFollowsPagination(t *testing.T) {
 	requestBodies := make([]map[string]any, 0, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/ironflow.v1.PubSubService/ListConsumerGroups" {
+			http.NotFound(w, r)
+			return
+		}
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)

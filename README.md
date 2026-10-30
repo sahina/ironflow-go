@@ -20,7 +20,7 @@ All packages version in lockstep with the Ironflow engine release.
 go get github.com/sahina/ironflow-go/ironflow@latest
 ```
 
-Requires Go 1.25+.
+Requires Go 1.26+.
 
 ## What lives here
 
@@ -31,7 +31,7 @@ Requires Go 1.25+.
 
 ## Where the engine source lives
 
-The Ironflow engine is **closed source** and lives at `sahina/ironflow` (private). This mirror exists so that:
+The Ironflow engine source lives at `sahina/ironflow` (private). Ironflow is licensed under the Functional Source License v1.1 with an Apache-2.0 future grant. Each release converts to Apache-2.0 on its second anniversary. This mirror exists so that:
 
 - `go get` and `pkg.go.dev` resolve against public source
 - README source links (`/blob/main/...`) resolve to public source
@@ -44,7 +44,7 @@ go build ./...
 go test ./...
 ```
 
-Requires Go 1.25+.
+Requires Go 1.26+.
 
 ## Read-only mirror
 

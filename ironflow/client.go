@@ -843,16 +843,18 @@ func (c *Client) RedactEvent(ctx context.Context, eventID string) error {
 	return c.request(ctx, "POST", "/ironflow.v1.IronflowService/RedactEvent", map[string]string{"eventId": eventID}, nil)
 }
 
-// RedactStep irreversibly replaces a step's output and original output, and
-// the payload of every audit row for that step. stepID is the step's row id,
+// RedactStep irreversibly replaces a step's output, original output and error,
+// its parent run's error, recorded step and run-level retry errors, and audit
+// payloads for that step. Sibling errors stay. stepID is the step's row id,
 // not its name. The run must be terminal. Idempotent.
 func (c *Client) RedactStep(ctx context.Context, stepID string) error {
 	return c.request(ctx, "POST", "/ironflow.v1.IronflowService/RedactStep", map[string]string{"stepId": stepID}, nil)
 }
 
-// RedactRun irreversibly replaces a run's input and output, and the payload of
-// every audit row for that run and its steps. The step columns themselves are
-// left alone — call RedactStep for those. The run must be terminal. Idempotent.
+// RedactRun irreversibly replaces a run's input, output and error, its steps'
+// errors, recorded attempt errors and audit payloads for the run and its steps.
+// Step outputs stay — call RedactStep for those. Errors are replaced whole.
+// The run must be terminal. Idempotent.
 func (c *Client) RedactRun(ctx context.Context, runID string) error {
 	return c.request(ctx, "POST", "/ironflow.v1.IronflowService/RedactRun", map[string]string{"runId": runID}, nil)
 }

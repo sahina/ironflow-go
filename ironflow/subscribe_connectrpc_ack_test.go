@@ -3,13 +3,10 @@ package ironflow
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
 	"github.com/sahina/ironflow-go/api/ironflow/v1/ironflowv1connect"
@@ -63,8 +60,7 @@ func startAckEventServer(t *testing.T, svc ironflowv1connect.PubSubServiceHandle
 	path, handler := ironflowv1connect.NewPubSubServiceHandler(svc)
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
-	server := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
-	server.Start()
+	server := newH2CTestServer(mux)
 	t.Cleanup(server.Close)
 	return server.URL
 }

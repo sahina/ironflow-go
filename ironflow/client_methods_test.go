@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -1172,7 +1174,7 @@ func TestInvokeSync(t *testing.T) {
 	t.Run("sends the function id and decodes one result", func(t *testing.T) {
 		var receivedPath string
 		var receivedBody map[string]any
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := newInvokeSyncServer(t, func(w http.ResponseWriter, r *http.Request) {
 			receivedPath = r.URL.Path
 			body, _ := io.ReadAll(r.Body)
 			if err := json.Unmarshal(body, &receivedBody); err != nil {
@@ -1186,7 +1188,7 @@ func TestInvokeSync(t *testing.T) {
 				"output": {"total": 99},
 				"durationMs": 17
 			}}`))
-		}))
+		})
 		defer server.Close()
 
 		client := newSyncTestClient(server.URL, 0)
@@ -1226,12 +1228,12 @@ func TestInvokeSync(t *testing.T) {
 
 	t.Run("defaults the timeout", func(t *testing.T) {
 		var receivedBody map[string]any
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := newInvokeSyncServer(t, func(w http.ResponseWriter, r *http.Request) {
 			body, _ := io.ReadAll(r.Body)
 			_ = json.Unmarshal(body, &receivedBody)
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"result": {"runId": "r", "functionId": "f", "status": "RUN_STATUS_COMPLETED"}}`))
-		}))
+		})
 		defer server.Close()
 
 		client := newSyncTestClient(server.URL, 0)
@@ -1245,10 +1247,10 @@ func TestInvokeSync(t *testing.T) {
 	})
 
 	t.Run("surfaces an unknown function", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		server := newInvokeSyncServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"code": "not_found", "message": "function \"nope\" not found"}`))
-		}))
+		})
 		defer server.Close()
 
 		client := newSyncTestClient(server.URL, 0)
@@ -1271,7 +1273,7 @@ func TestInvokeSync(t *testing.T) {
 
 	// Q12 holds for InvokeSync too: a failed run is a result to inspect.
 	t.Run("returns a failed run as a result", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		server := newInvokeSyncServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"result": {
 				"runId": "run-bad",
@@ -1279,7 +1281,7 @@ func TestInvokeSync(t *testing.T) {
 				"status": "RUN_STATUS_FAILED",
 				"error": {"message": "boom", "code": "STEP_FAILED"}
 			}}`))
-		}))
+		})
 		defer server.Close()
 
 		client := newSyncTestClient(server.URL, 0)
@@ -1298,12 +1300,12 @@ func TestInvokeSync(t *testing.T) {
 
 	t.Run("sends the idempotency key", func(t *testing.T) {
 		var receivedBody map[string]any
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := newInvokeSyncServer(t, func(w http.ResponseWriter, r *http.Request) {
 			body, _ := io.ReadAll(r.Body)
 			_ = json.Unmarshal(body, &receivedBody)
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"result": {"runId": "r", "functionId": "f", "status": "RUN_STATUS_COMPLETED"}}`))
-		}))
+		})
 		defer server.Close()
 
 		client := newSyncTestClient(server.URL, 0)
@@ -1321,10 +1323,10 @@ func TestInvokeSync(t *testing.T) {
 	// Unlike EmitSync's empty fan-out, InvokeFunctionSyncResponse carries a
 	// single result — an absent one is a broken server.
 	t.Run("errors on a response with no result", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		server := newInvokeSyncServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{}`))
-		}))
+		})
 		defer server.Close()
 
 		client := newSyncTestClient(server.URL, 0)
@@ -1346,7 +1348,7 @@ func TestInvokeSync(t *testing.T) {
 	t.Run("expired timeout_ms returns waitTimedOut without abandoning the run", func(t *testing.T) {
 		var sentTimeoutMs any
 		var ctxAliveOnReply bool
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := newInvokeSyncServer(t, func(w http.ResponseWriter, r *http.Request) {
 			var body map[string]any
 			raw, _ := io.ReadAll(r.Body)
 			_ = json.Unmarshal(raw, &body)
@@ -1364,7 +1366,7 @@ func TestInvokeSync(t *testing.T) {
 				"status": "RUN_STATUS_RUNNING",
 				"waitTimedOut": true
 			}}`))
-		}))
+		})
 		defer server.Close()
 
 		// A transport deadline well under the 200ms wait budget — the exact
@@ -1396,6 +1398,7 @@ func TestInvokeSync(t *testing.T) {
 		var withOpt map[string]any
 		server := newSyncBodyCaptureServer(t, resp, &withOpt)
 		defer server.Close()
+
 		if _, err := newSyncTestClient(server.URL, 0).InvokeSync(
 			context.Background(), "process-order", nil, 30*time.Second,
 			WithSyncMetadata(map[string]any{"traceId": "abc", "attempt": 2}),
@@ -4367,4 +4370,33 @@ func TestWaitResultDecodesProtoJSONStrings(t *testing.T) {
 			t.Fatalf("decode %s = %+v, want %+v", raw, got, want)
 		}
 	}
+}
+
+func newInvokeSyncServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/ironflow.v1.IronflowService/InvokeFunctionSync" {
+			t.Errorf("invalid InvokeSync request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		handler(w, r)
+	}))
+
+	probe, probeErr := http.Get(server.URL + "/")
+	if probeErr != nil {
+		t.Fatal(probeErr)
+	}
+	probe.Body.Close()
+	conn, dialErr := net.DialTimeout("tcp", strings.TrimPrefix(server.URL, "http://"), time.Second)
+	if dialErr != nil {
+		t.Fatal(dialErr)
+	}
+	conn.Close()
+	return server
 }

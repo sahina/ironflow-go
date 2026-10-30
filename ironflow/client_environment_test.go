@@ -8,9 +8,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 )
 
 // recordEnvServer answers every request with `{}` and records each path's
@@ -97,13 +94,12 @@ func TestClientEnvironment_HandBuiltRequests(t *testing.T) {
 // The projection wait stream uses its own h2c client, so it needs an h2c server.
 func TestClientEnvironment_ProjectionWaitStream(t *testing.T) {
 	got := make(chan string, 1)
-	srv := httptest.NewUnstartedServer(h2c.NewHandler(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	srv := newH2CTestServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		select {
 		case got <- r.Header.Get(HeaderEnvironmentID):
 		default:
 		}
-	}), &http2.Server{}))
-	srv.Start()
+	}))
 	t.Cleanup(srv.Close)
 
 	c := NewClient(ClientConfig{ServerURL: srv.URL, Environment: "staging", Logger: NewNoopLogger()})

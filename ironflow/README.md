@@ -47,7 +47,7 @@ Go SDK for [Ironflow](https://docs.ironflow.run) -- an event-driven backend plat
 go get github.com/sahina/ironflow-go/ironflow
 ```
 
-Requires **Go 1.25+**.
+Requires **Go 1.26+**.
 
 The canonical external import is `github.com/sahina/ironflow-go/ironflow`.
 The module at `github.com/sahina/ironflow/sdk/go/ironflow` is for development
@@ -297,6 +297,13 @@ if err := event.Data(&approval); err != nil {
     return nil, err
 }
 ```
+
+For a timeout branch use `WaitForEventOptional(ctx, name, filter)`, returning
+`(*Event, error)`. An elapsed deadline returns `nil, nil`, persisted as a completed
+JSON null and replayed on every later execution. In parallel branches use
+`WaitForEventOptionalWithBranch`. These methods need no type argument. The
+existing value-returning wait methods retain fail-on-timeout behavior, and
+`agent.Approve` keeps its current default.
 
 `event.EmittedBy` is the authenticated emitter that the engine recorded, for example `apikey:<id>` or `user:<id>`. The engine sets it from the credential of the caller, so the event body cannot change it. It is empty when the engine reports none. An operator with `runs:cancel` can inject or patch a step output, so `EmittedBy` proves the emitter only for a step that an event resolved.
 
@@ -704,9 +711,11 @@ deleted, err := client.DeleteRuns(ctx, ironflow.RunDeleteFilter{
 // {"$redacted": true, "sha256": ..., "redactedAt": ...}.
 err = client.RedactEvent(ctx, eventID)
 err = client.RedactStep(ctx, stepID) // step ROW id; run must be terminal
-err = client.RedactRun(ctx, runID)   // input + output; run must be terminal
+err = client.RedactRun(ctx, runID)   // input + output + run/step errors; run must be terminal
 if ironflow.IsRedacted(event.RawData) { /* placeholder, not a payload */ }
 ```
+
+Error envelopes are replaced whole. Run redaction scrubs the run and child step errors while leaving step outputs unchanged. Step redaction scrubs its error and the parent run error; sibling errors stay. Stored error placeholders survive later whole-row saves.
 
 ### Scoped Injection
 
@@ -1162,6 +1171,21 @@ defer sub.Unsubscribe()
 ---
 
 ## Projections
+
+### Entity identity in handler events
+
+Entity stream events expose `entityId`, `entityType`, and `entityVersion` in
+JavaScript; `EntityID`, `EntityType`, and `EntityVersion` in Go; and `entity_id`,
+`entity_type`, and `entity_version` in Python. These are the canonical stream
+identity and per-entity version, carried separately from event data and user
+metadata. They are the same during live delivery and history rebuilds, using
+polling or streaming. Ordinary events leave them undefined in JavaScript,
+`None` in Python, and zero-valued in Go.
+
+`seq` (`Seq` in Go) remains the global projection delivery cursor. It is not
+the entity version. Use the entity fields to identify a seat or other domain
+entity without copying server-owned identity into the event payload.
+
 
 Projections build read models from event streams. Two modes:
 - **Managed**: Pure reducer. Maintains state via `InitialState` + handler.
@@ -1967,7 +1991,7 @@ push request when you want to drive a handler directly instead of through
 | Behavior | Description |
 |----------|-------------|
 | **Sleep** | Resolves immediately (no actual waiting) |
-| **WaitForEvent** | Consumes from pre-registered queue (`SendEvent`). Fails if no event registered. |
+| **WaitForEvent** | Consumes from pre-registered queue (`SendEvent`). Fails if no event registered. `WaitForEventOptional` (including branch scopes) instead returns nil immediately when the queue is empty; `SendEvent(name, nil)` is a real event with null data. |
 | **Invoke** | Uses `MockInvoke` handler. Fails if no mock registered. |
 | **InvokeAsync** | Uses `MockInvoke` handler, returns synthetic run ID. |
 | **Run** | Uses `MockStep` handler. Fails if no mock registered. |

@@ -4,14 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 )
 
 func TestWorkersRegistrationErrors(t *testing.T) {
@@ -24,7 +20,7 @@ func TestWorkersRegistrationErrors(t *testing.T) {
 						Run(context.Context) error
 						Stop()
 					}
-					srv := httptest.NewUnstartedServer(h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					srv := newH2CTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						if !strings.HasSuffix(r.URL.Path, "/RegisterFunction") {
 							worker.Stop()
 							_, _ = w.Write([]byte(`{}`))
@@ -40,8 +36,7 @@ func TestWorkersRegistrationErrors(t *testing.T) {
 						} else {
 							_, _ = w.Write([]byte(`{}`))
 						}
-					}), &http2.Server{}))
-					srv.Start()
+					}))
 					defer srv.Close()
 					fn := CreateFunction(FunctionConfig{ID: "bad"}, func(Context) (any, error) { return nil, nil })
 					cfg := WorkerConfig{ServerURL: srv.URL, Functions: []Function{fn}, Logger: NewNoopLogger(), ReconnectDelay: time.Millisecond}
@@ -71,7 +66,7 @@ func TestWorkersRegistrationErrors(t *testing.T) {
 
 func TestStreamingWorkerReregistrationStopsOnTerminalError(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewUnstartedServer(h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := newH2CTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if !strings.HasSuffix(r.URL.Path, "/RegisterFunction") {
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -87,8 +82,7 @@ func TestStreamingWorkerReregistrationStopsOnTerminalError(t *testing.T) {
 		default:
 			w.WriteHeader(http.StatusUnauthorized)
 		}
-	}), &http2.Server{}))
-	srv.Start()
+	}))
 	defer srv.Close()
 	fn := CreateFunction(FunctionConfig{ID: "fn"}, func(Context) (any, error) { return nil, nil })
 	worker := NewStreamingWorker(WorkerConfig{ServerURL: srv.URL, Functions: []Function{fn}, Logger: NewNoopLogger(), ReconnectDelay: time.Millisecond})

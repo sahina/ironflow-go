@@ -404,8 +404,8 @@ type stubInterceptor struct{}
 
 func (stubInterceptor) RunStep(name string) (any, error) { return "ok", nil }
 func (stubInterceptor) SleepStep(name string)            {}
-func (stubInterceptor) WaitForEventStep(name string, f EventFilter) (Event, error) {
-	return Event{}, nil
+func (stubInterceptor) WaitForEventStep(name string, f EventFilter, optional bool) (*Event, error) {
+	return &Event{}, nil
 }
 func (stubInterceptor) InvokeStep(fnID string, in any) (any, error) { return "ok", nil }
 func (stubInterceptor) InvokeAsyncStep(fnID string, in any) (InvokeAsyncResult, error) {

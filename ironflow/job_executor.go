@@ -85,6 +85,7 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 
 	// Build execution context
 	exec := &executionContext{
+		ctx:            ctx,
 		runID:          job.RunID,
 		functionID:     job.FunctionID,
 		attempt:        job.Attempt,
@@ -113,7 +114,6 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 	}
 	checkpointer := newStepCheckpointer(ctx, job, exec, reporter, e.checkpointInterval)
 	if checkpointer != nil {
-		exec.ctx = ctx
 		defer checkpointer.stop()
 	}
 

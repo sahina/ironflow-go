@@ -26,7 +26,7 @@ type compensationEntry struct {
 
 // executionContext manages step execution state.
 type executionContext struct {
-	ctx          context.Context // polling job cancellation; nil in push/streaming mode
+	ctx          context.Context // worker job cancellation; optional in push mode
 	runID        string
 	functionID   string
 	attempt      int
@@ -888,63 +888,80 @@ func sleepUntilImpl(sc StepContext, name string, until time.Time) error {
 //	    Timeout: 7 * 24 * time.Hour,
 //	})
 func WaitForEvent[T any](ctx Context, name string, filter EventFilter) (Event, error) {
-	exec := ctx.exec
-	if err := exec.cancellationErr(); err != nil {
+	event, err := waitForEventImpl(ctx, name, filter, false)
+	if event == nil {
 		return Event{}, err
 	}
+	return *event, err
+}
 
+// WaitForEventOptional waits durably and returns nil, nil when its deadline
+// expires without an accepted matching event. The null outcome is memoized.
+func WaitForEventOptional(ctx Context, name string, filter EventFilter) (*Event, error) {
+	return waitForEventImpl(ctx, name, filter, true)
+}
+
+func waitForEventImpl(sc StepContext, name string, filter EventFilter, optional bool) (*Event, error) {
+	sc.markScopedUsed()
+	exec := sc.execution()
+	if err := exec.cancellationErr(); err != nil {
+		return nil, err
+	}
 	if exec.testInterceptor != nil {
-		event, err := exec.testInterceptor.WaitForEventStep(name, filter)
-		exec.testInterceptor.RecordStep(name, "waitForEvent", event, err)
+		event, err := exec.testInterceptor.WaitForEventStep(name, filter, optional)
+		var output any
+		if event != nil {
+			output = *event
+		}
+		exec.testInterceptor.RecordStep(name, "waitForEvent", output, err)
 		if err != nil {
-			return Event{}, err
+			return nil, err
 		}
 		return event, nil
 	}
-
-	stepID := exec.generateStepID(name)
-
-	// Check if resuming from this wait with the event data
-	if exec.isResumingFrom(stepID, "wait_for_event") {
-		exec.resumeHandled = true
-
-		// The resume data contains the event that matched
-		if exec.resumeContext.Data != nil {
-			eventBytes, err := json.Marshal(exec.resumeContext.Data)
-			if err != nil {
-				return Event{}, NewStepError(fmt.Sprintf("failed to marshal resume event: %v", err), stepID, name, false, err)
+	stepID := sc.generateStepID(name)
+	decode := func(data any) (*Event, error) {
+		if data == nil && optional {
+			return nil, nil
+		}
+		if data == nil {
+			return nil, NewStepError("wait result is null; use WaitForEventOptional for nullable waits", stepID, name, false, nil)
+		}
+		raw, err := json.Marshal(data)
+		if err != nil {
+			return nil, NewStepError(fmt.Sprintf("failed to marshal wait event: %v", err), stepID, name, false, err)
+		}
+		if string(raw) == "null" {
+			if optional {
+				return nil, nil
 			}
-
-			event, err := decodeWaitEvent(eventBytes)
-			if err != nil {
-				return Event{}, NewStepError(fmt.Sprintf("failed to unmarshal resume event: %v", err), stepID, name, false, err)
-			}
-
-			return event, nil
+			return nil, NewStepError("wait result is null; use WaitForEventOptional for nullable waits", stepID, name, false, nil)
+		}
+		event, err := decodeWaitEvent(raw)
+		if err != nil {
+			return nil, NewStepError(fmt.Sprintf("failed to unmarshal wait event: %v", err), stepID, name, false, err)
+		}
+		return &event, nil
+	}
+	// Completed rows are authoritative when the push resume reread omitted data.
+	if completed, ok := sc.getCompletedStep(stepID); ok && completed.Status == "completed" {
+		if sc.isResumingFrom(stepID, "wait_for_event") {
+			sc.markResumeHandled()
+		}
+		return decode(completed.Output)
+	}
+	if sc.isResumingFrom(stepID, "wait_for_event") {
+		sc.markResumeHandled()
+		if data := sc.getResumeData(); data != nil {
+			return decode(data)
 		}
 	}
-
-	// Check if step is already completed (memoized)
-	if completed, ok := exec.completedSteps[stepID]; ok && completed.Status == "completed" {
-		eventBytes, err := json.Marshal(completed.Output)
-		if err != nil {
-			return Event{}, NewStepError(fmt.Sprintf("failed to marshal memoized event: %v", err), stepID, name, false, err)
-		}
-
-		event, err := decodeWaitEvent(eventBytes)
-		if err != nil {
-			return Event{}, NewStepError(fmt.Sprintf("failed to unmarshal memoized event: %v", err), stepID, name, false, err)
-		}
-
-		return event, nil
-	}
-
-	// Apply default timeout
 	if filter.Timeout == 0 {
 		filter.Timeout = 7 * 24 * time.Hour
 	}
-
-	// Throw yield signal
+	if optional {
+		filter.onTimeout = "return-null"
+	}
 	panic(newWaitEventYield(stepID, &filter))
 }
 

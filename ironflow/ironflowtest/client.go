@@ -206,12 +206,15 @@ func (ti *testInterceptor) SleepStep(_ string) {
 	// No-op: sleep resolves immediately in tests
 }
 
-func (ti *testInterceptor) WaitForEventStep(name string, filter ironflow.EventFilter) (ironflow.Event, error) {
+func (ti *testInterceptor) WaitForEventStep(name string, filter ironflow.EventFilter, optional bool) (*ironflow.Event, error) {
 	ti.mu.Lock()
 	events, ok := ti.eventQueue[filter.Event]
 	if !ok || len(events) == 0 {
 		ti.mu.Unlock()
-		return ironflow.Event{}, fmt.Errorf(
+		if optional {
+			return nil, nil
+		}
+		return nil, fmt.Errorf(
 			"waitForEvent(%q) is waiting for %q but no events were pre-registered, "+
 				"use tc.SendEvent(%q, data) before calling tc.Emit()",
 			name, filter.Event, filter.Event,
@@ -222,7 +225,7 @@ func (ti *testInterceptor) WaitForEventStep(name string, filter ironflow.EventFi
 	ti.mu.Unlock()
 
 	rawData, _ := json.Marshal(data)
-	return ironflow.Event{
+	return &ironflow.Event{
 		ID:        fmt.Sprintf("test-evt-%d", time.Now().UnixNano()),
 		Name:      filter.Event,
 		Version:   1,

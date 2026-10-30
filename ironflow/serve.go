@@ -243,11 +243,9 @@ func (h *serveHandler) executeHandler(fn Function, req *PushRequest) *PushRespon
 		code := "ERROR"
 		retryable := IsRetryable(execErr)
 
-		var ironflowErr *IronflowError
-		var invokeErr *InvokeError
-		if errors.As(execErr, &ironflowErr) {
+		if ironflowErr, ok := errors.AsType[*IronflowError](execErr); ok {
 			code = ironflowErr.Code
-		} else if errors.As(execErr, &invokeErr) {
+		} else if _, ok := errors.AsType[*InvokeError](execErr); ok {
 			code = codeInvokeFailed
 		}
 

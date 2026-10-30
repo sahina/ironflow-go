@@ -113,6 +113,10 @@ func TestExposeMcp_RegisterToolWireShape(t *testing.T) {
 
 	var hits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != registerToolPath {
+			http.NotFound(w, r)
+			return
+		}
 		hits.Add(1)
 		if r.URL.Path != registerToolPath {
 			t.Errorf("path = %s, want %s", r.URL.Path, registerToolPath)

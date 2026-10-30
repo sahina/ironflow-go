@@ -105,8 +105,7 @@ func TestLLM_ClassifiesMaxTokens(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected max-tokens error")
 			}
-			var mt *LLMMaxTokensError
-			if !errors.As(err, &mt) {
+			if _, ok := errors.AsType[*LLMMaxTokensError](err); !ok {
 				t.Fatalf("not LLMMaxTokensError: %T %v", err, err)
 			}
 		})

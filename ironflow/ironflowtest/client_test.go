@@ -456,3 +456,67 @@ func TestEmit_ValidateAcceptsInput(t *testing.T) {
 		t.Fatalf("status = %s, want completed", run.Status)
 	}
 }
+
+func TestEmit_OptionalWaitTimeoutAndNullPayload(t *testing.T) {
+	for _, queued := range []bool{false, true} {
+		t.Run(fmt.Sprint(queued), func(t *testing.T) {
+			fn := ironflow.CreateFunction(ironflow.FunctionConfig{ID: "optional", Triggers: []ironflow.Trigger{{Event: "start"}}}, func(ctx ironflow.Context) (any, error) {
+				event, err := ironflow.WaitForEventOptional(ctx, "reply", ironflow.EventFilter{Event: "reply"})
+				if err != nil {
+					return nil, err
+				}
+				if queued {
+					if event == nil || event.Name != "reply" || string(event.RawData) != "null" {
+						return nil, fmt.Errorf("expected real null-payload event, got %#v", event)
+					}
+				} else if event != nil {
+					return nil, fmt.Errorf("expected nil timeout, got %#v", event)
+				}
+				return "ok", nil
+			})
+			tc := ironflowtest.NewClient(t, ironflowtest.Config{Functions: []ironflow.Function{fn}})
+			if queued {
+				tc.SendEvent("reply", nil)
+			}
+			run := tc.Emit(t, "start", nil)
+			if run.Status != "completed" {
+				t.Fatalf("optional wait failed: %v", run.Error)
+			}
+
+			if len(run.Steps) != 1 {
+				t.Fatalf("expected recorded wait, got %#v", run.Steps)
+			}
+			if !queued && run.Steps[0].Output != nil {
+				t.Fatalf("timeout output must be an untyped nil, got %#v", run.Steps[0].Output)
+			}
+			if queued {
+				if output, ok := run.Steps[0].Output.(ironflow.Event); !ok || string(output.RawData) != "null" {
+					t.Fatalf("expected recorded event, got %#v", run.Steps[0].Output)
+				}
+			}
+		})
+	}
+}
+
+func TestEmit_OptionalWaitInBranch(t *testing.T) {
+	fn := ironflow.CreateFunction(ironflow.FunctionConfig{ID: "optional-branch", Triggers: []ironflow.Trigger{{Event: "start"}}}, func(ctx ironflow.Context) (any, error) {
+		results, err := ironflow.Parallel[*ironflow.Event](ctx, "branches", []func(*ironflow.BranchContext) (*ironflow.Event, error){func(branch *ironflow.BranchContext) (*ironflow.Event, error) {
+			return ironflow.WaitForEventOptionalWithBranch(branch, "reply", ironflow.EventFilter{Event: "reply"})
+		}})
+		if err != nil {
+			return nil, err
+		}
+		if len(results) != 1 || results[0] != nil {
+			return nil, fmt.Errorf("expected nil branch result, got %#v", results)
+		}
+		return "ok", nil
+	})
+	tc := ironflowtest.NewClient(t, ironflowtest.Config{Functions: []ironflow.Function{fn}})
+	run := tc.Emit(t, "start", nil)
+	if run.Status != "completed" {
+		t.Fatalf("optional branch failed: %v", run.Error)
+	}
+	if len(run.Steps) != 1 || run.Steps[0].Output != nil {
+		t.Fatalf("expected recorded nil wait, got %#v", run.Steps)
+	}
+}

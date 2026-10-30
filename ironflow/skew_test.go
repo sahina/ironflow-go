@@ -16,8 +16,6 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/gorilla/websocket"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 )
 
 type headerRecorder struct {
@@ -106,7 +104,7 @@ func TestSDKHeaderOnH2CAndWebSocket(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(`{}`))
 	})
-	srv := httptest.NewServer(h2c.NewHandler(h, &http2.Server{}))
+	srv := newH2CTestServer(h)
 	defer srv.Close()
 
 	resp, err := newH2CClient(srv.URL).Get(srv.URL + "/h2c")
@@ -171,7 +169,7 @@ func TestJoinGRPCOnOldServerNamesMinVersion(t *testing.T) {
 				w.WriteHeader(http.StatusNotFound)
 				_, _ = w.Write([]byte(body))
 			})
-			srv := httptest.NewServer(h2c.NewHandler(h, &http2.Server{}))
+			srv := newH2CTestServer(h)
 			defer srv.Close()
 			c := NewClient(ClientConfig{ServerURL: srv.URL, Retry: &ClientRetryConfig{}})
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

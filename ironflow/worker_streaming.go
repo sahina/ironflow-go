@@ -37,7 +37,7 @@ type StreamingWorker struct {
 	executor   *jobExecutor
 
 	state             atomic.Int32 // workerState
-	activeJobs        sync.Map     // map[string]*activeJob
+	activeJobs        sync.Map     // map[activeJobKey]*activeJob
 	jobCount          atomic.Int32
 	stopCh            chan struct{}
 	stopOnce          sync.Once
@@ -523,6 +523,11 @@ func (w *StreamingWorker) recvLoop(ctx context.Context, stream *connect.BidiStre
 
 // handleJobAssignment processes an incoming job assignment.
 func (w *StreamingWorker) handleJobAssignment(ctx context.Context, protoJob *ironflowv1.JobAssignment) {
+	key := activeJobKey{protoJob.GetJobId(), protoJob.GetExecutionSeq()}
+	// A duplicate must not nack the execution that is already running.
+	if _, exists := w.activeJobs.Load(key); exists {
+		return
+	}
 	// A job the worker cannot run gets a nack (#2456). A nack uses no run
 	// attempt, and the engine re-queues the job at once. An engine older than
 	// the nack drops the message; it then recovers the job after the lease
@@ -583,11 +588,15 @@ func (w *StreamingWorker) handleJobAssignment(ctx context.Context, protoJob *iro
 		cancel:    cancel,
 	}
 
-	w.activeJobs.Store(job.JobID, aj)
+	if _, loaded := w.activeJobs.LoadOrStore(key, aj); loaded {
+		w.jobCount.Add(-1)
+		cancel()
+		return
+	}
 
 	go func() {
 		defer func() {
-			w.activeJobs.Delete(job.JobID)
+			w.activeJobs.CompareAndDelete(key, aj)
 			w.jobCount.Add(-1)
 			cancel()
 		}()
@@ -620,11 +629,12 @@ func (w *StreamingWorker) handleCancelJob(cancel *ironflowv1.CancelJob) {
 	jobID := cancel.GetJobId()
 	w.logger.Info("Cancel job requested", "jobId", jobID, "reason", cancel.GetReason())
 
-	if val, ok := w.activeJobs.Load(jobID); ok {
-		if aj, ok := val.(*activeJob); ok {
+	w.activeJobs.Range(func(_, value any) bool {
+		if aj, ok := value.(*activeJob); ok && aj.jobID == jobID {
 			aj.cancel()
 		}
-	}
+		return true
+	})
 }
 
 // handleShutdown handles a shutdown message from the engine.
@@ -868,7 +878,7 @@ func (r *streamJobReporter) ReportYielded(ctx context.Context, jobID string, yie
 			timeout = timestamppb.New(time.Now().Add(yield.EventFilter.Timeout))
 		}
 		var payloadJSON []byte
-		var eventName, matchExpr, matchValue string
+		var eventName, matchExpr, matchValue, onTimeout string
 		if yield.EventFilter != nil {
 			if yield.EventFilter.Payload != nil {
 				var err error
@@ -880,6 +890,7 @@ func (r *streamJobReporter) ReportYielded(ctx context.Context, jobID string, yie
 			eventName = yield.EventFilter.Event
 			matchExpr = yield.EventFilter.Match
 			matchValue = yield.EventFilter.MatchValue
+			onTimeout = yield.EventFilter.onTimeout
 		}
 		return r.send(ctx, &ironflowv1.WorkerMessage{
 			Payload: &ironflowv1.WorkerMessage_StepYielded{
@@ -889,6 +900,7 @@ func (r *streamJobReporter) ReportYielded(ctx context.Context, jobID string, yie
 					YieldInfo: &ironflowv1.StepYielded_WaitEvent{
 						WaitEvent: &ironflowv1.WaitEventYield{
 							EventName:       eventName,
+							OnTimeout:       onTimeout,
 							PayloadJson:     payloadJSON,
 							MatchExpression: matchExpr,
 							MatchValue:      matchValue,
@@ -1230,9 +1242,12 @@ func newH2CClient(serverURL string) *http.Client {
 	// HTTP/2 cleartext transport
 	return withSDKHeader(&http.Client{
 		Timeout: 0,
-		Transport: &http2.Transport{
-			AllowHTTP: true,
-			DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+		// shortcut: x/net deprecates http2.Transport for http.Transport.Protocols; switching
+		// changes connection teardown (a stdlib h2c server keeps the conn "active"), so it
+		// needs its own change and test pass.
+		Transport: &http2.Transport{ //nolint:staticcheck // see above
+			AllowHTTP: true, //nolint:staticcheck // see above
+			DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) { //nolint:staticcheck // see above
 				var d net.Dialer
 				return d.DialContext(ctx, network, addr)
 			},

@@ -355,7 +355,11 @@ func TestExposeMcp_ReRegisterRotatesSecret(t *testing.T) {
 
 	// Stub server returns S1 first, S2 on the second RegisterTool call.
 	var callCount atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != registerToolPath {
+			http.NotFound(w, r)
+			return
+		}
 		secret := dispatchSecretHex
 		if callCount.Add(1) == 2 {
 			secret = altSecretHex

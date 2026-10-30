@@ -188,7 +188,11 @@ func TestConflict_DiscriminatesOnConnectCode(t *testing.T) {
 // The default config is the one shipped callers get.
 func TestContended_IsNotReissued(t *testing.T) {
 	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/ironflow.v1.IronflowService/ResumeRun" {
+			http.NotFound(w, r)
+			return
+		}
 		requests.Add(1)
 		w.WriteHeader(http.StatusConflict)
 		_, _ = w.Write([]byte(`{"code":"aborted","message":"version conflict"}`))

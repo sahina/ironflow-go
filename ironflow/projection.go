@@ -33,6 +33,12 @@ const (
 
 // ProjectionEvent represents an event delivered to a projection handler.
 type ProjectionEvent struct {
+	// EntityID, EntityType and EntityVersion identify the canonical entity stream.
+	// Ordinary events have zero values; Seq remains the global delivery cursor.
+	EntityID      string
+	EntityType    string
+	EntityVersion int64
+
 	// ID is the unique event ID.
 	ID string
 

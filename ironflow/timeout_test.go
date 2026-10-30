@@ -179,8 +179,7 @@ func TestWithTimeout(t *testing.T) {
 			t.Fatal("expected error")
 		}
 
-		var timeoutErr *StepTimeoutError
-		if !errors.As(err, &timeoutErr) {
+		if _, ok := errors.AsType[*StepTimeoutError](err); !ok {
 			t.Fatalf("expected StepTimeoutError, got %T: %v", err, err)
 		}
 	})

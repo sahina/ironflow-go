@@ -409,7 +409,7 @@ func (c *GrpcSubscriptionClient) streamSubscription(ctx context.Context, sub *Gr
 			attemptReq.Options.Replay = 0
 		}
 		if cursorEnabled {
-			attemptReq.Options.StartAfterSequence = proto.Uint64(cursor)
+			attemptReq.Options.StartAfterSequence = new(cursor)
 		}
 
 		// sdkcoverage: POST /ironflow.v1.PubSubService/Subscribe

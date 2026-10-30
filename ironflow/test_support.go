@@ -13,8 +13,8 @@ type TestInterceptor interface {
 	RunStep(name string) (any, error)
 	// SleepStep intercepts ironflow.Sleep calls. Returns immediately.
 	SleepStep(name string)
-	// WaitForEventStep intercepts ironflow.WaitForEvent calls. Returns the event.
-	WaitForEventStep(name string, filter EventFilter) (Event, error)
+	// WaitForEventStep intercepts waits. Optional waits may return nil for timeout.
+	WaitForEventStep(name string, filter EventFilter, optional bool) (*Event, error)
 	// InvokeStep intercepts ironflow.Invoke calls. Returns (output, error).
 	InvokeStep(functionID string, input any) (any, error)
 	// InvokeAsyncStep intercepts ironflow.InvokeAsync calls. Returns (result, error).

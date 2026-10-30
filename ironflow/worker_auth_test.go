@@ -9,9 +9,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 )
 
 // #1673: an unauthenticated worker used to log a bare 401 and reconnect every
@@ -20,6 +17,10 @@ import (
 func TestWorkerRun_StopsOn401(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/ironflow.v1.IronflowService/RegisterFunction" {
+			http.NotFound(w, r)
+			return
+		}
 		calls.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
@@ -121,8 +122,7 @@ func TestStreamingWorkerRun_StopsOn401(t *testing.T) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 	})
-	srv := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
-	srv.Start()
+	srv := newH2CTestServer(mux)
 	defer srv.Close()
 
 	fn := CreateFunction(FunctionConfig{ID: "fn"}, func(ctx Context) (any, error) { return nil, nil })

@@ -530,7 +530,7 @@ func streamError(err error) error {
 // toPollEvent converts a stream frame to the poll event shape, so both
 // transports share one batch path.
 func toPollEvent(msg *ironflowv1.ProjectionEvent) pollEvent {
-	evt := pollEvent{ID: msg.Id, Name: msg.Name, Seq: ProtoInt64(msg.Seq), Source: msg.Source}
+	evt := pollEvent{EntityID: msg.EntityId, EntityType: msg.EntityType, EntityVersion: ProtoInt64(msg.EntityVersion), ID: msg.Id, Name: msg.Name, Seq: ProtoInt64(msg.Seq), Source: msg.Source}
 	if msg.Data != nil {
 		evt.Data = msg.Data.AsMap()
 	}
@@ -646,6 +646,10 @@ type pollResponse struct {
 
 // pollEvent is the JSON shape of a single event from PollProjectionEvents.
 type pollEvent struct {
+	EntityID      string     `json:"entityId"`
+	EntityType    string     `json:"entityType"`
+	EntityVersion ProtoInt64 `json:"entityVersion"`
+
 	ID        string         `json:"id"`
 	Name      string         `json:"name"`
 	Data      map[string]any `json:"data"`
@@ -685,6 +689,7 @@ func toProjectionEvent(evt pollEvent) ProjectionEvent {
 		data, value = m, nil
 	}
 	return ProjectionEvent{
+		EntityID: evt.EntityID, EntityType: evt.EntityType, EntityVersion: int64(evt.EntityVersion),
 		ID:        evt.ID,
 		Name:      evt.Name,
 		Data:      data,

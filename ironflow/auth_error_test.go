@@ -8,9 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 )
 
 // #2472: a 403 from an environment/key-scope mismatch used to be answered with
@@ -106,8 +103,7 @@ func TestStreamingWorker_403NamesEnvironment(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{}`))
 	})
-	srv := httptest.NewUnstartedServer(h2c.NewHandler(mux, &http2.Server{}))
-	srv.Start()
+	srv := newH2CTestServer(mux)
 	defer srv.Close()
 
 	logs := envHintLogger{Logger: NewNoopLogger(), errors: make(chan string, 8)}

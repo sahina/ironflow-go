@@ -332,6 +332,15 @@ func newSleepYield(stepID, until string) *yieldSignal {
 	}
 }
 
+// MarshalJSON includes the policy chosen by the pointer-returning wait API.
+func (f EventFilter) MarshalJSON() ([]byte, error) {
+	type plain EventFilter
+	return json.Marshal(struct {
+		plain
+		OnTimeout string `json:"on_timeout,omitempty"`
+	}{plain: plain(f), OnTimeout: f.onTimeout})
+}
+
 func newWaitEventYield(stepID string, filter *EventFilter) *yieldSignal {
 	// Convert the Timeout duration to a string for JSON serialization
 	if filter.Timeout > 0 && filter.TimeoutStr == "" {
@@ -363,13 +372,11 @@ const codeInvokeFailed = "INVOKE_FAILED"
 
 // IsRetryable checks if an error is retryable.
 func IsRetryable(err error) bool {
-	var ironflowErr *IronflowError
-	if errors.As(err, &ironflowErr) {
+	if ironflowErr, ok := errors.AsType[*IronflowError](err); ok {
 		return ironflowErr.Retryable
 	}
 	// A retry replays the memoized child failure, so it can never succeed (#3185).
-	var invokeErr *InvokeError
-	if errors.As(err, &invokeErr) {
+	if _, ok := errors.AsType[*InvokeError](err); ok {
 		return false
 	}
 	// Default to retryable for unknown errors
@@ -382,11 +389,7 @@ func newInvokeYield(info *YieldInfo) *yieldSignal {
 
 // IsYieldSignal checks if an error is a yield signal.
 func isYieldSignal(err error) (*yieldSignal, bool) {
-	var signal *yieldSignal
-	if errors.As(err, &signal) {
-		return signal, true
-	}
-	return nil, false
+	return errors.AsType[*yieldSignal](err)
 }
 
 // AuthHelp is appended to 401/403 errors so an unauthenticated SDK names the env

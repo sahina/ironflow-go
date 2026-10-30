@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -127,6 +128,10 @@ func TestRequestTimeout(t *testing.T) {
 		var requestCount atomic.Int32
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost || r.URL.Path != "/test" {
+				http.NotFound(w, r)
+				return
+			}
 			count := requestCount.Add(1)
 			if count < 3 {
 				time.Sleep(500 * time.Millisecond) // Timeout for first 2 requests
@@ -208,6 +213,10 @@ func TestServerErrors(t *testing.T) {
 		var requestCount atomic.Int32
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet || r.URL.Path != "/test" {
+				http.NotFound(w, r)
+				return
+			}
 			count := requestCount.Add(1)
 			if count < 3 {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -246,12 +255,21 @@ func TestServerErrors(t *testing.T) {
 	})
 
 	t.Run("503 with Retry-After header is respected", func(t *testing.T) {
-		var requestCount atomic.Int32
+		var mu sync.Mutex
 		var requestTimes []time.Time
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			count := requestCount.Add(1)
+			// A tool on the dev machine probes loopback ports with a bare
+			// "GET /" (user agent "node") every few seconds; only the
+			// client's own path may count as an attempt.
+			if r.URL.Path != "/test" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			mu.Lock()
 			requestTimes = append(requestTimes, time.Now())
+			count := len(requestTimes)
+			mu.Unlock()
 
 			if count == 1 {
 				w.Header().Set("Retry-After", "1") // 1 second
@@ -285,11 +303,13 @@ func TestServerErrors(t *testing.T) {
 		}
 
 		// Verify there was a delay close to 1 second (Retry-After value)
-		if len(requestTimes) >= 2 {
-			delay := requestTimes[1].Sub(requestTimes[0])
-			if delay < 900*time.Millisecond {
-				t.Errorf("Expected ~1s delay from Retry-After, got %v", delay)
-			}
+		mu.Lock()
+		defer mu.Unlock()
+		if len(requestTimes) < 2 {
+			t.Fatalf("Expected a retry after the 503, got %d request(s)", len(requestTimes))
+		}
+		if delay := requestTimes[1].Sub(requestTimes[0]); delay < 900*time.Millisecond {
+			t.Errorf("Expected ~1s delay from Retry-After, got %v", delay)
 		}
 	})
 
@@ -297,6 +317,10 @@ func TestServerErrors(t *testing.T) {
 		var requestCount atomic.Int32
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost || r.URL.Path != "/test" {
+				http.NotFound(w, r)
+				return
+			}
 			requestCount.Add(1)
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte(`{"code":"BAD_REQUEST","message":"Invalid input"}`))
@@ -381,6 +405,10 @@ func TestDisabledRetry(t *testing.T) {
 		var requestCount atomic.Int32
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost || r.URL.Path != "/ironflow.v1.IronflowService/Health" {
+				http.NotFound(w, r)
+				return
+			}
 			requestCount.Add(1)
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(`{"code":"ERROR","message":"error"}`))

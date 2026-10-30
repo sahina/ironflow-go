@@ -45,12 +45,13 @@ func (f *fakeInterceptor) RunStep(name string) (any, error) {
 
 func (f *fakeInterceptor) SleepStep(_ string) {}
 
-func (f *fakeInterceptor) WaitForEventStep(name string, filter ironflow.EventFilter) (ironflow.Event, error) {
+func (f *fakeInterceptor) WaitForEventStep(name string, filter ironflow.EventFilter, optional bool) (*ironflow.Event, error) {
 	f.waitCalls = append(f.waitCalls, name)
 	if mock, ok := f.waitMocks[name]; ok {
-		return mock(filter)
+		event, err := mock(filter)
+		return &event, err
 	}
-	return ironflow.Event{}, nil
+	return &ironflow.Event{}, nil
 }
 
 func (f *fakeInterceptor) InvokeStep(functionID string, input any) (any, error) {
