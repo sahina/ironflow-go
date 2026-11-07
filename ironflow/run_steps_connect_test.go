@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,8 +27,11 @@ func (runStepsService) GetRunSteps(_ context.Context, req *connect.Request[ironf
 	if req.Msg.RunId == "missing" {
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("missing"))
 	}
+	if req.Msg.RunId == "no-updated-at" {
+		return connect.NewResponse(&ironflowv1.GetRunStepsResponse{Steps: []*ironflowv1.Step{{Id: "row", CreatedAt: timestamppb.New(time.Unix(123, 0))}}}), nil
+	}
 	duration := int64(2147483648)
-	return connect.NewResponse(&ironflowv1.GetRunStepsResponse{Steps: []*ironflowv1.Step{{Id: "row", RunId: req.Msg.RunId, StepId: "charge", StepType: ironflowv1.StepType_STEP_TYPE_COMPENSATE, Status: ironflowv1.StepStatus_STEP_STATUS_COMPLETED, DurationMsFull: &duration, OutputValue: structpb.NewBoolValue(false), CreatedAt: timestamppb.New(time.Unix(123, 0)), WaitEventName: "wake", CompensationFor: "payment"}}}), nil
+	return connect.NewResponse(&ironflowv1.GetRunStepsResponse{Steps: []*ironflowv1.Step{{Id: "row", RunId: req.Msg.RunId, StepId: "charge", StepType: ironflowv1.StepType_STEP_TYPE_COMPENSATE, Status: ironflowv1.StepStatus_STEP_STATUS_COMPLETED, DurationMsFull: &duration, OutputValue: structpb.NewBoolValue(false), CreatedAt: timestamppb.New(time.Unix(123, 0)), UpdatedAt: timestamppb.New(time.Unix(123, 0)), WaitEventName: "wake", CompensationFor: "payment"}}}), nil
 }
 func TestRunStepsConnect(t *testing.T) {
 	_, handler := ironflowv1connect.NewIronflowServiceHandler(runStepsService{})
@@ -40,6 +44,10 @@ func TestRunStepsConnect(t *testing.T) {
 	}
 	if result.Count != 1 || result.Steps[0].StepType != "compensate" || result.Steps[0].Output != false || result.Steps[0].DurationMs == nil || *result.Steps[0].DurationMs != 2147483648 || result.Steps[0].WaitEventName != "wake" || result.Steps[0].CompensationFor != "payment" || result.Steps[0].CreatedAt.Unix() != 123 {
 		t.Fatalf("lost step fields: %+v", result)
+	}
+	// An absent time must not read as the epoch, which IsZero and this check would both miss.
+	if _, err := client.GetRunSteps(context.Background(), "no-updated-at"); err == nil || !strings.Contains(err.Error(), "RunStepsResult.Steps[0].UpdatedAt") {
+		t.Fatalf("absent UpdatedAt = %v, want a missing timestamp error", err)
 	}
 	_, err = client.GetRunSteps(context.Background(), "missing")
 	var typed *IronflowError

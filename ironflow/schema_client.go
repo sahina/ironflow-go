@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -85,12 +84,9 @@ func (sc *SchemaClient) get(ctx context.Context, name string, version int) (*Eve
 }
 
 func schemaFromProto(name string, version int32, document string, createdAt *timestamppb.Timestamp) *EventSchema {
-	result := &EventSchema{Name: name, Version: int(version)}
+	result := &EventSchema{Name: name, Version: int(version), CreatedAt: optionalTimeFromProto(createdAt)}
 	// Legacy rows may contain documents that do not parse. Match EventSchema.UnmarshalJSON.
 	_ = json.Unmarshal([]byte(document), &result.Schema)
-	if createdAt != nil {
-		result.CreatedAt = createdAt.AsTime().Format(time.RFC3339Nano)
-	}
 	return result
 }
 

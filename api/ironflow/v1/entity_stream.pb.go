@@ -205,7 +205,7 @@ type ReadStreamRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	EntityId      string                 `protobuf:"bytes,1,opt,name=entity_id,json=entityId,proto3" json:"entity_id,omitempty"`
 	FromVersion   int64                  `protobuf:"varint,2,opt,name=from_version,json=fromVersion,proto3" json:"from_version,omitempty"`
-	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	Limit         int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`        // 0 or unset returns every event
 	Direction     string                 `protobuf:"bytes,4,opt,name=direction,proto3" json:"direction,omitempty"` // "forward" (default) or "backward"
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

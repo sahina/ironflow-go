@@ -1,5 +1,7 @@
 package ironflow
 
+import "time"
+
 // ProjectionMode represents the execution mode of a projection.
 type ProjectionMode string
 
@@ -55,8 +57,9 @@ type ProjectionEvent struct {
 	// Seq is the global sequence number of the event.
 	Seq int64
 
-	// Timestamp is the ISO8601 timestamp of when the event was produced.
-	Timestamp string
+	// Timestamp is when the event was produced. It is the zero time if the
+	// server sent none or an unreadable one: metadata never costs a payload.
+	Timestamp time.Time
 
 	// Source is the origin of the event (e.g., "api", "webhook").
 	Source string
@@ -72,7 +75,7 @@ type ProjectionContext struct {
 		ID        string
 		Name      string
 		Seq       int64
-		Timestamp string
+		Timestamp time.Time
 	}
 
 	// Projection contains metadata about the projection itself.

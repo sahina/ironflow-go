@@ -27,6 +27,8 @@ func runWireClient(t *testing.T, handler http.HandlerFunc) (*Client, func()) {
 func TestRunResponseRejectsLegacySnakeCase(t *testing.T) {
 	body := `{
 		"id": "run-1",
+		"createdAt": "2026-01-01T00:00:00Z",
+		"updatedAt": "2026-01-01T00:00:00Z",
 		"function_id": "fn-legacy",
 		"event_id": "evt-legacy",
 		"status": "RUN_STATUS_COMPLETED",
@@ -64,7 +66,7 @@ func TestRunResponseRejectsLegacySnakeCase(t *testing.T) {
 // Decoding must succeed and leave the Go zero values in place.
 func TestGetRunOmittedZeroFields(t *testing.T) {
 	client, closeFn := runWireClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"id":"run-1","functionId":"fn-1","status":"RUN_STATUS_RUNNING","createdAt":"2025-01-01T00:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"id":"run-1","functionId":"fn-1","status":"RUN_STATUS_RUNNING","createdAt":"2025-01-01T00:00:00Z","updatedAt":"2025-01-01T00:00:00Z"}`))
 	})
 	defer closeFn()
 
@@ -113,8 +115,8 @@ func TestRunStatusStrictPolicy(t *testing.T) {
 func TestListRunsFailsOnBadStatusAndNamesTheRun(t *testing.T) {
 	client, closeFn := runWireClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"runs":[
-			{"id":"run-ok","functionId":"fn-1","status":"RUN_STATUS_COMPLETED"},
-			{"id":"run-bad","functionId":"fn-2","status":"nonsense"}
+			{"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","id":"run-ok","functionId":"fn-1","status":"RUN_STATUS_COMPLETED"},
+			{"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","id":"run-bad","functionId":"fn-2","status":"nonsense"}
 		],"totalCount":2}`))
 	})
 	defer closeFn()
@@ -134,8 +136,8 @@ func TestListRunsFailsOnBadStatusAndNamesTheRun(t *testing.T) {
 func TestListRunsNamesTheIndexWhenTheRunIDIsEmpty(t *testing.T) {
 	client, closeFn := runWireClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"runs":[
-			{"id":"run-ok","functionId":"fn-1","status":"RUN_STATUS_COMPLETED"},
-			{"functionId":"fn-2","status":"nonsense"}
+			{"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","id":"run-ok","functionId":"fn-1","status":"RUN_STATUS_COMPLETED"},
+			{"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","functionId":"fn-2","status":"nonsense"}
 		],"totalCount":2}`))
 	})
 	defer closeFn()
@@ -208,6 +210,8 @@ func TestResumeRunDecodesConnectShape(t *testing.T) {
 		_ = json.Unmarshal(body, &gotBody)
 		_, _ = w.Write([]byte(`{
 			"id": "run-resume",
+			"createdAt": "2026-01-01T00:00:00Z",
+			"updatedAt": "2026-01-01T00:00:00Z",
 			"functionId": "fn-resume",
 			"eventId": "evt-resume",
 			"status": "RUN_STATUS_RUNNING",
@@ -257,7 +261,7 @@ func TestResumeRunOmitsFromStep(t *testing.T) {
 	client, closeFn := runWireClient(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &gotBody)
-		_, _ = w.Write([]byte(`{"id":"run-1","status":"RUN_STATUS_RUNNING"}`))
+		_, _ = w.Write([]byte(`{"id":"run-1","status":"RUN_STATUS_RUNNING","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	})
 	defer closeFn()
 
@@ -273,7 +277,7 @@ func TestResumeRunOmitsFromStep(t *testing.T) {
 // terminal statuses a cancel can produce.
 func TestCancelRunDecodesCanonicalStatus(t *testing.T) {
 	client, closeFn := runWireClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"id":"run-1","functionId":"fn-1","status":"RUN_STATUS_CANCELLED","endedAt":"2025-01-01T00:05:00Z"}`))
+		_, _ = w.Write([]byte(`{"id":"run-1","functionId":"fn-1","status":"RUN_STATUS_CANCELLED","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","endedAt":"2025-01-01T00:05:00Z"}`))
 	})
 	defer closeFn()
 
@@ -330,7 +334,7 @@ func TestCancelAndResumeRunPropagateStatusErrors(t *testing.T) {
 // fractional digits.
 func TestRunTimestampsParseFractionalSeconds(t *testing.T) {
 	client, closeFn := runWireClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"id":"run-1","status":"RUN_STATUS_COMPLETED","createdAt":"2025-01-01T00:00:00.123456789Z"}`))
+		_, _ = w.Write([]byte(`{"id":"run-1","status":"RUN_STATUS_COMPLETED","createdAt":"2025-01-01T00:00:00.123456789Z","updatedAt":"2025-01-01T00:00:00Z"}`))
 	})
 	defer closeFn()
 

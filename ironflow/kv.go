@@ -55,11 +55,11 @@ type BucketInfo struct {
 
 // KVEntry represents a key-value entry.
 type KVEntry struct {
-	Key       string `json:"key"`
-	Value     []byte `json:"value"`
-	Revision  uint64 `json:"revision"`
-	CreatedAt string `json:"created_at"`
-	Operation string `json:"operation"`
+	Key       string    `json:"key"`
+	Value     []byte    `json:"value"`
+	Revision  uint64    `json:"revision"`
+	CreatedAt time.Time `json:"created_at"`
+	Operation string    `json:"operation"`
 }
 
 // KVBucket provides operations on a specific KV bucket.
@@ -476,6 +476,7 @@ func (c *Client) restRequestWithHeaders(ctx context.Context, method, path string
 		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
 			return WrapError(err, "failed to decode response", "DECODE_ERROR", false)
 		}
+		return requireTimestamps(result)
 	}
 
 	return nil

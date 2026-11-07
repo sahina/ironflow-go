@@ -59,7 +59,7 @@ func TestLiveReadinessWebhooks(t *testing.T) {
 		}
 		if updated.Name != name+"-renamed" || updated.EventPrefix != "gosdk.crud" || updated.VerifyHeader != "x-sig" ||
 			updated.VerifyAlgorithm != "hmac-sha256" || !updated.VerifySecretSet ||
-			!reflect.DeepEqual(updated.Metadata, map[string]any{"team": "billing"}) || updated.UpdatedAt == got.UpdatedAt {
+			!reflect.DeepEqual(updated.Metadata, map[string]any{"team": "billing"}) || updated.UpdatedAt.Equal(got.UpdatedAt) || got.CreatedAt.IsZero() {
 			t.Fatalf("UpdateSource = %+v, want a new name and metadata with the rest kept", updated)
 		}
 		if again, err := wh.GetSource(ctx, created.ID); err != nil || again.Name != name+"-renamed" {
@@ -78,6 +78,52 @@ func TestLiveReadinessWebhooks(t *testing.T) {
 			t.Fatalf("ListSources after delete = %d sources, %v, want none with %s", len(sources), err, created.ID)
 		}
 	})
+}
+
+// TestLiveReadinessWebhookExpectedUpdatedAt proves a time.Time survives the trip
+// back to the server, so Go needs no exact string field (ADR 0165).
+func TestLiveReadinessWebhookExpectedUpdatedAt(t *testing.T) {
+	var seed struct{}
+	client, ctx := liveReadiness(t, &seed)
+	wh := client.Webhooks()
+
+	name := fmt.Sprintf("gosdk-guard-%d", time.Now().UnixNano())
+	source, err := wh.CreateSource(ctx, CreateWebhookSourceInput{Name: name, EventPrefix: "gosdk.guard", VerifySecret: "s1", VerifyHeader: "x-sig", VerifyAlgorithm: "hmac-sha256"})
+	if err != nil {
+		t.Fatalf("CreateSource: %v", err)
+	}
+	defer func() { _ = wh.DeleteSource(ctx, source.ID) }()
+
+	read, err := wh.GetSource(ctx, source.ID)
+	if err != nil {
+		t.Fatalf("GetSource: %v", err)
+	}
+	if read.CreatedAt.IsZero() || read.UpdatedAt.IsZero() {
+		t.Fatalf("GetSource = %+v, want CreatedAt and UpdatedAt", read)
+	}
+
+	// A value in another zone is the same instant, so the guard must still pass.
+	elsewhere := read.UpdatedAt.In(time.FixedZone("elsewhere", 2*60*60))
+	current, err := wh.UpdateSource(ctx, UpdateWebhookSourceInput{ID: source.ID, Name: name + "-a", ExpectedUpdatedAt: &elsewhere})
+	if err != nil {
+		t.Fatalf("UpdateSource with the current value: %v", err)
+	}
+
+	stale := read.UpdatedAt
+	if _, err := wh.UpdateSource(ctx, UpdateWebhookSourceInput{ID: source.ID, Name: name + "-b", ExpectedUpdatedAt: &stale}); !hasErrorCode(err, "aborted") {
+		t.Fatalf("UpdateSource with a stale value = %v, want aborted", err)
+	}
+	if _, err := wh.RotateSecret(ctx, RotateWebhookSecretInput{ID: source.ID, VerifySecret: "s2", ExpectedUpdatedAt: &stale}); !hasErrorCode(err, "aborted") {
+		t.Fatalf("RotateSecret with a stale value = %v, want aborted", err)
+	}
+
+	rotated, err := wh.RotateSecret(ctx, RotateWebhookSecretInput{ID: source.ID, VerifySecret: "s2", ExpectedUpdatedAt: &current.UpdatedAt})
+	if err != nil {
+		t.Fatalf("RotateSecret with the current value: %v", err)
+	}
+	if rotated.VerifySecretPrevExpiresAt == nil || !rotated.VerifySecretPrevExpiresAt.After(time.Now()) {
+		t.Fatalf("RotateSecret = %+v, want a future VerifySecretPrevExpiresAt", rotated)
+	}
 }
 
 func webhookSourceIndex(sources []WebhookSource, id string) int {

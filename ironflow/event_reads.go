@@ -97,10 +97,10 @@ func (c *Client) ListEvents(ctx context.Context, opts ListEventsOptions) (*ListE
 		query.Set("limit", strconv.Itoa(opts.Limit))
 	}
 	if opts.Since != nil {
-		query.Set("since", opts.Since.Format(time.RFC3339))
+		query.Set("since", opts.Since.Format(time.RFC3339Nano))
 	}
 	if opts.Until != nil {
-		query.Set("until", opts.Until.Format(time.RFC3339))
+		query.Set("until", opts.Until.Format(time.RFC3339Nano))
 	}
 
 	var result ListEventsResult
@@ -126,10 +126,10 @@ func (c *Client) ListEventNames(ctx context.Context, opts ListEventNamesOptions)
 		query.Set("source", strings.Join(opts.Sources, ","))
 	}
 	if opts.Since != nil {
-		query.Set("since", opts.Since.Format(time.RFC3339))
+		query.Set("since", opts.Since.Format(time.RFC3339Nano))
 	}
 	if opts.Until != nil {
-		query.Set("until", opts.Until.Format(time.RFC3339))
+		query.Set("until", opts.Until.Format(time.RFC3339Nano))
 	}
 
 	var result ListEventNamesResult

@@ -203,8 +203,8 @@ func TestKVListBuckets(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(map[string]any{
 				"buckets": []BucketInfo{
-					{Name: "bucket-a", Values: 10, Bytes: 1024, History: 1},
-					{Name: "bucket-b", Values: 20, Bytes: 2048, History: 3},
+					{CreatedAt: fixtureTime, Name: "bucket-a", Values: 10, Bytes: 1024, History: 1},
+					{CreatedAt: fixtureTime, Name: "bucket-b", Values: 20, Bytes: 2048, History: 3},
 				},
 				"count": 2,
 			})
@@ -254,6 +254,7 @@ func TestKVGetBucketInfo(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(BucketInfo{
+				CreatedAt:  fixtureTime,
 				Name:       "my-bucket",
 				Values:     42,
 				Bytes:      8192,
@@ -328,7 +329,7 @@ func TestKVCreateBucketWithConfig(t *testing.T) {
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(BucketInfo{Name: "configured-bucket"})
+			json.NewEncoder(w).Encode(BucketInfo{CreatedAt: fixtureTime, Name: "configured-bucket"})
 		}))
 		defer cleanup()
 
@@ -402,7 +403,7 @@ func TestKVCreateBucketWithConfig(t *testing.T) {
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(BucketInfo{Name: "minimal-bucket"})
+			json.NewEncoder(w).Encode(BucketInfo{CreatedAt: fixtureTime, Name: "minimal-bucket"})
 		}))
 		defer cleanup()
 
@@ -457,7 +458,7 @@ func TestKVBucketGet(t *testing.T) {
 				Key:       "my-key",
 				Value:     []byte("hello world"),
 				Revision:  3,
-				CreatedAt: "2026-01-15T10:00:00Z",
+				CreatedAt: mustTime(t, "2026-01-15T10:00:00Z"),
 				Operation: "put",
 			})
 		}))
@@ -912,7 +913,7 @@ func TestKVBucketURLEncoding(t *testing.T) {
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(BucketInfo{Name: "my bucket/special"})
+			json.NewEncoder(w).Encode(BucketInfo{CreatedAt: fixtureTime, Name: "my bucket/special"})
 		}))
 		defer cleanup()
 
@@ -942,9 +943,10 @@ func TestKVBucketURLEncoding(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(KVEntry{
-				Key:      "test-key",
-				Value:    []byte("value"),
-				Revision: 1,
+				CreatedAt: fixtureTime,
+				Key:       "test-key",
+				Value:     []byte("value"),
+				Revision:  1,
 			})
 		}))
 		defer cleanup()
@@ -976,9 +978,10 @@ func TestKVBucketURLEncoding(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			json.NewEncoder(w).Encode(KVEntry{
-				Key:      "my/key",
-				Value:    []byte("value"),
-				Revision: 1,
+				CreatedAt: fixtureTime,
+				Key:       "my/key",
+				Value:     []byte("value"),
+				Revision:  1,
 			})
 		}))
 		defer cleanup()

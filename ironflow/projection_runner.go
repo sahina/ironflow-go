@@ -12,6 +12,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -69,6 +70,11 @@ var errProjectionUnimplemented = errors.New("projection method unimplemented")
 // invalid. On register it is a config error, which a retry cannot fix.
 var errProjectionInvalidArgument = errors.New("projection request invalid")
 
+// errProjectionRefused is a failed_precondition from Poll, Stream or a state
+// load: a state no retry fixes, such as a projection bound to a PUBSUB stream
+// that was recreated, or a failed rebuild (ADR 0164). The runner stops.
+var errProjectionRefused = errors.New("projection delivery refused")
+
 // projectionLease is the runner lease (ADR 0120). The server fences on Epoch.
 type projectionLease struct {
 	Token string     `json:"token"`
@@ -95,9 +101,12 @@ type ProjectionRunner struct {
 	detached context.Context
 	done     chan struct{}
 	// lease is the held lease, or nil in standby. lost closes when Renew
-	// returns Aborted. Only the run goroutine writes them.
+	// returns Aborted. pos is the delivery position under the lease (ADR 0164):
+	// it rises only after a whole batch commits, to the watermark the server
+	// reported for it. Only the run goroutine writes them.
 	lease *projectionLease
 	lost  chan struct{}
+	pos   int64
 }
 
 // NewProjectionRunner creates a new projection runner.
@@ -217,7 +226,7 @@ func (r *ProjectionRunner) run(registerErr error) {
 // SERVER_TOO_OLD when the server has no lease RPCs. On Stop it returns no
 // error and no lease.
 func (r *ProjectionRunner) acquireLease() (time.Duration, error) {
-	r.lease, r.lost = nil, nil
+	r.lease, r.lost, r.pos = nil, nil, 0
 	name := r.projection.Config.Name
 	standby := false
 	for r.ctx.Err() == nil {
@@ -353,7 +362,7 @@ func (r *ProjectionRunner) withLease(body map[string]any) map[string]any {
 
 // streamLoop reads the event stream and reconnects with backoff. It returns
 // errStreamingUnsupported for a fallback, errProjectionLeaseLost for standby,
-// an auth error to stop the runner, or nil on Stop.
+// an auth error or errProjectionRefused to stop the runner, or nil on Stop.
 func (r *ProjectionRunner) streamLoop() error {
 	// No client timeout: the stream stays open. Server streaming works over
 	// HTTP/1.1, as the Node runner uses it.
@@ -375,7 +384,7 @@ func (r *ProjectionRunner) streamLoop() error {
 		case errors.Is(err, errProjectionLeaseLost):
 			// No reconnect ladder and no fallback to poll (ADR 0120 section 3).
 			return err
-		case errors.Is(err, errStreamingUnsupported), errors.Is(err, ErrUnauthorized), errors.Is(err, ErrForbidden):
+		case errors.Is(err, errStreamingUnsupported), errors.Is(err, ErrUnauthorized), errors.Is(err, ErrForbidden), errors.Is(err, errProjectionRefused), isServerTooOld(err):
 			return err
 		case err == nil:
 			failures = 0
@@ -410,10 +419,11 @@ func reconnectDelay(failures int) time.Duration {
 	return min(projectionReconnectBase<<min(failures-1, 4), projectionReconnectMax)
 }
 
-// readStream opens one stream and processes its events in batches until the
-// stream ends, a batch fails, the lease is lost, or the runner stops. A failed
-// batch drops the stream; the server rewinds to the saved cursor on the next
-// open. On stop it processes the pending frames; on a lost lease it drops them.
+// readStream opens one stream at the delivery position and processes its
+// events in batches until the stream ends, a batch fails, the lease is lost,
+// or the runner stops. A failed batch drops the stream and leaves the position
+// where it was, so the next stream delivers the batch again. On stop it
+// processes the pending frames; on a lost lease it drops them.
 // received reports whether any frame (heartbeats too) arrived; progressed
 // whether a batch with events succeeded.
 func (r *ProjectionRunner) readStream(ctx context.Context, client ironflowv1connect.ProjectionServiceClient) (received, progressed bool, err error) {
@@ -421,10 +431,12 @@ func (r *ProjectionRunner) readStream(ctx context.Context, client ironflowv1conn
 	if batchSize == 0 {
 		batchSize = 100
 	}
+	pos := r.pos
 	msg := &ironflowv1.StreamProjectionEventsRequest{
 		Name:             r.projection.Config.Name,
 		BatchSize:        int32(batchSize),
 		AcceptHeartbeats: true,
+		Position:         &pos,
 	}
 	if r.lease != nil {
 		msg.Lease = &ironflowv1.ProjectionLease{Token: r.lease.Token, Epoch: int64(r.lease.Epoch)}
@@ -442,18 +454,31 @@ func (r *ProjectionRunner) readStream(ctx context.Context, client ironflowv1conn
 		return false, false, streamError(err)
 	}
 
-	frames := make(chan pollEvent)
-	got := false
+	// A frame is an event, or a heartbeat mark that carries only a watermark.
+	type frame struct {
+		evt  pollEvent
+		mark bool
+		seq  int64
+	}
+	frames := make(chan frame)
+	got, opened := false, false
 	go func() {
 		defer close(frames)
 		for stream.Receive() {
-			got = true
 			msg := stream.Msg()
-			if msg.Kind == ironflowv1.ProjectionEventKind_PROJECTION_EVENT_KIND_HEARTBEAT {
+			if !opened {
+				// A server older than ADR 0164 ignores the position.
+				opened = msg.Kind == ironflowv1.ProjectionEventKind_PROJECTION_EVENT_KIND_OPEN
+				if !opened {
+					return
+				}
 				continue
 			}
+			got = true
+			f := frame{evt: toPollEvent(msg), seq: msg.Seq}
+			f.mark = msg.Kind == ironflowv1.ProjectionEventKind_PROJECTION_EVENT_KIND_HEARTBEAT
 			select {
-			case frames <- toPollEvent(msg):
+			case frames <- f:
 			case <-ctx.Done():
 				return
 			}
@@ -468,23 +493,48 @@ func (r *ProjectionRunner) readStream(ctx context.Context, client ironflowv1conn
 		received = got // safe: the reader has exited
 	}()
 
+	// mark is the highest seq the pending frames carry. The position rises to
+	// it only after the batch commits, so it never covers an unsaved frame.
 	var pending []pollEvent
+	var mark int64
+	commit := func() error {
+		if err := r.processBatch(pending); err != nil {
+			return err
+		}
+		r.pos = max(r.pos, mark)
+		pending, mark = nil, 0
+		return nil
+	}
 	var flush <-chan time.Time
 	for {
 		select {
-		case evt, ok := <-frames:
+		case f, ok := <-frames:
 			if !ok {
 				streamErr := streamError(stream.Err())
 				if errors.Is(streamErr, errProjectionLeaseLost) {
 					return false, progressed, streamErr // drop the pending frames
 				}
+				// A current server sends OPEN before it can end a stream
+				// cleanly, so a clean end without OPEN is an old server.
+				if !opened && streamErr == nil {
+					return false, progressed, newServerTooOld("StreamProjectionEvents position", minServerVersionProjectionPosition, "upgrade the server", nil)
+				}
 				// Events already received are valid: process them before the stream error.
-				if err := r.processBatch(pending); err != nil {
+				n := len(pending)
+				if err := commit(); err != nil {
 					return false, progressed, err
 				}
-				return false, progressed || len(pending) > 0, streamErr
+				return false, progressed || n > 0, streamErr
 			}
-			pending = append(pending, evt)
+			mark = max(mark, f.seq)
+			if f.mark {
+				if len(pending) == 0 {
+					r.pos = max(r.pos, mark) // nothing unsaved is pending
+					mark = 0
+				}
+				continue
+			}
+			pending = append(pending, f.evt)
 			if len(pending) < batchSize {
 				if flush == nil {
 					flush = time.After(projectionFlushInterval)
@@ -499,15 +549,14 @@ func (r *ProjectionRunner) readStream(ctx context.Context, client ironflowv1conn
 			if r.leaseLost() {
 				return false, progressed, errProjectionLeaseLost
 			}
-			return false, progressed, r.processBatch(pending)
+			return false, progressed, commit()
 		}
 		flush = nil
-		batch := pending
-		pending = nil
-		if err := r.processBatch(batch); err != nil {
+		n := len(pending)
+		if err := commit(); err != nil {
 			return false, progressed, err
 		}
-		progressed = progressed || len(batch) > 0
+		progressed = progressed || n > 0
 	}
 }
 
@@ -523,6 +572,9 @@ func streamError(err error) error {
 	}
 	if code == connect.CodeAborted {
 		return fmt.Errorf("%w: %w", errProjectionLeaseLost, err)
+	}
+	if code == connect.CodeFailedPrecondition {
+		return fmt.Errorf("%w: %w", errProjectionRefused, err)
 	}
 	return connectError(err)
 }
@@ -618,7 +670,7 @@ func (r *ProjectionRunner) pollLoop() error {
 		if err != nil {
 			// Auth failure: stop this runner with an actionable message rather
 			// than polling a 401 forever (#1673). The worker keeps running.
-			if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrForbidden) || errors.Is(err, errProjectionLeaseLost) {
+			if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrForbidden) || errors.Is(err, errProjectionLeaseLost) || errors.Is(err, errProjectionRefused) || isServerTooOld(err) {
 				return err
 			}
 			r.logger.Error("Projection poll error", "projection", r.projection.Config.Name, "error", err)
@@ -642,6 +694,9 @@ type pollResponse struct {
 	CurrentState      map[string]any  `json:"currentState"`
 	CurrentStateValue json.RawMessage `json:"currentStateValue"`
 	LastEventSeq      ProtoInt64      `json:"lastEventSeq"`
+	// Position is the floor the server honored; absent from a server older
+	// than ADR 0164.
+	Position *ProtoInt64 `json:"position"`
 }
 
 // pollEvent is the JSON shape of a single event from PollProjectionEvents.
@@ -658,6 +713,16 @@ type pollEvent struct {
 	Timestamp string         `json:"timestamp"`
 	Source    string         `json:"source"`
 	Metadata  map[string]any `json:"metadata"`
+}
+
+// time reads the event's wire timestamp. The wire string stays on pollEvent
+// because the runner reports it back unchanged as lastEventTime.
+func (evt pollEvent) time() time.Time {
+	t, err := time.Parse(time.RFC3339Nano, evt.Timestamp)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }
 
 // toProjectionEvent converts a pollEvent to a ProjectionEvent.
@@ -695,7 +760,7 @@ func toProjectionEvent(evt pollEvent) ProjectionEvent {
 		Data:      data,
 		DataValue: value,
 		Seq:       int64(evt.Seq),
-		Timestamp: evt.Timestamp,
+		Timestamp: evt.time(),
 		Source:    evt.Source,
 		Metadata:  evt.Metadata,
 	}
@@ -714,20 +779,28 @@ func (r *ProjectionRunner) poll() (int, error) {
 	if err := r.post(r.ctx, "PollProjectionEvents", r.withLease(map[string]any{
 		"name":      r.projection.Config.Name,
 		"batchSize": batchSize,
+		"position":  strconv.FormatInt(r.pos, 10),
 	}), &resp); err != nil {
 		return 0, err
 	}
-
-	if len(resp.Events) == 0 {
-		return 0, nil
+	if resp.Position == nil {
+		return 0, newServerTooOld("PollProjectionEvents position", minServerVersionProjectionPosition, "upgrade the server", nil)
 	}
 
-	config := r.projection.Config
-
-	if config.Mode == ProjectionModeManaged {
-		return r.processManaged(config, resp)
+	n := 0
+	if len(resp.Events) > 0 {
+		var err error
+		if config := r.projection.Config; config.Mode == ProjectionModeManaged {
+			n, err = r.processManaged(config, resp)
+		} else {
+			n, err = r.processExternal(config, resp)
+		}
+		if err != nil {
+			return 0, err
+		}
 	}
-	return r.processExternal(config, resp)
+	r.pos = max(r.pos, int64(resp.LastEventSeq))
+	return n, nil
 }
 
 // partitionBatch is a run of consecutive same-partition events.
@@ -941,12 +1014,12 @@ func (r *ProjectionRunner) buildContext(evt pollEvent) ProjectionContext {
 			ID        string
 			Name      string
 			Seq       int64
-			Timestamp string
+			Timestamp time.Time
 		}{
 			ID:        evt.ID,
 			Name:      evt.Name,
 			Seq:       int64(evt.Seq),
-			Timestamp: evt.Timestamp,
+			Timestamp: evt.time(),
 		},
 		Projection: struct {
 			Name    string
@@ -1019,6 +1092,9 @@ func projectionStatusError(status int, body []byte) error {
 	}
 	if code == connect.CodeInvalidArgument {
 		return fmt.Errorf("%w: %w", errProjectionInvalidArgument, err)
+	}
+	if code == connect.CodeFailedPrecondition {
+		return fmt.Errorf("%w: %w", errProjectionRefused, err)
 	}
 	return err
 }

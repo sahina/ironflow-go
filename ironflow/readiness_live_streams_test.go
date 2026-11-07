@@ -52,7 +52,7 @@ func TestLiveReadinessStreams(t *testing.T) {
 		}
 		for i, e := range events {
 			n := i + 1
-			if e.Name != fmt.Sprintf("readiness.step.%d", n) || e.EntityVersion != ProtoInt64(n) || !reflect.DeepEqual(e.Data, data(n)) || e.ID == "" || e.Timestamp == "" {
+			if e.Name != fmt.Sprintf("readiness.step.%d", n) || e.EntityVersion != ProtoInt64(n) || !reflect.DeepEqual(e.Data, data(n)) || e.ID == "" || e.Timestamp.IsZero() {
 				t.Fatalf("event %d = %+v, want readiness.step.%d at version %d with %v", i, e, n, n, data(n))
 			}
 		}
@@ -71,7 +71,7 @@ func TestLiveReadinessStreams(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetStreamInfo: %v", err)
 		}
-		if info.EntityID != id || info.EntityType != entityType || info.Version != 2 || info.EventCount != 2 || info.CreatedAt == "" || info.UpdatedAt == "" {
+		if info.EntityID != id || info.EntityType != entityType || info.Version != 2 || info.EventCount != 2 || info.CreatedAt.IsZero() || info.UpdatedAt.IsZero() {
 			t.Fatalf("GetStreamInfo = %+v, want %s/%s at version 2 with 2 events", info, id, entityType)
 		}
 		if _, err := client.GetStreamInfo(ctx, id+"-unknown"); !hasErrorCode(err, "not_found") {
@@ -88,7 +88,7 @@ func TestLiveReadinessStreams(t *testing.T) {
 			if s.EntityID != id {
 				continue
 			}
-			if s.EntityType != entityType || s.Version != 2 || s.EventCount != 2 || s.LastEventAt == "" {
+			if s.EntityType != entityType || s.Version != 2 || s.EventCount != 2 || s.LastEventAt.IsZero() {
 				t.Fatalf("listed stream = %+v, want %s at version 2 with 2 events", s, entityType)
 			}
 			return
@@ -103,7 +103,7 @@ func TestLiveReadinessStreams(t *testing.T) {
 		}
 		for i, e := range history {
 			n := i + 1
-			if e.EventName != fmt.Sprintf("readiness.step.%d", n) || e.EntityVersion != int64(n) || !reflect.DeepEqual(e.Data, data(n)) || e.Timestamp == "" {
+			if e.EventName != fmt.Sprintf("readiness.step.%d", n) || e.EntityVersion != int64(n) || !reflect.DeepEqual(e.Data, data(n)) || e.Timestamp.IsZero() {
 				t.Fatalf("entry %d = %+v, want readiness.step.%d at version %d with %v", i, e, n, n, data(n))
 			}
 		}
@@ -112,13 +112,7 @@ func TestLiveReadinessStreams(t *testing.T) {
 			t.Fatalf("history limit 1 = %+v, %v, want only version 1", one, err)
 		}
 		// From and To are inclusive, so each event's own time selects it.
-		at := func(i int) time.Time {
-			ts, err := time.Parse(time.RFC3339Nano, history[i].Timestamp)
-			if err != nil {
-				t.Fatalf("timestamp %q: %v", history[i].Timestamp, err)
-			}
-			return ts
-		}
+		at := func(i int) time.Time { return history[i].Timestamp }
 		if upTo, err := client.GetEntityHistory(ctx, id, EntityHistoryOpts{To: at(0)}); err != nil || len(upTo) != 1 || upTo[0].EntityVersion != 1 {
 			t.Fatalf("history up to the first event = %+v, %v, want only version 1", upTo, err)
 		}
@@ -139,7 +133,7 @@ func TestLiveReadinessStreams(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetSnapshot: %v", err)
 		}
-		if got.SnapshotID == "" || got.EntityID != id || got.EntityType != entityType || got.EntityVersion != 2 || !reflect.DeepEqual(got.State, state(2)) || got.CreatedAt == "" {
+		if got.SnapshotID == "" || got.EntityID != id || got.EntityType != entityType || got.EntityVersion != 2 || !reflect.DeepEqual(got.State, state(2)) || got.CreatedAt.IsZero() {
 			t.Fatalf("GetSnapshot = %+v, want the version 2 snapshot of %s with %v", got, id, state(2))
 		}
 		// The latest snapshot at or before the version asked for.

@@ -29,7 +29,7 @@ func TestFilesPutEncodesPathAndHeaders(t *testing.T) {
 		gotMeta, gotINM = r.Header.Get("X-Ironflow-Meta-Source"), r.Header.Get("If-None-Match")
 		gotBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(201)
-		_, _ = w.Write([]byte(`{"bucket":"docs","path":"a b/c.txt","etag":"e1","size":2}`))
+		_, _ = w.Write([]byte(`{"bucket":"docs","path":"a b/c.txt","etag":"e1","size":2,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}), 1)
 	info, err := c.Files().Bucket("docs").Put(context.Background(), "a b/c.txt", strings.NewReader("hi"), 2,
 		PutFileOptions{ContentType: "text/plain", Metadata: map[string]string{"source": "t"}, IfNoneMatch: true})
@@ -51,7 +51,7 @@ func TestFilesPutRetriesOnlyReplayableBodies(t *testing.T) {
 			return
 		}
 		w.WriteHeader(201)
-		_, _ = w.Write([]byte(`{"etag":"e"}`))
+		_, _ = w.Write([]byte(`{"etag":"e","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	})
 	c := setupMockFilesServer(t, h, 3)
 	if _, err := c.Files().Bucket("b").Put(context.Background(), "x", bytes.NewReader([]byte("abc")), 3, PutFileOptions{ContentType: "text/plain"}); err != nil {
@@ -80,7 +80,7 @@ func TestFilesPutEmptyFileSendsLengthZero(t *testing.T) {
 			t.Errorf("ContentLength=%d TE=%v", r.ContentLength, r.TransferEncoding)
 		}
 		w.WriteHeader(201)
-		_, _ = w.Write([]byte(`{"etag":"e"}`))
+		_, _ = w.Write([]byte(`{"etag":"e","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}), 1)
 	if _, err := c.Files().Bucket("b").Put(context.Background(), "empty", bytes.NewReader(nil), 0, PutFileOptions{ContentType: "text/plain"}); err != nil {
 		t.Fatal(err)
@@ -143,7 +143,7 @@ func TestFilesByteTransfersIgnoreClientTimeout(t *testing.T) {
 			return
 		}
 		w.WriteHeader(201)
-		_, _ = w.Write([]byte(`{"etag":"e"}`))
+		_, _ = w.Write([]byte(`{"etag":"e","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}), 1)
 	c.httpClient.Timeout = 50 * time.Millisecond
 	ctx := context.Background()
@@ -183,7 +183,7 @@ func TestFilesBucketCallsAndListQuery(t *testing.T) {
 	c := setupMockFilesServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		gotMethod, gotURI, gotBody, gotEnv = r.Method, r.URL.RequestURI(), string(b), r.Header.Get(HeaderEnvironmentID)
-		_, _ = w.Write([]byte(`{"files":[{"path":"a"}],"prefixes":["d/"],"nextCursor":"n","buckets":[{"name":"x"}]}`))
+		_, _ = w.Write([]byte(`{"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","files":[{"path":"a","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}],"prefixes":["d/"],"nextCursor":"n","buckets":[{"name":"x","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
 	}), 1)
 	c.environment = "env_x"
 	ctx := context.Background()
@@ -241,7 +241,7 @@ func TestFilesPostIsNotRetried(t *testing.T) {
 			return
 		}
 		w.WriteHeader(200)
-		_, _ = w.Write([]byte(`{"etag":"e"}`))
+		_, _ = w.Write([]byte(`{"etag":"e","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}), 3)
 	if _, err := c.Files().Bucket("b").Move(context.Background(), "a", "b", MoveFileOptions{}); err == nil {
 		t.Fatal("want the 503 error, not a retried success")
@@ -260,7 +260,7 @@ func TestFilesSignCallsAreRetried(t *testing.T) {
 			_, _ = w.Write([]byte(`{"code":"internal","message":"x"}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"url":"u"}`))
+		_, _ = w.Write([]byte(`{"url":"u","expiresAt":"2026-01-01T00:00:00Z"}`))
 	}), 3)
 	b := c.Files().Bucket("b")
 	if u, err := b.SignUpload(context.Background(), "x", SignUploadOptions{}); err != nil || u.URL != "u" {
@@ -280,7 +280,7 @@ func TestFilesRejectBadBucketNames(t *testing.T) {
 	var paths []string
 	c := setupMockFilesServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.EscapedPath())
-		_, _ = w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}), 1)
 	ctx := context.Background()
 	for _, name := range []string{"", ".", ".."} {
@@ -331,7 +331,7 @@ func TestFilesSignUploadCreateOnly(t *testing.T) {
 	c := setupMockFilesServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		bodies = append(bodies, string(b))
-		_, _ = w.Write([]byte(`{"url":"u"}`))
+		_, _ = w.Write([]byte(`{"url":"u","expiresAt":"2026-01-01T00:00:00Z"}`))
 	}), 1)
 	b := c.Files().Bucket("b")
 	if _, err := b.SignUpload(context.Background(), "x", SignUploadOptions{CreateOnly: true}); err != nil {

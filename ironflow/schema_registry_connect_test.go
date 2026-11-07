@@ -72,7 +72,7 @@ func TestSchemaRegistryConnectLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(input.Schema, latest.Schema) || latest.CreatedAt != "2026-09-06T12:00:00Z" {
+	if !reflect.DeepEqual(input.Schema, latest.Schema) || latest.CreatedAt == nil || !latest.CreatedAt.Equal(time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)) {
 		t.Fatalf("latest=%+v", latest)
 	}
 	version, err := client.GetVersion(ctx, input.Name, 2)

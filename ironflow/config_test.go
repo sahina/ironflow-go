@@ -92,8 +92,8 @@ func TestConfigWatch_BasicUpdate(t *testing.T) {
 		if event.Revision != 5 {
 			t.Errorf("expected revision 5, got %d", event.Revision)
 		}
-		if event.UpdatedAt != "2026-03-28T00:00:00Z" {
-			t.Errorf("expected updatedAt 2026-03-28T00:00:00Z, got %q", event.UpdatedAt)
+		if !event.UpdatedAt.Equal(mustTime(t, "2026-03-28T00:00:00Z")) {
+			t.Errorf("expected updatedAt 2026-03-28T00:00:00Z, got %s", event.UpdatedAt)
 		}
 		if event.Data == nil {
 			t.Fatal("expected non-nil data")
@@ -249,5 +249,41 @@ func TestConfigWatch_IdleThenUpdate(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("no event after an idle gap")
+	}
+}
+
+// A frame with an unreadable timestamp goes to OnError and the watch stays open.
+func TestConfigWatch_UnreadableTimestampKeepsWatching(t *testing.T) {
+	const configName = "bad-time"
+	client, cleanup := setupMockConfigWatchServer(t, configName, func(conn *websocket.Conn) {
+		_ = conn.WriteJSON(map[string]any{"type": "config_update", "name": configName, "revision": float64(1), "updatedAt": "yesterday"})
+		_ = conn.WriteJSON(map[string]any{"type": "config_update", "name": configName, "revision": float64(2), "updatedAt": "2026-10-16T00:00:00Z"})
+		_, _, _ = conn.ReadMessage()
+	})
+	defer cleanup()
+
+	received := make(chan ConfigWatchEvent, 1)
+	errs := make(chan error, 1)
+	watcher, err := client.Config().Watch(context.Background(), configName, ConfigWatchCallbacks{
+		OnUpdate: func(e ConfigWatchEvent) { received <- e },
+		OnError:  func(err error) { errs <- err },
+	})
+	if err != nil {
+		t.Fatalf("Watch returned error: %v", err)
+	}
+	defer watcher.Stop()
+
+	select {
+	case <-errs:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no error for the unreadable frame")
+	}
+	select {
+	case event := <-received:
+		if event.Revision != 2 {
+			t.Errorf("Revision = %d, want the readable frame", event.Revision)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the watch stopped after the unreadable frame")
 	}
 }

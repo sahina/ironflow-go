@@ -76,7 +76,7 @@ func TestLiveReadinessKV(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Get: %v", err)
 		}
-		if got.Key != "user.a" || string(got.Value) != string(value) || got.Revision != rev || got.Operation != "put" || got.CreatedAt == "" {
+		if got.Key != "user.a" || string(got.Value) != string(value) || got.Revision != rev || got.Operation != "put" || got.CreatedAt.IsZero() {
 			t.Fatalf("Get = %+v, want user.a put %s at revision %d", got, value, rev)
 		}
 

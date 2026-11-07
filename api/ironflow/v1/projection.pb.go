@@ -31,7 +31,13 @@ type ProjectionEventKind int32
 const (
 	ProjectionEventKind_PROJECTION_EVENT_KIND_UNSPECIFIED ProjectionEventKind = 0 // Treated as EVENT (back-compat)
 	ProjectionEventKind_PROJECTION_EVENT_KIND_EVENT       ProjectionEventKind = 1
-	ProjectionEventKind_PROJECTION_EVENT_KIND_HEARTBEAT   ProjectionEventKind = 2
+	// seq is the stream's watermark: the delivery position the runner may raise
+	// to once it has committed every frame received before this one.
+	ProjectionEventKind_PROJECTION_EVENT_KIND_HEARTBEAT ProjectionEventKind = 2
+	// The first frame of every stream (ADR 0164). seq is the floor the server
+	// honors for this stream. A stream that does not open with it comes from a
+	// server older than ADR 0164.
+	ProjectionEventKind_PROJECTION_EVENT_KIND_OPEN ProjectionEventKind = 3
 )
 
 // Enum value maps for ProjectionEventKind.
@@ -40,11 +46,13 @@ var (
 		0: "PROJECTION_EVENT_KIND_UNSPECIFIED",
 		1: "PROJECTION_EVENT_KIND_EVENT",
 		2: "PROJECTION_EVENT_KIND_HEARTBEAT",
+		3: "PROJECTION_EVENT_KIND_OPEN",
 	}
 	ProjectionEventKind_value = map[string]int32{
 		"PROJECTION_EVENT_KIND_UNSPECIFIED": 0,
 		"PROJECTION_EVENT_KIND_EVENT":       1,
 		"PROJECTION_EVENT_KIND_HEARTBEAT":   2,
+		"PROJECTION_EVENT_KIND_OPEN":        3,
 	}
 )
 
@@ -357,7 +365,15 @@ type PollProjectionEventsRequest struct {
 	BatchSize int32                  `protobuf:"varint,2,opt,name=batch_size,json=batchSize,proto3" json:"batch_size,omitempty"`
 	Partition string                 `protobuf:"bytes,3,opt,name=partition,proto3" json:"partition,omitempty"`
 	// Required on a managed or external projection (ADR 0120). Absent: failed_precondition.
-	Lease         *ProjectionLease `protobuf:"bytes,4,opt,name=lease,proto3" json:"lease,omitempty"`
+	Lease *ProjectionLease `protobuf:"bytes,4,opt,name=lease,proto3" json:"lease,omitempty"`
+	// The runner's delivery position (ADR 0164). Required on a managed or external
+	// projection. Absent: failed_precondition. Every event of this request's scope
+	// at or below it is accounted for under the current lease: committed (saved or
+	// acked), or reported by the server as consumed without delivery. Send 0 on a
+	// new lease. Raise it to the response's last_event_seq only after the whole
+	// response is committed, and never lower it. The server delivers no event at
+	// or below max(position, cursor).
+	Position      *int64 `protobuf:"varint,5,opt,name=position,proto3,oneof" json:"position,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -420,6 +436,13 @@ func (x *PollProjectionEventsRequest) GetLease() *ProjectionLease {
 	return nil
 }
 
+func (x *PollProjectionEventsRequest) GetPosition() int64 {
+	if x != nil && x.Position != nil {
+		return *x.Position
+	}
+	return 0
+}
+
 type ProjectionEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -440,7 +463,7 @@ type ProjectionEvent struct {
 	Source    string                 `protobuf:"bytes,6,opt,name=source,proto3" json:"source,omitempty"`
 	Metadata  *structpb.Struct       `protobuf:"bytes,7,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	// Frame kind. Empty/UNSPECIFIED means a real event (back-compat with
-	// servers that don't set the field). HEARTBEAT frames carry no payload.
+	// servers that don't set the field). HEARTBEAT and OPEN frames carry only seq.
 	Kind          ProjectionEventKind `protobuf:"varint,8,opt,name=kind,proto3,enum=ironflow.v1.ProjectionEventKind" json:"kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -569,9 +592,15 @@ type PollProjectionEventsResponse struct {
 	// current_state, so an object costs no extra bytes and old clients are
 	// unaffected.
 	CurrentStateValue *structpb.Value `protobuf:"bytes,4,opt,name=current_state_value,json=currentStateValue,proto3" json:"current_state_value,omitempty"`
-	LastEventSeq      int64           `protobuf:"varint,3,opt,name=last_event_seq,json=lastEventSeq,proto3" json:"last_event_seq,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// The watermark of this response (ADR 0164): every event of the request's
+	// scope at or below it is in this response, or was consumed without delivery,
+	// or was at or below the honored floor.
+	LastEventSeq int64 `protobuf:"varint,3,opt,name=last_event_seq,json=lastEventSeq,proto3" json:"last_event_seq,omitempty"`
+	// The floor the server honored: max(request position, cursor). Absent means
+	// the server is older than ADR 0164.
+	Position      *int64 `protobuf:"varint,5,opt,name=position,proto3,oneof" json:"position,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PollProjectionEventsResponse) Reset() {
@@ -632,6 +661,13 @@ func (x *PollProjectionEventsResponse) GetLastEventSeq() int64 {
 	return 0
 }
 
+func (x *PollProjectionEventsResponse) GetPosition() int64 {
+	if x != nil && x.Position != nil {
+		return *x.Position
+	}
+	return 0
+}
+
 type StreamProjectionEventsRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Name      string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`                             // Projection name (must be registered first)
@@ -643,7 +679,10 @@ type StreamProjectionEventsRequest struct {
 	// that don't understand heartbeat frames should leave this false.
 	AcceptHeartbeats bool `protobuf:"varint,4,opt,name=accept_heartbeats,json=acceptHeartbeats,proto3" json:"accept_heartbeats,omitempty"`
 	// Required on a managed or external projection (ADR 0120). Absent: failed_precondition.
-	Lease         *ProjectionLease `protobuf:"bytes,5,opt,name=lease,proto3" json:"lease,omitempty"`
+	Lease *ProjectionLease `protobuf:"bytes,5,opt,name=lease,proto3" json:"lease,omitempty"`
+	// Required on a managed or external projection. The same contract as
+	// PollProjectionEventsRequest.position.
+	Position      *int64 `protobuf:"varint,6,opt,name=position,proto3,oneof" json:"position,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -711,6 +750,13 @@ func (x *StreamProjectionEventsRequest) GetLease() *ProjectionLease {
 		return x.Lease
 	}
 	return nil
+}
+
+func (x *StreamProjectionEventsRequest) GetPosition() int64 {
+	if x != nil && x.Position != nil {
+		return *x.Position
+	}
+	return 0
 }
 
 type SaveProjectionStateRequest struct {
@@ -3898,13 +3944,15 @@ const file_ironflow_v1_projection_proto_rawDesc = "" +
 	"\x0elast_event_seq\x18\x02 \x01(\x03R\flastEventSeq\"1\n" +
 	"\x1bUnregisterProjectionRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"\x1e\n" +
-	"\x1cUnregisterProjectionResponse\"\xa2\x01\n" +
+	"\x1cUnregisterProjectionResponse\"\xd0\x01\n" +
 	"\x1bPollProjectionEventsRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
 	"batch_size\x18\x02 \x01(\x05R\tbatchSize\x12\x1c\n" +
 	"\tpartition\x18\x03 \x01(\tR\tpartition\x122\n" +
-	"\x05lease\x18\x04 \x01(\v2\x1c.ironflow.v1.ProjectionLeaseR\x05lease\"\xcd\x03\n" +
+	"\x05lease\x18\x04 \x01(\v2\x1c.ironflow.v1.ProjectionLeaseR\x05lease\x12\x1f\n" +
+	"\bposition\x18\x05 \x01(\x03H\x00R\bposition\x88\x01\x01B\v\n" +
+	"\t_position\"\xcd\x03\n" +
 	"\x0fProjectionEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12+\n" +
@@ -3920,19 +3968,23 @@ const file_ironflow_v1_projection_proto_rawDesc = "" +
 	"\ttimestamp\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x16\n" +
 	"\x06source\x18\x06 \x01(\tR\x06source\x123\n" +
 	"\bmetadata\x18\a \x01(\v2\x17.google.protobuf.StructR\bmetadata\x124\n" +
-	"\x04kind\x18\b \x01(\x0e2 .ironflow.v1.ProjectionEventKindR\x04kind\"\x80\x02\n" +
+	"\x04kind\x18\b \x01(\x0e2 .ironflow.v1.ProjectionEventKindR\x04kind\"\xae\x02\n" +
 	"\x1cPollProjectionEventsResponse\x124\n" +
 	"\x06events\x18\x01 \x03(\v2\x1c.ironflow.v1.ProjectionEventR\x06events\x12<\n" +
 	"\rcurrent_state\x18\x02 \x01(\v2\x17.google.protobuf.StructR\fcurrentState\x12F\n" +
 	"\x13current_state_value\x18\x04 \x01(\v2\x16.google.protobuf.ValueR\x11currentStateValue\x12$\n" +
-	"\x0elast_event_seq\x18\x03 \x01(\x03R\flastEventSeq\"\xd1\x01\n" +
+	"\x0elast_event_seq\x18\x03 \x01(\x03R\flastEventSeq\x12\x1f\n" +
+	"\bposition\x18\x05 \x01(\x03H\x00R\bposition\x88\x01\x01B\v\n" +
+	"\t_position\"\xff\x01\n" +
 	"\x1dStreamProjectionEventsRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
 	"batch_size\x18\x02 \x01(\x05R\tbatchSize\x12\x1c\n" +
 	"\tpartition\x18\x03 \x01(\tR\tpartition\x12+\n" +
 	"\x11accept_heartbeats\x18\x04 \x01(\bR\x10acceptHeartbeats\x122\n" +
-	"\x05lease\x18\x05 \x01(\v2\x1c.ironflow.v1.ProjectionLeaseR\x05lease\"\xff\x02\n" +
+	"\x05lease\x18\x05 \x01(\v2\x1c.ironflow.v1.ProjectionLeaseR\x05lease\x12\x1f\n" +
+	"\bposition\x18\x06 \x01(\x03H\x00R\bposition\x88\x01\x01B\v\n" +
+	"\t_position\"\xff\x02\n" +
 	"\x1aSaveProjectionStateRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12#\n" +
 	"\rpartition_key\x18\x02 \x01(\tR\fpartitionKey\x12-\n" +
@@ -4189,11 +4241,12 @@ const file_ironflow_v1_projection_proto_rawDesc = "" +
 	" \x01(\tR\vdescription\x1a@\n" +
 	"\x12EventHandlersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\x82\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xa2\x01\n" +
 	"\x13ProjectionEventKind\x12%\n" +
 	"!PROJECTION_EVENT_KIND_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bPROJECTION_EVENT_KIND_EVENT\x10\x01\x12#\n" +
-	"\x1fPROJECTION_EVENT_KIND_HEARTBEAT\x10\x02*\xa9\x01\n" +
+	"\x1fPROJECTION_EVENT_KIND_HEARTBEAT\x10\x02\x12\x1e\n" +
+	"\x1aPROJECTION_EVENT_KIND_OPEN\x10\x03*\xa9\x01\n" +
 	"\x13WaitStreamFrameKind\x12&\n" +
 	"\"WAIT_STREAM_FRAME_KIND_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fWAIT_STREAM_FRAME_KIND_PROGRESS\x10\x01\x12$\n" +
@@ -4421,6 +4474,9 @@ func file_ironflow_v1_projection_proto_init() {
 	if File_ironflow_v1_projection_proto != nil {
 		return
 	}
+	file_ironflow_v1_projection_proto_msgTypes[4].OneofWrappers = []any{}
+	file_ironflow_v1_projection_proto_msgTypes[6].OneofWrappers = []any{}
+	file_ironflow_v1_projection_proto_msgTypes[7].OneofWrappers = []any{}
 	file_ironflow_v1_projection_proto_msgTypes[22].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

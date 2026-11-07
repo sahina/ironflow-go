@@ -36,13 +36,13 @@ func (projectionClientService) GetProjection(_ context.Context, r *connect.Reque
 		return nil, connect.NewError(connect.CodeNotFound, errors.New("missing"))
 	}
 	value, _ := structpb.NewValue([]any{"array", false})
-	return connect.NewResponse(&ironflowv1.GetProjectionResponse{Name: r.Msg.Name, Partition: r.Msg.Partition, StateValue: value, Version: 3, Mode: "managed", LastEventId: "event", LastEventTime: timestamppb.New(time.Unix(123, 0)), Registry: &ironflowv1.ProjectionInfo{VersionFull: 2147483648, LastEventSeq: 9007199254740993, Status: "active", ErrorMessage: "previous failure"}}), nil
+	return connect.NewResponse(&ironflowv1.GetProjectionResponse{Name: r.Msg.Name, Partition: r.Msg.Partition, StateValue: value, Version: 3, Mode: "managed", LastEventId: "event", LastEventTime: timestamppb.New(time.Unix(123, 0)), Registry: &ironflowv1.ProjectionInfo{VersionFull: 2147483648, LastEventSeq: 9007199254740993, Status: "active", ErrorMessage: "previous failure", UpdatedAt: timestamppb.New(time.Unix(123, 0))}}), nil
 }
 func (projectionClientService) ListProjections(context.Context, *connect.Request[ironflowv1.ListProjectionsRequest]) (*connect.Response[ironflowv1.ListProjectionsResponse], error) {
-	return connect.NewResponse(&ironflowv1.ListProjectionsResponse{Projections: []*ironflowv1.ProjectionInfo{{Name: "orders", Status: "active", ErrorMessage: "previous"}}}), nil
+	return connect.NewResponse(&ironflowv1.ListProjectionsResponse{Projections: []*ironflowv1.ProjectionInfo{{Name: "orders", Status: "active", ErrorMessage: "previous", UpdatedAt: timestamppb.New(time.Unix(123, 0))}}}), nil
 }
 func (projectionClientService) GetProjectionStatus(context.Context, *connect.Request[ironflowv1.GetProjectionStatusRequest]) (*connect.Response[ironflowv1.GetProjectionStatusResponse], error) {
-	return connect.NewResponse(&ironflowv1.GetProjectionStatusResponse{Name: "orders", Status: "paused", ErrorMessage: "previous"}), nil
+	return connect.NewResponse(&ironflowv1.GetProjectionStatusResponse{Name: "orders", Status: "paused", ErrorMessage: "previous", UpdatedAt: timestamppb.New(time.Unix(123, 0))}), nil
 }
 func (projectionClientService) RebuildProjection(context.Context, *connect.Request[ironflowv1.RebuildProjectionRequest]) (*connect.Response[ironflowv1.RebuildProjectionResponse], error) {
 	return connect.NewResponse(&ironflowv1.RebuildProjectionResponse{Job: &ironflowv1.RebuildJob{ProjectionName: "orders", Status: "running", Progress: 0.5, StartedAt: timestamppb.New(time.Unix(123, 0))}}), nil
@@ -96,7 +96,7 @@ func TestProjectionClientConnect(t *testing.T) {
 	}
 	for _, read := range []func(context.Context, string) (*RebuildJob, error){pc.Rebuild, pc.GetRebuildJob} {
 		job, err := read(ctx, "orders")
-		if err != nil || job.Name != "orders" || job.Progress != 0.5 || job.StartedAt != "1970-01-01T00:02:03Z" {
+		if err != nil || job.Name != "orders" || job.Progress != 0.5 || job.StartedAt == nil || !job.StartedAt.Equal(time.Unix(123, 0)) {
 			t.Fatalf("job: %+v %v", job, err)
 		}
 	}

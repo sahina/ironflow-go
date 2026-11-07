@@ -42,7 +42,7 @@ func TestLiveIdentitySecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	if created.Name != name || created.Value != "" || created.CreatedAt == "" || created.UpdatedAt == "" {
+	if created.Name != name || created.Value != "" || created.CreatedAt.IsZero() || created.UpdatedAt.IsZero() {
 		t.Fatalf("Set = %+v, want the metadata and no value", created)
 	}
 	if got, err := secrets.Get(ctx, name); err != nil || got.Name != name || got.Value != "" {

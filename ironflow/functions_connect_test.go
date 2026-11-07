@@ -27,7 +27,7 @@ func (s *functionListService) ListFunctions(_ context.Context, req *connect.Requ
 	if s.failure != nil {
 		return nil, s.failure
 	}
-	return connect.NewResponse(&ironflowv1.ListFunctionsResponse{Functions: []*ironflowv1.Function{{Id: "fn", Name: "Name", Status: ironflowv1.FunctionStatus_FUNCTION_STATUS_ACTIVE, PreferredMode: ironflowv1.ExecutionMode_EXECUTION_MODE_PULL, CreatedAt: timestamppb.New(time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC))}}}), nil
+	return connect.NewResponse(&ironflowv1.ListFunctionsResponse{Functions: []*ironflowv1.Function{{Id: "fn", Name: "Name", Status: ironflowv1.FunctionStatus_FUNCTION_STATUS_ACTIVE, PreferredMode: ironflowv1.ExecutionMode_EXECUTION_MODE_PULL, CreatedAt: timestamppb.New(time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)), UpdatedAt: timestamppb.New(time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC))}}}), nil
 }
 func TestFunctionListConnect(t *testing.T) {
 	service := &functionListService{}
@@ -40,7 +40,7 @@ func TestFunctionListConnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result) != 1 || result[0].Status != "active" || result[0].PreferredMode != "pull" || result[0].CreatedAt != "2026-09-06T12:00:00Z" {
+	if len(result) != 1 || result[0].Status != "active" || result[0].PreferredMode != "pull" || !result[0].CreatedAt.Equal(mustTime(t, "2026-09-06T12:00:00Z")) {
 		t.Fatalf("functions=%+v", result)
 	}
 	service.failure = connect.NewError(connect.CodeUnauthenticated, errors.New("expired"))

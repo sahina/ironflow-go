@@ -97,6 +97,9 @@ func (sc *SecretsClient) List(ctx context.Context) ([]SecretListEntry, error) {
 			if entries == nil {
 				return []SecretListEntry{}, nil
 			}
+			if err := requireTimestamps(entries); err != nil {
+				return nil, err
+			}
 			return entries, nil
 		}
 		break
@@ -110,6 +113,9 @@ func (sc *SecretsClient) List(ctx context.Context) ([]SecretListEntry, error) {
 	}
 	if wrapped.Secrets == nil {
 		return []SecretListEntry{}, nil
+	}
+	if err := requireTimestamps(wrapped.Secrets); err != nil {
+		return nil, err
 	}
 	return wrapped.Secrets, nil
 }

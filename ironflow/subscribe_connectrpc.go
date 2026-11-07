@@ -510,11 +510,9 @@ func subscriptionEventFromProto(msg *ironflowv1.SubscriptionEvent) (*Subscriptio
 
 	if meta := msg.GetMetadata(); meta != nil {
 		event.Meta = &EventMeta{
+			Timestamp:     optionalTimeFromProto(meta.GetTimestamp()),
 			Sequence:      msg.GetSequence(),
 			SequenceExact: strconv.FormatUint(msg.GetSequence(), 10),
-		}
-		if ts := meta.GetTimestamp(); ts != nil {
-			event.Meta.Timestamp = ts.AsTime().Format(time.RFC3339Nano)
 		}
 	}
 	return event, nil

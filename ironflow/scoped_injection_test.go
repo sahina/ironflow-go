@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // ============================================================================
@@ -306,8 +307,8 @@ func TestClient_GetPausedState(t *testing.T) {
 		if step1.Injected != false {
 			t.Errorf("step[0].Injected = %v, want false", step1.Injected)
 		}
-		if step1.CompletedAt != "2026-03-08T10:00:00Z" {
-			t.Errorf("step[0].CompletedAt = %q, want %q", step1.CompletedAt, "2026-03-08T10:00:00Z")
+		if want := time.Date(2026, 3, 8, 10, 0, 0, 0, time.UTC); step1.CompletedAt == nil || !step1.CompletedAt.Equal(want) {
+			t.Errorf("step[0].CompletedAt = %v, want %s", step1.CompletedAt, want)
 		}
 
 		// Verify second step (injected)
@@ -324,8 +325,8 @@ func TestClient_GetPausedState(t *testing.T) {
 		if step2.Injected != true {
 			t.Errorf("step[1].Injected = %v, want true", step2.Injected)
 		}
-		if step2.CompletedAt != "2026-03-08T10:01:00Z" {
-			t.Errorf("step[1].CompletedAt = %q, want %q", step2.CompletedAt, "2026-03-08T10:01:00Z")
+		if want := time.Date(2026, 3, 8, 10, 1, 0, 0, time.UTC); step2.CompletedAt == nil || !step2.CompletedAt.Equal(want) {
+			t.Errorf("step[1].CompletedAt = %v, want %s", step2.CompletedAt, want)
 		}
 
 		// Verify top-level fields

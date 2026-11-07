@@ -31,7 +31,7 @@ Requires Go 1.26+.
 
 ## Where the engine source lives
 
-The Ironflow engine source lives at `sahina/ironflow` (private). Ironflow is licensed under the Functional Source License v1.1 with an Apache-2.0 future grant. Each release converts to Apache-2.0 on its second anniversary. This mirror exists so that:
+Ironflow is closed source, under the Ironflow License (FSL v1.1 with an Apache-2.0 future grant). Two years after each release, you may also use that release under Apache-2.0. This does not mean we publish the engine's source code. This mirror exists so that:
 
 - `go get` and `pkg.go.dev` resolve against public source
 - README source links (`/blob/main/...`) resolve to public source

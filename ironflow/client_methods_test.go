@@ -316,10 +316,10 @@ func TestListWorkers(t *testing.T) {
 		if w1.ActiveJobs != 3 {
 			t.Errorf("expected active_jobs 3, got %d", w1.ActiveJobs)
 		}
-		if w1.RegisteredAt != "2025-01-01T00:00:00Z" {
+		if !w1.RegisteredAt.Equal(mustTime(t, "2025-01-01T00:00:00Z")) {
 			t.Errorf("expected registered_at '2025-01-01T00:00:00Z', got '%s'", w1.RegisteredAt)
 		}
-		if w1.LastHeartbeat != "2025-01-01T01:00:00Z" {
+		if !w1.LastHeartbeat.Equal(mustTime(t, "2025-01-01T01:00:00Z")) {
 			t.Errorf("expected last_heartbeat '2025-01-01T01:00:00Z', got '%s'", w1.LastHeartbeat)
 		}
 		if w1.Transport != "grpc" {
@@ -2614,7 +2614,7 @@ func TestReadStream(t *testing.T) {
 		if events[0].Version != 1 {
 			t.Errorf("expected first event version 1, got %d", events[0].Version)
 		}
-		if events[0].Timestamp != "2025-01-01T00:00:00Z" {
+		if !events[0].Timestamp.Equal(mustTime(t, "2025-01-01T00:00:00Z")) {
 			t.Errorf("expected first event timestamp '2025-01-01T00:00:00Z', got '%s'", events[0].Timestamp)
 		}
 
@@ -2884,10 +2884,10 @@ func TestGetStreamInfo(t *testing.T) {
 		if info.EventCount != 7 {
 			t.Errorf("expected event_count 7, got %d", info.EventCount)
 		}
-		if info.CreatedAt != "2025-01-01T00:00:00Z" {
+		if !info.CreatedAt.Equal(mustTime(t, "2025-01-01T00:00:00Z")) {
 			t.Errorf("expected created_at '2025-01-01T00:00:00Z', got '%s'", info.CreatedAt)
 		}
-		if info.UpdatedAt != "2025-01-01T12:00:00Z" {
+		if !info.UpdatedAt.Equal(mustTime(t, "2025-01-01T12:00:00Z")) {
 			t.Errorf("expected updated_at '2025-01-01T12:00:00Z', got '%s'", info.UpdatedAt)
 		}
 	})

@@ -162,6 +162,12 @@ there is no Zod conversion step to fail.
 - `IdempotentByCall` (default) — each `Tool()` invocation memoizes by call site, matching `ironflow.Run` semantics.
 - `IdempotentByArgs` — memoize by SHA-256 hash of stable-JSON args. Same input → same memoized result, even from different call sites.
 
+## Defaults
+
+- `DefaultMaxTurns` is `20`. `Agent` uses it when `AgentConfig.MaxTurns` is zero or negative.
+- `DefaultToolTimeout` is `60s`. A tool uses it when `ToolDefinition.Timeout` is zero or negative.
+- Each `AGENT_*` and `LLM_*` code in the table above is an exported constant: `CodeMaxTurnsExceeded`, `CodeToolValidation`, `CodeLLMRefusal` and so on. Each typed error has a `New...Error` constructor.
+
 ## Memory
 
 ```go

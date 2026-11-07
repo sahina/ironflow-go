@@ -2,6 +2,7 @@ package ironflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -22,6 +23,17 @@ const minServerVersionSubscribeBidirectional = "0.48.0"
 // runner lease RPCs (ADR 0120). The runner needs them; the other SDKs carry the
 // same value and scripts/skew/check-min-versions.sh keeps them equal.
 const minServerVersionProjectionLease = "0.44.0"
+
+// minServerVersionProjectionPosition is the first server that honors the
+// projection delivery position (ADR 0164). The other SDKs carry the same value
+// and scripts/skew/check-min-versions.sh keeps them equal.
+const minServerVersionProjectionPosition = "0.55.0"
+
+// isServerTooOld reports an error that a retry against the same server cannot fix.
+func isServerTooOld(err error) bool {
+	var ie *IronflowError
+	return errors.As(err, &ie) && ie.Code == ErrCodeServerTooOld
+}
 
 // ErrCodeServerTooOld is the IronflowError code for a call the server is too
 // old to serve.

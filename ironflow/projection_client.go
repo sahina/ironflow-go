@@ -10,8 +10,6 @@ import (
 
 	"connectrpc.com/connect"
 
-	"google.golang.org/protobuf/types/known/timestamppb"
-
 	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
 	"github.com/sahina/ironflow-go/api/ironflow/v1/ironflowv1connect"
 )
@@ -65,6 +63,9 @@ func (pc *ProjectionClient) Get(ctx context.Context, name string, opts ...GetPro
 		if reg.UpdatedAt != nil {
 			result.UpdatedAt = reg.UpdatedAt.AsTime()
 		}
+	}
+	if err := requireTimestamps(*result); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -281,12 +282,15 @@ func (pc *ProjectionClient) List(ctx context.Context) ([]ProjectionStatusInfo, e
 			Mode:               p.Mode,
 			LastEventSeq:       p.LastEventSeq,
 			LastError:          p.ErrorMessage,
-			UpdatedAt:          rfc3339OrEmpty(p.UpdatedAt),
+			UpdatedAt:          timeFromProto(p.UpdatedAt),
 			RebuildTargetSeq:   p.GetRebuildTargetSeq(),
 			RebuildStartCursor: p.GetRebuildStartCursor(),
-			RebuildStartedAt:   rfc3339OrEmpty(p.RebuildStartedAt),
+			RebuildStartedAt:   optionalTimeFromProto(p.RebuildStartedAt),
 		}
 		result = append(result, info)
+	}
+	if err := requireTimestamps(result); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -298,18 +302,22 @@ func (pc *ProjectionClient) GetStatus(ctx context.Context, name string) (*Projec
 	if err != nil {
 		return nil, connectError(err)
 	}
-	return &ProjectionStatusInfo{
+	status := &ProjectionStatusInfo{
 		Name:               resp.Msg.Name,
 		Status:             resp.Msg.Status,
 		Mode:               resp.Msg.Mode,
 		LastEventSeq:       resp.Msg.LastEventSeq,
 		Lag:                resp.Msg.Lag,
 		LastError:          resp.Msg.ErrorMessage,
-		UpdatedAt:          rfc3339OrEmpty(resp.Msg.UpdatedAt),
+		UpdatedAt:          timeFromProto(resp.Msg.UpdatedAt),
 		RebuildTargetSeq:   resp.Msg.RebuildTargetSeq,
 		RebuildStartCursor: resp.Msg.RebuildStartCursor,
-		RebuildStartedAt:   rfc3339OrEmpty(resp.Msg.RebuildStartedAt),
-	}, nil
+		RebuildStartedAt:   optionalTimeFromProto(resp.Msg.RebuildStartedAt),
+	}
+	if err := requireTimestamps(status); err != nil {
+		return nil, err
+	}
+	return status, nil
 }
 
 // Rebuild triggers a full rebuild of a projection and returns the rebuild job.
@@ -417,22 +425,9 @@ func (pc *ProjectionClient) rpc() ironflowv1connect.ProjectionServiceClient {
 	return ironflowv1connect.NewProjectionServiceClient(pc.client.httpClient, pc.client.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(pc.client.interceptor()))
 }
 
-// rfc3339OrEmpty renders a protobuf timestamp the way the rest of this package
-// renders times, and yields "" for an absent one rather than the zero instant.
-func rfc3339OrEmpty(ts *timestamppb.Timestamp) string {
-	if ts == nil {
-		return ""
-	}
-	return ts.AsTime().Format(time.RFC3339Nano)
-}
-
 func sdkRebuildJob(job *ironflowv1.RebuildJob) *RebuildJob {
 	if job == nil {
 		return nil
 	}
-	result := &RebuildJob{Name: job.ProjectionName, Status: job.Status, Progress: job.Progress}
-	if job.StartedAt != nil {
-		result.StartedAt = job.StartedAt.AsTime().Format(time.RFC3339Nano)
-	}
-	return result
+	return &RebuildJob{Name: job.ProjectionName, Status: job.Status, Progress: job.Progress, StartedAt: optionalTimeFromProto(job.StartedAt)}
 }

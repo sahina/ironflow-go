@@ -72,10 +72,10 @@ func TestListConsumerGroupsFollowsPagination(t *testing.T) {
 		}
 		requestBodies = append(requestBodies, body)
 		if len(requestBodies) == 1 {
-			_, _ = w.Write([]byte(`{"groups":[{"id":"cg-1","namespace":"default","name":"orders","pattern":"order.*"}],"nextCursor":"cg-page-2"}`))
+			_, _ = w.Write([]byte(`{"groups":[{"id":"cg-1","namespace":"default","name":"orders","pattern":"order.*","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}],"nextCursor":"cg-page-2"}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"groups":[{"id":"cg-2","namespace":"default","name":"payments","pattern":"payment.*"}]}`))
+		_, _ = w.Write([]byte(`{"groups":[{"id":"cg-2","namespace":"default","name":"payments","pattern":"payment.*","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
 	}))
 	defer server.Close()
 	client := &Client{serverURL: server.URL, httpClient: server.Client(), retryConfig: &ClientRetryConfig{MaxAttempts: 1}, logger: NewNoopLogger()}

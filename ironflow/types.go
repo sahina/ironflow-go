@@ -349,7 +349,9 @@ type Context struct {
 	Secrets SecretsReader
 
 	// internal execution context
-	exec *executionContext
+	exec   *executionContext
+	scope  *logScope
+	branch *BranchContext
 }
 
 // Event represents an Ironflow event.
@@ -469,21 +471,31 @@ const (
 	RunStatusWaiting            RunStatus = "waiting"
 )
 
+// CancellationEvent identifies the retained winning cancelOn match.
+type CancellationEvent struct {
+	EventID    string `json:"eventId"`
+	EventName  string `json:"eventName"`
+	MatchPath  string `json:"matchPath"`
+	MatchValue string `json:"matchValue"`
+}
+
 // WorkflowRun represents a workflow execution instance.
 type WorkflowRun struct {
-	ID          string
-	FunctionID  string
-	EventID     string
-	Status      RunStatus
-	Attempt     int
-	MaxAttempts int
-	Input       any
-	Output      any
-	Error       *ErrorInfo
-	StartedAt   *time.Time
-	EndedAt     *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	CancellationCause string
+	CancellationEvent *CancellationEvent
+	ID                string
+	FunctionID        string
+	EventID           string
+	Status            RunStatus
+	Attempt           int
+	MaxAttempts       int
+	Input             any
+	Output            any
+	Error             *ErrorInfo
+	StartedAt         *time.Time
+	EndedAt           *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // ErrorInfo contains error details.
@@ -741,6 +753,7 @@ type ParallelOptions struct {
 // BranchContext is a scoped execution context for a parallel branch.
 // It provides isolated step ID generation while sharing memoization with the parent.
 type BranchContext struct {
+	logContext *Context
 	// parent is the original execution context
 	parent *executionContext
 
@@ -914,9 +927,10 @@ type WaitItemResult struct {
 
 // ReadStreamOpts contains options for reading an entity stream.
 type ReadStreamOpts struct {
-	FromVersion int64  `json:"from_version,omitempty"`
-	Limit       int    `json:"limit,omitempty"`
-	Direction   string `json:"direction,omitempty"`
+	FromVersion int64 `json:"from_version,omitempty"`
+	// Limit is the maximum number of events to return. Zero returns every event.
+	Limit     int    `json:"limit,omitempty"`
+	Direction string `json:"direction,omitempty"`
 }
 
 // StreamEvent is an event in an entity stream.
@@ -926,7 +940,7 @@ type StreamEvent struct {
 	Data          map[string]any `json:"data"`
 	EntityVersion ProtoInt64     `json:"entityVersion"`
 	Version       int            `json:"version"`
-	Timestamp     string         `json:"timestamp"`
+	Timestamp     time.Time      `json:"timestamp"`
 	Source        string         `json:"source,omitempty"`
 	Metadata      map[string]any `json:"metadata,omitempty"`
 }
@@ -937,8 +951,8 @@ type StreamInfo struct {
 	EntityType string     `json:"entityType"`
 	Version    ProtoInt64 `json:"version"`
 	EventCount ProtoInt64 `json:"eventCount"`
-	CreatedAt  string     `json:"createdAt"`
-	UpdatedAt  string     `json:"updatedAt"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
 }
 
 // EntitySubscribeOptions configures an entity stream subscription.
@@ -957,21 +971,21 @@ type EntitySubscribeOptions struct {
 
 // StreamListEntry represents a single entity stream in a list result.
 type StreamListEntry struct {
-	EntityID    string `json:"entity_id"`
-	EntityType  string `json:"entity_type"`
-	Version     int64  `json:"version"`
-	EventCount  int64  `json:"event_count"`
-	LastEventAt string `json:"last_event_at"`
-	CreatedAt   string `json:"created_at"`
+	EntityID    string    `json:"entity_id"`
+	EntityType  string    `json:"entity_type"`
+	Version     int64     `json:"version"`
+	EventCount  int64     `json:"event_count"`
+	LastEventAt time.Time `json:"last_event_at"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // EntityHistoryEntry represents a single event in an entity's history.
 type EntityHistoryEntry struct {
-	EventName     string `json:"event_name"`
-	Data          any    `json:"event_data"`
-	EntityVersion int64  `json:"entity_version"`
-	Timestamp     string `json:"timestamp"`
-	Metadata      any    `json:"metadata,omitempty"`
+	EventName     string    `json:"event_name"`
+	Data          any       `json:"event_data"`
+	EntityVersion int64     `json:"entity_version"`
+	Timestamp     time.Time `json:"timestamp"`
+	Metadata      any       `json:"metadata,omitempty"`
 }
 
 // EntityHistoryOpts filters GetEntityHistory. From and To are inclusive; a
@@ -991,7 +1005,9 @@ type StreamSnapshot struct {
 	EntityType    string `json:"entity_type"`
 	EntityVersion int64  `json:"entity_version"`
 	State         any    `json:"state"`
-	CreatedAt     string `json:"created_at"`
+	// CreatedAt is set by GetSnapshot. It is nil on the CreateSnapshot result,
+	// because the server answers that call with the snapshot ID only.
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 }
 
 // GetSnapshotOpts filters GetSnapshot. BeforeVersion returns the latest
@@ -1020,14 +1036,14 @@ type AuditEvent struct {
 	EventType  string            `json:"event_type"`
 	Payload    map[string]any    `json:"payload"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
-	CreatedAt  string            `json:"created_at"`
+	CreatedAt  time.Time         `json:"created_at"`
 }
 
 // GetAuditTrailOpts configures an audit trail query.
 type GetAuditTrailOpts struct {
 	EventType     string
-	FromTimestamp string
-	ToTimestamp   string
+	FromTimestamp *time.Time
+	ToTimestamp   *time.Time
 	Limit         int
 	Cursor        string
 }
@@ -1045,11 +1061,12 @@ type AuditTrailResult struct {
 
 // PausedStepInfo contains information about a completed step in a paused run.
 type PausedStepInfo struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Output      json.RawMessage `json:"output"`
-	Injected    bool            `json:"injected"`
-	CompletedAt string          `json:"completedAt"`
+	ID       string          `json:"id"`
+	Name     string          `json:"name"`
+	Output   json.RawMessage `json:"output"`
+	Injected bool            `json:"injected"`
+	// CompletedAt is nil for a step that has not ended.
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
 	// StepType is the step kind ("invoke", "sleep", "wait_for_event",
 	// "compensate", "invoke_function") so you can tell what you are patching.
 	StepType string `json:"stepType"`
@@ -1082,8 +1099,8 @@ type TimeTravelStepSnapshot struct {
 	Output         json.RawMessage `json:"output,omitempty"`
 	Error          json.RawMessage `json:"error,omitempty"`
 	OriginalOutput json.RawMessage `json:"originalOutput,omitempty"`
-	StartedAt      string          `json:"startedAt,omitempty"`
-	CompletedAt    string          `json:"completedAt,omitempty"`
+	StartedAt      *time.Time      `json:"startedAt,omitempty"`
+	CompletedAt    *time.Time      `json:"completedAt,omitempty"`
 	DurationMs     int             `json:"durationMs"`
 	Injected       bool            `json:"injected"`
 	Patched        bool            `json:"patched"`
@@ -1096,19 +1113,19 @@ type TimeTravelRunStateSnapshot struct {
 	Status     string                   `json:"status"`
 	Input      json.RawMessage          `json:"input,omitempty"`
 	Steps      []TimeTravelStepSnapshot `json:"steps"`
-	Timestamp  string                   `json:"timestamp"`
-	CreatedAt  string                   `json:"createdAt,omitempty"`
+	Timestamp  time.Time                `json:"timestamp"`
+	CreatedAt  *time.Time               `json:"createdAt,omitempty"`
 }
 
 // TimeTravelTimelineEvent represents an event in the run's timeline.
 type TimeTravelTimelineEvent struct {
-	ID          string `json:"id"`
-	EventType   string `json:"eventType"`
-	StepID      string `json:"stepId,omitempty"`
-	StepName    string `json:"stepName,omitempty"`
-	Summary     string `json:"summary"`
-	Significant bool   `json:"significant"`
-	Timestamp   string `json:"timestamp"`
+	ID          string    `json:"id"`
+	EventType   string    `json:"eventType"`
+	StepID      string    `json:"stepId,omitempty"`
+	StepName    string    `json:"stepName,omitempty"`
+	Summary     string    `json:"summary"`
+	Significant bool      `json:"significant"`
+	Timestamp   time.Time `json:"timestamp"`
 }
 
 // TimeTravelStepOutputSnapshot represents a step's output at a point in time.
@@ -1180,17 +1197,17 @@ func (s *TimeTravelStepOutputSnapshot) UnmarshalJSON(b []byte) error {
 // Secret represents a secret's metadata. Value stays empty: secret values are
 // write-only, and no response from the server carries one.
 type Secret struct {
-	Name      string `json:"name"`
-	Value     string `json:"value"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	Name      string    `json:"name"`
+	Value     string    `json:"value"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // SecretListEntry represents a secret entry in a list result (value is omitted).
 type SecretListEntry struct {
-	Name      string `json:"name"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // ============================================================================
@@ -1199,21 +1216,21 @@ type SecretListEntry struct {
 
 // Project represents an Ironflow project grouping related environments.
 type Project struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	OrgID       string `json:"org_id"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	OrgID       string    `json:"org_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // Environment represents a deployment environment within a project.
 type Environment struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	ProjectID string `json:"project_id"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	ProjectID string    `json:"project_id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // SQLQueryResult contains the result of a SQL query against projection tables.
@@ -1289,25 +1306,26 @@ func WithPartition(key string) GetProjectionOption {
 // cleared on completion. Progress is
 // (LastEventSeq - RebuildStartCursor) / (RebuildTargetSeq - RebuildStartCursor).
 type ProjectionStatusInfo struct {
-	Name         string `json:"name"`
-	Status       string `json:"status"`
-	Mode         string `json:"mode"`
-	LastEventSeq int64  `json:"lastEventSeq"`
-	Lag          int64  `json:"lag"`
-	LastError    string `json:"lastError"`
-	UpdatedAt    string `json:"updatedAt"`
+	Name         string    `json:"name"`
+	Status       string    `json:"status"`
+	Mode         string    `json:"mode"`
+	LastEventSeq int64     `json:"lastEventSeq"`
+	Lag          int64     `json:"lag"`
+	LastError    string    `json:"lastError"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 
-	RebuildTargetSeq   int64  `json:"rebuildTargetSeq,omitempty"`
-	RebuildStartCursor int64  `json:"rebuildStartCursor,omitempty"`
-	RebuildStartedAt   string `json:"rebuildStartedAt,omitempty"`
+	RebuildTargetSeq   int64      `json:"rebuildTargetSeq,omitempty"`
+	RebuildStartCursor int64      `json:"rebuildStartCursor,omitempty"`
+	RebuildStartedAt   *time.Time `json:"rebuildStartedAt,omitempty"`
 }
 
 // RebuildJob represents a projection rebuild operation.
 type RebuildJob struct {
-	Name      string  `json:"name"`
-	Status    string  `json:"status"`
-	Progress  float64 `json:"progress"` // 0 to 1
-	StartedAt string  `json:"startedAt"`
+	Name     string  `json:"name"`
+	Status   string  `json:"status"`
+	Progress float64 `json:"progress"` // 0 to 1
+	// StartedAt is nil until the rebuild starts.
+	StartedAt *time.Time `json:"startedAt,omitempty"`
 }
 
 // ============================================================================
@@ -1316,10 +1334,11 @@ type RebuildJob struct {
 
 // EventSchema represents a registered event schema with version information.
 type EventSchema struct {
-	Name      string         `json:"event_name"`
-	Version   int            `json:"version"`
-	Schema    map[string]any `json:"schema"`
-	CreatedAt string         `json:"created_at"`
+	Name    string         `json:"event_name"`
+	Version int            `json:"version"`
+	Schema  map[string]any `json:"schema"`
+	// CreatedAt is nil when the server sends none.
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler to support both server wire formats:
@@ -1332,7 +1351,7 @@ func (e *EventSchema) UnmarshalJSON(data []byte) error {
 		Version    int            `json:"version"`
 		Schema     map[string]any `json:"schema"`
 		SchemaJSON string         `json:"schema_json"`
-		CreatedAt  string         `json:"created_at"`
+		CreatedAt  *time.Time     `json:"created_at"`
 	}
 	var raw rawEventSchema
 	if err := json.Unmarshal(data, &raw); err != nil {

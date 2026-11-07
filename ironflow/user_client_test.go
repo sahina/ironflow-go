@@ -148,14 +148,18 @@ func TestUserClient_List(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode([]map[string]any{
 				{
-					"id":    "user-1",
-					"email": "alice@example.com",
-					"name":  "Alice",
+					"id":         "user-1",
+					"created_at": "2026-01-01T00:00:00Z",
+					"updated_at": "2026-01-01T00:00:00Z",
+					"email":      "alice@example.com",
+					"name":       "Alice",
 				},
 				{
-					"id":    "user-2",
-					"email": "bob@example.com",
-					"name":  "Bob",
+					"id":         "user-2",
+					"created_at": "2026-01-01T00:00:00Z",
+					"updated_at": "2026-01-01T00:00:00Z",
+					"email":      "bob@example.com",
+					"name":       "Bob",
 				},
 			})
 		}))
@@ -205,8 +209,10 @@ func TestUserClient_Get(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
-				"id":    "user-1",
-				"email": "alice@example.com",
+				"id":         "user-1",
+				"created_at": "2026-01-01T00:00:00Z",
+				"updated_at": "2026-01-01T00:00:00Z",
+				"email":      "alice@example.com",
 			})
 		}))
 		defer cleanup()
@@ -251,9 +257,11 @@ func TestUserClient_Update(t *testing.T) {
 			json.NewDecoder(r.Body).Decode(&receivedBody)
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
-				"id":    "user-1",
-				"email": "alice@example.com",
-				"name":  "Alice Smith",
+				"id":         "user-1",
+				"created_at": "2026-01-01T00:00:00Z",
+				"updated_at": "2026-01-01T00:00:00Z",
+				"email":      "alice@example.com",
+				"name":       "Alice Smith",
 			})
 		}))
 		defer cleanup()
@@ -328,10 +336,11 @@ func TestTenantClient_List(t *testing.T) {
 			json.NewEncoder(w).Encode([]map[string]any{
 				{
 					"id":         "org_acme",
+					"updated_at": "2026-01-01T00:00:00Z",
 					"name":       "Acme Corp",
 					"env_count":  2,
 					"key_count":  3,
-					"created_at": "2026-01-01",
+					"created_at": "2026-01-01T12:34:56.789Z",
 				},
 			})
 		}))

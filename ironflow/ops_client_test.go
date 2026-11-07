@@ -17,7 +17,7 @@ func TestOpsHelpersPaths(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		_, _ = w.Write([]byte(`[{"queue_seq":2,"run_id":"r","lane_id":null,"reservation_owner":null,"first_enqueued_at":"2026-10-16T19:08:16Z"}]`))
+		_, _ = w.Write([]byte(`[{"queue_seq":2,"run_id":"r","lane_id":null,"reservation_owner":null,"first_enqueued_at":"2026-10-16T19:08:16Z","eligible_at":"2026-10-16T19:08:16Z","created_at":"2026-10-16T19:08:16Z","last_used_at":"2026-10-16T19:08:16Z","activated_at":"2026-10-16T19:08:16Z","expires_at":"2026-10-16T19:08:16Z","heartbeat_expiry":"2026-10-16T19:08:16Z","armed_at":"2026-10-16T19:08:16Z","fires_at":"2026-10-16T19:08:16Z"}]`))
 	}))
 	defer srv.Close()
 	c := NewClient(ClientConfig{ServerURL: srv.URL, APIKey: "ifplatform_test"})

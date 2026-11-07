@@ -140,8 +140,8 @@ func TestLiveWatch(t *testing.T) {
 		if first.Name != name || !reflect.DeepEqual(first.Data, map[string]any{"a": 1.0}) || first.Revision != pre.Revision {
 			t.Fatalf("replay = %+v, want a=1 rev %d", first, pre.Revision)
 		}
-		if ts, err := time.Parse(time.RFC3339Nano, first.UpdatedAt); err != nil || !strings.HasSuffix(first.UpdatedAt, "Z") || time.Since(ts) > time.Minute {
-			t.Fatalf("updatedAt = %q, want a recent UTC RFC 3339 time", first.UpdatedAt)
+		if time.Since(first.UpdatedAt) > time.Minute {
+			t.Fatalf("updatedAt = %s, want a recent time", first.UpdatedAt)
 		}
 
 		time.Sleep(idleGap)

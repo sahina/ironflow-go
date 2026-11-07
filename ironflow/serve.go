@@ -2,6 +2,7 @@ package ironflow
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -142,7 +143,7 @@ func (h *serveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute function
-	response := h.executeHandler(fn, &req)
+	response := h.executeHandler(r.Context(), r.Header.Get("traceparent"), r.Header.Get("tracestate"), fn, &req)
 	if pushErr, kept := encodeFailure(response.Result, response.Steps); pushErr != nil {
 		// Report the failure with the steps that encode, rather than a 200
 		// with an empty body the engine retries as a transport error (#2873).
@@ -151,9 +152,12 @@ func (h *serveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.sendJSON(w, http.StatusOK, response)
 }
 
-func (h *serveHandler) executeHandler(fn Function, req *PushRequest) *PushResponse {
-	// Create execution context
+func (h *serveHandler) executeHandler(parent context.Context, traceparent, tracestate string, fn Function, req *PushRequest) *PushResponse {
+	goCtx, span := startProcess(parent, traceparent, tracestate)
+	var execErr error
+	defer finishSpan(span, &execErr)
 	exec := newExecutionContext(req)
+	exec.ctx = goCtx
 	exec.stepTimeout = fn.Config.StepTimeout
 	exec.serverURL = h.serverURL
 	exec.environment = h.environment
@@ -200,7 +204,6 @@ func (h *serveHandler) executeHandler(fn Function, req *PushRequest) *PushRespon
 
 	// Execute with panic recovery for yield signals
 	var result any
-	var execErr error
 
 	func() {
 		defer func() {

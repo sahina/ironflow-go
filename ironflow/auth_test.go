@@ -690,7 +690,7 @@ func TestPolicySet_K01_K02_GoSDK(t *testing.T) {
 		gotBody = nil
 		_ = json.NewDecoder(r.Body).Decode(&gotBody)
 		w.WriteHeader(status)
-		_, _ = w.Write([]byte(`{"version":2,"modules":{"a.rego":"package p\n"},"mode":"monitor","enforcement_active":true,"versions":[{"version":2,"mode":"monitor","created_at":"x"}],"decision":"deny","reasons_omitted":3}`))
+		_, _ = w.Write([]byte(`{"version":2,"modules":{"a.rego":"package p\n"},"mode":"monitor","enforcement_active":true,"versions":[{"version":2,"mode":"monitor","created_at":"2026-03-04T05:06:07Z"}],"decision":"deny","reasons_omitted":3}`))
 	}))
 	defer ts.Close()
 	c := newAuthTestClient(ts)

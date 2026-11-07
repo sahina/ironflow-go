@@ -264,7 +264,7 @@ func (b *FileBucket) Put(ctx context.Context, path string, body io.Reader, size 
 		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 			return WrapError(err, "decode file info", "DECODE_ERROR", false)
 		}
-		return nil
+		return requireTimestamps(out)
 	}
 	run := attempt
 	if replayable {

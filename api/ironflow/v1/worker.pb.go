@@ -2380,6 +2380,8 @@ type JobContext struct {
 	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
 	Metadata      map[string]string      `protobuf:"bytes,2,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Secrets       map[string]string      `protobuf:"bytes,3,rep,name=secrets,proto3" json:"secrets,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Traceparent   string                 `protobuf:"bytes,4,opt,name=traceparent,proto3" json:"traceparent,omitempty"`
+	Tracestate    string                 `protobuf:"bytes,5,opt,name=tracestate,proto3" json:"tracestate,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2433,6 +2435,20 @@ func (x *JobContext) GetSecrets() map[string]string {
 		return x.Secrets
 	}
 	return nil
+}
+
+func (x *JobContext) GetTraceparent() string {
+	if x != nil {
+		return x.Traceparent
+	}
+	return ""
+}
+
+func (x *JobContext) GetTracestate() string {
+	if x != nil {
+		return x.Tracestate
+	}
+	return ""
 }
 
 type StepAck struct {
@@ -2889,12 +2905,16 @@ const file_ironflow_v1_worker_proto_rawDesc = "" +
 	"\n" +
 	"error_json\x18\x06 \x01(\fR\terrorJson\x12\x1f\n" +
 	"\voutput_json\x18\a \x01(\fR\n" +
-	"outputJson\"\xa3\x02\n" +
+	"outputJson\"\xe5\x02\n" +
 	"\n" +
 	"JobContext\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12A\n" +
 	"\bmetadata\x18\x02 \x03(\v2%.ironflow.v1.JobContext.MetadataEntryR\bmetadata\x12>\n" +
-	"\asecrets\x18\x03 \x03(\v2$.ironflow.v1.JobContext.SecretsEntryR\asecrets\x1a;\n" +
+	"\asecrets\x18\x03 \x03(\v2$.ironflow.v1.JobContext.SecretsEntryR\asecrets\x12 \n" +
+	"\vtraceparent\x18\x04 \x01(\tR\vtraceparent\x12\x1e\n" +
+	"\n" +
+	"tracestate\x18\x05 \x01(\tR\n" +
+	"tracestate\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +

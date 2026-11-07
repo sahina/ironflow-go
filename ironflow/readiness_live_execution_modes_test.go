@@ -111,10 +111,8 @@ func TestLiveReadinessExecutionModes(t *testing.T) {
 				w.ActiveJobs != 0 || w.Transport != "rest-polling" {
 				t.Fatalf("worker = %+v, want the registered fields on rest-polling with no jobs", w)
 			}
-			for _, ts := range []string{w.RegisteredAt, w.LastHeartbeat} {
-				if _, err := time.Parse(time.RFC3339, ts); err != nil {
-					t.Fatalf("worker time %q: %v", ts, err)
-				}
+			if w.RegisteredAt.IsZero() || w.LastHeartbeat.IsZero() {
+				t.Fatalf("worker = %+v, want RegisteredAt and LastHeartbeat", w)
 			}
 			return
 		}

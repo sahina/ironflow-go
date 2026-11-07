@@ -54,6 +54,9 @@ func (pc *ProjectClient) List(ctx context.Context) ([]Project, error) {
 	if projects == nil {
 		return []Project{}, nil
 	}
+	if err := requireTimestamps(projects); err != nil {
+		return nil, err
+	}
 	return projects, nil
 }
 
@@ -113,6 +116,9 @@ func (pc *ProjectClient) ListEnvironments(ctx context.Context) ([]Environment, e
 	}
 	if envs == nil {
 		return []Environment{}, nil
+	}
+	if err := requireTimestamps(envs); err != nil {
+		return nil, err
 	}
 	return envs, nil
 }

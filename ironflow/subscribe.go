@@ -130,8 +130,9 @@ type SubscriptionEvent struct {
 
 // EventMeta contains event metadata.
 type EventMeta struct {
-	// Timestamp is the event timestamp in ISO 8601 format.
-	Timestamp string `json:"timestamp"`
+	// Timestamp is the event timestamp. Nil when the frame carries none or an
+	// unreadable one.
+	Timestamp *time.Time `json:"timestamp,omitempty"`
 
 	// Sequence is the event sequence number.
 	Sequence uint64 `json:"sequence,omitempty"`
@@ -139,6 +140,27 @@ type EventMeta struct {
 	// SequenceExact is the decimal uint64 representation used by JavaScript
 	// clients when Sequence exceeds their safe integer range.
 	SequenceExact string `json:"sequenceExact,omitempty"`
+}
+
+// UnmarshalJSON reads an empty or unreadable timestamp as nil. Metadata never
+// costs a payload: an older server sends "" on a consumer group frame it may
+// already have acked, and handleEvent drops a frame that fails to decode.
+func (m *EventMeta) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		Timestamp     any    `json:"timestamp"`
+		Sequence      uint64 `json:"sequence"`
+		SequenceExact string `json:"sequenceExact"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*m = EventMeta{Sequence: wire.Sequence, SequenceExact: wire.SequenceExact}
+	if raw, ok := wire.Timestamp.(string); ok {
+		if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+			m.Timestamp = &t
+		}
+	}
+	return nil
 }
 
 // SubscriptionError represents an error from a subscription.
@@ -825,6 +847,12 @@ func (c *SubscriptionClient) SubscribeEntityStream(ctx context.Context, entityID
 				if err := json.Unmarshal(event.Data, &streamEvt); err != nil {
 					if opts.OnError != nil {
 						opts.OnError(fmt.Errorf("failed to unmarshal entity event: %w", err))
+					}
+					continue
+				}
+				if err := requireTimestamps(streamEvt); err != nil {
+					if opts.OnError != nil {
+						opts.OnError(fmt.Errorf("entity event: %w", err))
 					}
 					continue
 				}

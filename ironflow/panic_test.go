@@ -289,14 +289,6 @@ func TestParallelPanicHandling(t *testing.T) {
 		}
 	})
 
-	// Note: Testing panic propagation in parallel branches is difficult because
-	// panics happen in separate goroutines. The Parallel function re-panics
-	// non-yield panics, which will crash the program. This is the expected
-	// behavior - real panics should not be silently swallowed.
-	//
-	// We skip the direct test here because there's no way to catch a panic
-	// from a different goroutine. The behavior is verified by code inspection:
-	// parallel.go line 145 re-panics non-yield panics.
 }
 
 func TestPanicDoesNotCorruptState(t *testing.T) {
@@ -369,8 +361,3 @@ func TestPanicDoesNotCorruptState(t *testing.T) {
 		}
 	})
 }
-
-// Note: TestPanicInNestedParallel is omitted because testing panic propagation
-// across goroutines is not possible with defer/recover. The Parallel and
-// ParallelWithBranch functions correctly re-panic non-yield panics, which
-// will crash the program as expected for unrecoverable errors.

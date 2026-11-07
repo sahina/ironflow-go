@@ -44,7 +44,7 @@ func errorJSON(msg string) []byte {
 }
 
 func bucketInfoJSON() []byte {
-	b, _ := json.Marshal(map[string]any{"name": "test-bucket", "values": 0, "bytes": 0, "history": 1})
+	b, _ := json.Marshal(map[string]any{"name": "test-bucket", "values": 0, "bytes": 0, "history": 1, "created_at": "2026-01-01T00:00:00Z"})
 	return b
 }
 

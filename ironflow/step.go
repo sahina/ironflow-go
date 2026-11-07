@@ -16,6 +16,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"go.opentelemetry.io/otel"
 )
 
 // compensationEntry stores a registered compensation handler.
@@ -26,7 +28,7 @@ type compensationEntry struct {
 
 // executionContext manages step execution state.
 type executionContext struct {
-	ctx          context.Context // worker job cancellation; optional in push mode
+	ctx          context.Context
 	runID        string
 	functionID   string
 	attempt      int
@@ -304,6 +306,7 @@ func (b *BranchContext) createBranchContext(parallelName string, branchIndex int
 		parent:            b.parent,
 		scopePrefix:       scopePrefix,
 		legacyScopePrefix: fmt.Sprintf("%s:%s:%d", b.legacyScopePrefix, parallelName, branchIndex),
+		logContext:        b.logContext,
 		stepCounters:      make(map[string]int),
 	}
 }
@@ -336,19 +339,30 @@ func runWithTimeout[T any](fn func() (T, error), timeout time.Duration, stepID, 
 		return r, e, false
 	}
 
-	type resultPair struct {
-		result T
-		err    error
+	type callbackOutcome struct {
+		result     T
+		err        error
+		panicValue any
 	}
-	ch := make(chan resultPair, 1)
+	ch := make(chan callbackOutcome, 1)
 	go func() {
-		r, e := fn()
-		ch <- resultPair{r, e}
+		defer func() {
+			// A callback can finish after the timeout; its outcome must not block
+			// or panic on a goroutine the caller can no longer recover from.
+			if r := recover(); r != nil {
+				ch <- callbackOutcome{panicValue: r}
+			}
+		}()
+		result, err := fn()
+		ch <- callbackOutcome{result: result, err: err}
 	}()
 
 	select {
-	case pair := <-ch:
-		return pair.result, pair.err, false
+	case outcome := <-ch:
+		if outcome.panicValue != nil {
+			panic(outcome.panicValue)
+		}
+		return outcome.result, outcome.err, false
 	case <-time.After(timeout):
 		endedAt := time.Now()
 		duration := endedAt.Sub(startedAt)
@@ -390,8 +404,15 @@ func Run[T any](ctx Context, name string, fn func() (T, error), opts ...StepOpti
 // computed exactly once: a second generateStepID call would bump the per-name
 // counter and shift every later step ID.
 func runWithStepID[T any](ctx Context, name string, fn func(stepID string) (T, error), opts ...StepOption) (T, error) {
+	return runScoped(ctx, name, func(_ Context, id string) (T, error) { return fn(id) }, opts...)
+}
+
+func runScoped[T any](ctx Context, name string, fn func(Context, string) (T, error), opts ...StepOption) (T, error) {
 	var zero T
 	exec := ctx.exec
+	if ctx.branch != nil {
+		ctx.branch.markScopedUsed()
+	}
 	if err := exec.cancellationErr(); err != nil {
 		return zero, err
 	}
@@ -400,7 +421,12 @@ func runWithStepID[T any](ctx Context, name string, fn func(stepID string) (T, e
 		return testRunStep[T](exec, name)
 	}
 
-	stepID := exec.generateStepID(name)
+	var stepID string
+	if ctx.branch != nil {
+		stepID = ctx.branch.generateStepID(name)
+	} else {
+		stepID = exec.generateStepID(name)
+	}
 
 	// Check if step is already completed (memoized)
 	if completed, ok := exec.completedSteps[stepID]; ok && completed.Status == "completed" {
@@ -448,7 +474,19 @@ func runWithStepID[T any](ctx Context, name string, fn func(stepID string) (T, e
 		}
 	}
 
-	result, err, timedOut := runWithTimeout(func() (T, error) { return fn(stepID) }, timeout, stepID, name, startedAt, recordStep)
+	childCtx, span := otel.Tracer(tracerName).Start(ctx.Context(), "step.run")
+	scope := &logScope{ctx: childCtx, stepID: stepID}
+	scope.active.Store(true)
+	defer scope.active.Store(false)
+	scoped := ctx
+	scoped.scope = scope
+	var spanErr error
+	defer finishSpan(span, &spanErr)
+	result, err, timedOut := runWithTimeout(func() (T, error) { defer scope.active.Store(false); return fn(scoped, stepID) }, timeout, stepID, name, startedAt, func(step *StepResult) {
+		scope.active.Store(false)
+		recordStep(step)
+	})
+	spanErr = err
 	if timedOut {
 		return zero, err
 	}

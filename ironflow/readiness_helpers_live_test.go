@@ -96,7 +96,7 @@ func TestLiveHelpersReadiness(t *testing.T) {
 			t.Fatalf("GetExecutionRouting: %v", err)
 		}
 		// Registering never activates: the function stays on legacy routing.
-		if routing.FunctionID != seed.DebounceFunctionID || routing.Mode != FunctionRoutingLegacy || routing.ActiveDeploymentID != "" || routing.UpdatedAt.IsZero() {
+		if routing.FunctionID != seed.DebounceFunctionID || routing.Mode != FunctionRoutingLegacy || routing.ActiveDeploymentID != "" || routing.UpdatedAt == nil || routing.UpdatedAt.IsZero() {
 			t.Fatalf("GetExecutionRouting = %+v, want legacy with no active deployment", routing)
 		}
 	})

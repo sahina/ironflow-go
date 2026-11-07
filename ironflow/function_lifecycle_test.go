@@ -27,17 +27,17 @@ func TestFunctionLifecycleMethods(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/ironflow.v1.IronflowService/GetFunction":
-			_, _ = w.Write([]byte(`{"id":"fn-1","status":"FUNCTION_STATUS_ACTIVE","preferredMode":"EXECUTION_MODE_PULL","recording":true}`))
+			_, _ = w.Write([]byte(`{"id":"fn-1","status":"FUNCTION_STATUS_ACTIVE","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","preferredMode":"EXECUTION_MODE_PULL","recording":true}`))
 		case "/ironflow.v1.IronflowService/UpdateFunctionStatus":
-			_, _ = w.Write([]byte(`{"id":"fn-1","status":"FUNCTION_STATUS_PAUSED"}`))
+			_, _ = w.Write([]byte(`{"id":"fn-1","status":"FUNCTION_STATUS_PAUSED","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		case "/ironflow.v1.IronflowService/DeleteFunction":
 			_, _ = w.Write([]byte(`{}`))
 		case "/ironflow.v1.IronflowService/ListFunctionHistory":
-			_, _ = w.Write([]byte(`{"entries":[{"eventId":"evt-1","entityVersion":"12","functionId":"fn-1","changeType":"update","functionSnapshot":{"id":"fn-1","status":"FUNCTION_STATUS_ACTIVE"}}],"hasMore":true}`))
+			_, _ = w.Write([]byte(`{"entries":[{"eventId":"evt-1","entityVersion":"12","functionId":"fn-1","changeType":"update","recordedAt":"2026-01-01T00:00:00Z","functionSnapshot":{"id":"fn-1","status":"FUNCTION_STATUS_ACTIVE","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}}],"hasMore":true}`))
 		case "/ironflow.v1.IronflowService/GetFunctionAtVersion":
-			_, _ = w.Write([]byte(`{"entry":{"eventId":"evt-2","entityVersion":"9","functionId":"fn-1","changeType":"update"}}`))
+			_, _ = w.Write([]byte(`{"entry":{"eventId":"evt-2","entityVersion":"9","functionId":"fn-1","changeType":"update","recordedAt":"2026-01-01T00:00:00Z"}}`))
 		case "/ironflow.v1.IronflowService/RollbackFunction":
-			_, _ = w.Write([]byte(`{"function":{"id":"fn-1","status":"FUNCTION_STATUS_ACTIVE"}}`))
+			_, _ = w.Write([]byte(`{"function":{"id":"fn-1","status":"FUNCTION_STATUS_ACTIVE","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}}`))
 		default:
 			http.NotFound(w, r)
 		}

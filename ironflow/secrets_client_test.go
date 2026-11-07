@@ -56,10 +56,10 @@ func TestSecretsClient_Get(t *testing.T) {
 		if secret.Value != "super-secret" {
 			t.Errorf("expected value 'super-secret', got %s", secret.Value)
 		}
-		if secret.CreatedAt != "2026-03-28T00:00:00Z" {
+		if !secret.CreatedAt.Equal(mustTime(t, "2026-03-28T00:00:00Z")) {
 			t.Errorf("expected createdAt '2026-03-28T00:00:00Z', got %s", secret.CreatedAt)
 		}
-		if secret.UpdatedAt != "2026-03-28T00:00:00Z" {
+		if !secret.UpdatedAt.Equal(mustTime(t, "2026-03-28T00:00:00Z")) {
 			t.Errorf("expected updatedAt '2026-03-28T00:00:00Z', got %s", secret.UpdatedAt)
 		}
 	})
@@ -84,7 +84,7 @@ func TestSecretsClient_Get(t *testing.T) {
 		client, cleanup := setupMockSecretsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			receivedPath = r.URL.Path
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(Secret{Name: "my secret"})
+			json.NewEncoder(w).Encode(Secret{Name: "my secret", CreatedAt: fixtureTime, UpdatedAt: fixtureTime})
 		}))
 		defer cleanup()
 
@@ -112,7 +112,7 @@ func TestSecretsClient_Patch(t *testing.T) {
 		if body["name"] != newName {
 			t.Fatalf("name = %v", body["name"])
 		}
-		_ = json.NewEncoder(w).Encode(Secret{Name: newName})
+		_ = json.NewEncoder(w).Encode(Secret{Name: newName, CreatedAt: fixtureTime, UpdatedAt: fixtureTime})
 	}))
 	defer cleanup()
 
@@ -166,7 +166,7 @@ func TestSecretsClient_Set(t *testing.T) {
 		if secret.Name != "api-key" {
 			t.Errorf("expected name 'api-key', got %s", secret.Name)
 		}
-		if secret.CreatedAt != "2026-03-28T00:00:00Z" {
+		if !secret.CreatedAt.Equal(mustTime(t, "2026-03-28T00:00:00Z")) {
 			t.Errorf("expected createdAt '2026-03-28T00:00:00Z', got %s", secret.CreatedAt)
 		}
 	})
@@ -227,7 +227,7 @@ func TestSecretsClient_Update(t *testing.T) {
 		if secret.Name != "db-password" {
 			t.Errorf("expected name 'db-password', got %s", secret.Name)
 		}
-		if secret.UpdatedAt != "2026-03-28T01:00:00Z" {
+		if !secret.UpdatedAt.Equal(mustTime(t, "2026-03-28T01:00:00Z")) {
 			t.Errorf("expected updatedAt '2026-03-28T01:00:00Z', got %s", secret.UpdatedAt)
 		}
 	})
@@ -291,7 +291,7 @@ func TestSecretsClient_List(t *testing.T) {
 		if secrets[1].Name != "api-key" {
 			t.Errorf("expected second name 'api-key', got %s", secrets[1].Name)
 		}
-		if secrets[0].CreatedAt != "2026-03-28T00:00:00Z" {
+		if !secrets[0].CreatedAt.Equal(mustTime(t, "2026-03-28T00:00:00Z")) {
 			t.Errorf("expected first createdAt '2026-03-28T00:00:00Z', got %s", secrets[0].CreatedAt)
 		}
 	})

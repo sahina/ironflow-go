@@ -1180,6 +1180,75 @@ func (x *Event) GetEmittedBy() string {
 	return ""
 }
 
+// Matched cancellation evidence retained independently of active specs.
+type CancellationEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	EventName     string                 `protobuf:"bytes,2,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
+	MatchPath     string                 `protobuf:"bytes,3,opt,name=match_path,json=matchPath,proto3" json:"match_path,omitempty"`
+	MatchValue    string                 `protobuf:"bytes,4,opt,name=match_value,json=matchValue,proto3" json:"match_value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CancellationEvent) Reset() {
+	*x = CancellationEvent{}
+	mi := &file_ironflow_v1_types_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CancellationEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CancellationEvent) ProtoMessage() {}
+
+func (x *CancellationEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_types_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CancellationEvent.ProtoReflect.Descriptor instead.
+func (*CancellationEvent) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *CancellationEvent) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *CancellationEvent) GetEventName() string {
+	if x != nil {
+		return x.EventName
+	}
+	return ""
+}
+
+func (x *CancellationEvent) GetMatchPath() string {
+	if x != nil {
+		return x.MatchPath
+	}
+	return ""
+}
+
+func (x *CancellationEvent) GetMatchValue() string {
+	if x != nil {
+		return x.MatchValue
+	}
+	return ""
+}
+
 type Run struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Run ID
@@ -1246,14 +1315,15 @@ type Run struct {
 	// Run-level retries, oldest first: one entry per failed execution that the
 	// engine re-queued. The first and the last 10 are kept. The final failure is
 	// in error, not here. Set by GetRun only.
-	Attempts      []*StepAttempt `protobuf:"bytes,35,rep,name=attempts,proto3" json:"attempts,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Attempts          []*StepAttempt     `protobuf:"bytes,35,rep,name=attempts,proto3" json:"attempts,omitempty"`
+	CancellationEvent *CancellationEvent `protobuf:"bytes,36,opt,name=cancellation_event,json=cancellationEvent,proto3" json:"cancellation_event,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Run) Reset() {
 	*x = Run{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[9]
+	mi := &file_ironflow_v1_types_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1265,7 +1335,7 @@ func (x *Run) String() string {
 func (*Run) ProtoMessage() {}
 
 func (x *Run) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[9]
+	mi := &file_ironflow_v1_types_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1278,7 +1348,7 @@ func (x *Run) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Run.ProtoReflect.Descriptor instead.
 func (*Run) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{9}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Run) GetId() string {
@@ -1512,6 +1582,13 @@ func (x *Run) GetAttempts() []*StepAttempt {
 	return nil
 }
 
+func (x *Run) GetCancellationEvent() *CancellationEvent {
+	if x != nil {
+		return x.CancellationEvent
+	}
+	return nil
+}
+
 type Step struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Step record ID
@@ -1586,7 +1663,7 @@ type Step struct {
 
 func (x *Step) Reset() {
 	*x = Step{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[10]
+	mi := &file_ironflow_v1_types_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1598,7 +1675,7 @@ func (x *Step) String() string {
 func (*Step) ProtoMessage() {}
 
 func (x *Step) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[10]
+	mi := &file_ironflow_v1_types_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1611,7 +1688,7 @@ func (x *Step) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Step.ProtoReflect.Descriptor instead.
 func (*Step) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{10}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Step) GetId() string {
@@ -1858,7 +1935,7 @@ type StepAttempt struct {
 
 func (x *StepAttempt) Reset() {
 	*x = StepAttempt{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[11]
+	mi := &file_ironflow_v1_types_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1870,7 +1947,7 @@ func (x *StepAttempt) String() string {
 func (*StepAttempt) ProtoMessage() {}
 
 func (x *StepAttempt) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[11]
+	mi := &file_ironflow_v1_types_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1883,7 +1960,7 @@ func (x *StepAttempt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StepAttempt.ProtoReflect.Descriptor instead.
 func (*StepAttempt) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{11}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *StepAttempt) GetAttempt() int32 {
@@ -1956,7 +2033,7 @@ type Error struct {
 
 func (x *Error) Reset() {
 	*x = Error{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[12]
+	mi := &file_ironflow_v1_types_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1968,7 +2045,7 @@ func (x *Error) String() string {
 func (*Error) ProtoMessage() {}
 
 func (x *Error) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[12]
+	mi := &file_ironflow_v1_types_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1981,7 +2058,7 @@ func (x *Error) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Error.ProtoReflect.Descriptor instead.
 func (*Error) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{12}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Error) GetMessage() string {
@@ -2041,7 +2118,7 @@ type ErrorInfo struct {
 
 func (x *ErrorInfo) Reset() {
 	*x = ErrorInfo{}
-	mi := &file_ironflow_v1_types_proto_msgTypes[13]
+	mi := &file_ironflow_v1_types_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2053,7 +2130,7 @@ func (x *ErrorInfo) String() string {
 func (*ErrorInfo) ProtoMessage() {}
 
 func (x *ErrorInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_ironflow_v1_types_proto_msgTypes[13]
+	mi := &file_ironflow_v1_types_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2066,7 +2143,7 @@ func (x *ErrorInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorInfo.ProtoReflect.Descriptor instead.
 func (*ErrorInfo) Descriptor() ([]byte, []int) {
-	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{13}
+	return file_ironflow_v1_types_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ErrorInfo) GetResourceType() string {
@@ -2170,7 +2247,15 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"entityType\x12%\n" +
 	"\x0eentity_version\x18\v \x01(\x03R\rentityVersion\x12\x1d\n" +
 	"\n" +
-	"emitted_by\x18\r \x01(\tR\temittedBy\"\xc4\v\n" +
+	"emitted_by\x18\r \x01(\tR\temittedBy\"\x8d\x01\n" +
+	"\x11CancellationEvent\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1d\n" +
+	"\n" +
+	"event_name\x18\x02 \x01(\tR\teventName\x12\x1d\n" +
+	"\n" +
+	"match_path\x18\x03 \x01(\tR\tmatchPath\x12\x1f\n" +
+	"\vmatch_value\x18\x04 \x01(\tR\n" +
+	"matchValue\"\x93\f\n" +
 	"\x03Run\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vfunction_id\x18\x02 \x01(\tR\n" +
@@ -2215,7 +2300,8 @@ const file_ironflow_v1_types_proto_rawDesc = "" +
 	"errorValue\x12\x1d\n" +
 	"\n" +
 	"event_name\x18\" \x01(\tR\teventName\x124\n" +
-	"\battempts\x18# \x03(\v2\x18.ironflow.v1.StepAttemptR\battemptsJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11R\x0fconcurrency_keyR\bpriority\"\xb8\v\n" +
+	"\battempts\x18# \x03(\v2\x18.ironflow.v1.StepAttemptR\battempts\x12M\n" +
+	"\x12cancellation_event\x18$ \x01(\v2\x1e.ironflow.v1.CancellationEventR\x11cancellationEventJ\x04\b\x0f\x10\x10J\x04\b\x10\x10\x11R\x0fconcurrency_keyR\bpriority\"\xb8\v\n" +
 	"\x04Step\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06run_id\x18\x02 \x01(\tR\x05runId\x12\x17\n" +
@@ -2337,7 +2423,7 @@ func file_ironflow_v1_types_proto_rawDescGZIP() []byte {
 }
 
 var file_ironflow_v1_types_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_ironflow_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_ironflow_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_ironflow_v1_types_proto_goTypes = []any{
 	(FunctionStatus)(0),           // 0: ironflow.v1.FunctionStatus
 	(ExecutionMode)(0),            // 1: ironflow.v1.ExecutionMode
@@ -2353,15 +2439,16 @@ var file_ironflow_v1_types_proto_goTypes = []any{
 	(*DebounceConfig)(nil),        // 11: ironflow.v1.DebounceConfig
 	(*Function)(nil),              // 12: ironflow.v1.Function
 	(*Event)(nil),                 // 13: ironflow.v1.Event
-	(*Run)(nil),                   // 14: ironflow.v1.Run
-	(*Step)(nil),                  // 15: ironflow.v1.Step
-	(*StepAttempt)(nil),           // 16: ironflow.v1.StepAttempt
-	(*Error)(nil),                 // 17: ironflow.v1.Error
-	(*ErrorInfo)(nil),             // 18: ironflow.v1.ErrorInfo
-	nil,                           // 19: ironflow.v1.ErrorInfo.MetadataEntry
-	(*timestamppb.Timestamp)(nil), // 20: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),       // 21: google.protobuf.Struct
-	(*structpb.Value)(nil),        // 22: google.protobuf.Value
+	(*CancellationEvent)(nil),     // 14: ironflow.v1.CancellationEvent
+	(*Run)(nil),                   // 15: ironflow.v1.Run
+	(*Step)(nil),                  // 16: ironflow.v1.Step
+	(*StepAttempt)(nil),           // 17: ironflow.v1.StepAttempt
+	(*Error)(nil),                 // 18: ironflow.v1.Error
+	(*ErrorInfo)(nil),             // 19: ironflow.v1.ErrorInfo
+	nil,                           // 20: ironflow.v1.ErrorInfo.MetadataEntry
+	(*timestamppb.Timestamp)(nil), // 21: google.protobuf.Timestamp
+	(*structpb.Struct)(nil),       // 22: google.protobuf.Struct
+	(*structpb.Value)(nil),        // 23: google.protobuf.Value
 }
 var file_ironflow_v1_types_proto_depIdxs = []int32{
 	5,  // 0: ironflow.v1.Function.triggers:type_name -> ironflow.v1.Trigger
@@ -2369,61 +2456,62 @@ var file_ironflow_v1_types_proto_depIdxs = []int32{
 	9,  // 2: ironflow.v1.Function.concurrency:type_name -> ironflow.v1.ConcurrencyConfig
 	1,  // 3: ironflow.v1.Function.preferred_mode:type_name -> ironflow.v1.ExecutionMode
 	0,  // 4: ironflow.v1.Function.status:type_name -> ironflow.v1.FunctionStatus
-	20, // 5: ironflow.v1.Function.created_at:type_name -> google.protobuf.Timestamp
-	20, // 6: ironflow.v1.Function.updated_at:type_name -> google.protobuf.Timestamp
-	20, // 7: ironflow.v1.Function.next_run:type_name -> google.protobuf.Timestamp
-	21, // 8: ironflow.v1.Function.metadata:type_name -> google.protobuf.Struct
+	21, // 5: ironflow.v1.Function.created_at:type_name -> google.protobuf.Timestamp
+	21, // 6: ironflow.v1.Function.updated_at:type_name -> google.protobuf.Timestamp
+	21, // 7: ironflow.v1.Function.next_run:type_name -> google.protobuf.Timestamp
+	22, // 8: ironflow.v1.Function.metadata:type_name -> google.protobuf.Struct
 	11, // 9: ironflow.v1.Function.debounce:type_name -> ironflow.v1.DebounceConfig
 	10, // 10: ironflow.v1.Function.cancel_on:type_name -> ironflow.v1.CancelOnSpec
 	7,  // 11: ironflow.v1.Function.circuit_breaker:type_name -> ironflow.v1.CircuitBreakerConfig
 	8,  // 12: ironflow.v1.Function.throttle:type_name -> ironflow.v1.ThrottleConfig
-	21, // 13: ironflow.v1.Event.data:type_name -> google.protobuf.Struct
-	22, // 14: ironflow.v1.Event.data_value:type_name -> google.protobuf.Value
-	20, // 15: ironflow.v1.Event.timestamp:type_name -> google.protobuf.Timestamp
-	21, // 16: ironflow.v1.Event.metadata:type_name -> google.protobuf.Struct
+	22, // 13: ironflow.v1.Event.data:type_name -> google.protobuf.Struct
+	23, // 14: ironflow.v1.Event.data_value:type_name -> google.protobuf.Value
+	21, // 15: ironflow.v1.Event.timestamp:type_name -> google.protobuf.Timestamp
+	22, // 16: ironflow.v1.Event.metadata:type_name -> google.protobuf.Struct
 	1,  // 17: ironflow.v1.Run.execution_mode:type_name -> ironflow.v1.ExecutionMode
-	21, // 18: ironflow.v1.Run.input:type_name -> google.protobuf.Struct
-	22, // 19: ironflow.v1.Run.input_value:type_name -> google.protobuf.Value
-	21, // 20: ironflow.v1.Run.output:type_name -> google.protobuf.Struct
-	22, // 21: ironflow.v1.Run.output_value:type_name -> google.protobuf.Value
-	17, // 22: ironflow.v1.Run.error:type_name -> ironflow.v1.Error
+	22, // 18: ironflow.v1.Run.input:type_name -> google.protobuf.Struct
+	23, // 19: ironflow.v1.Run.input_value:type_name -> google.protobuf.Value
+	22, // 20: ironflow.v1.Run.output:type_name -> google.protobuf.Struct
+	23, // 21: ironflow.v1.Run.output_value:type_name -> google.protobuf.Value
+	18, // 22: ironflow.v1.Run.error:type_name -> ironflow.v1.Error
 	2,  // 23: ironflow.v1.Run.status:type_name -> ironflow.v1.RunStatus
-	20, // 24: ironflow.v1.Run.started_at:type_name -> google.protobuf.Timestamp
-	20, // 25: ironflow.v1.Run.ended_at:type_name -> google.protobuf.Timestamp
-	20, // 26: ironflow.v1.Run.created_at:type_name -> google.protobuf.Timestamp
-	20, // 27: ironflow.v1.Run.updated_at:type_name -> google.protobuf.Timestamp
-	20, // 28: ironflow.v1.Run.timeout_at:type_name -> google.protobuf.Timestamp
-	20, // 29: ironflow.v1.Run.claimed_at:type_name -> google.protobuf.Timestamp
-	22, // 30: ironflow.v1.Run.error_value:type_name -> google.protobuf.Value
-	16, // 31: ironflow.v1.Run.attempts:type_name -> ironflow.v1.StepAttempt
-	4,  // 32: ironflow.v1.Step.step_type:type_name -> ironflow.v1.StepType
-	3,  // 33: ironflow.v1.Step.status:type_name -> ironflow.v1.StepStatus
-	21, // 34: ironflow.v1.Step.input:type_name -> google.protobuf.Struct
-	22, // 35: ironflow.v1.Step.input_value:type_name -> google.protobuf.Value
-	21, // 36: ironflow.v1.Step.output:type_name -> google.protobuf.Struct
-	22, // 37: ironflow.v1.Step.output_value:type_name -> google.protobuf.Value
-	17, // 38: ironflow.v1.Step.error:type_name -> ironflow.v1.Error
-	20, // 39: ironflow.v1.Step.started_at:type_name -> google.protobuf.Timestamp
-	20, // 40: ironflow.v1.Step.ended_at:type_name -> google.protobuf.Timestamp
-	21, // 41: ironflow.v1.Step.original_output:type_name -> google.protobuf.Struct
-	22, // 42: ironflow.v1.Step.original_output_value:type_name -> google.protobuf.Value
-	20, // 43: ironflow.v1.Step.patched_at:type_name -> google.protobuf.Timestamp
-	20, // 44: ironflow.v1.Step.sleep_until:type_name -> google.protobuf.Timestamp
-	20, // 45: ironflow.v1.Step.wait_timeout:type_name -> google.protobuf.Timestamp
-	20, // 46: ironflow.v1.Step.created_at:type_name -> google.protobuf.Timestamp
-	20, // 47: ironflow.v1.Step.updated_at:type_name -> google.protobuf.Timestamp
-	22, // 48: ironflow.v1.Step.error_value:type_name -> google.protobuf.Value
-	16, // 49: ironflow.v1.Step.attempts:type_name -> ironflow.v1.StepAttempt
-	20, // 50: ironflow.v1.StepAttempt.started_at:type_name -> google.protobuf.Timestamp
-	20, // 51: ironflow.v1.StepAttempt.ended_at:type_name -> google.protobuf.Timestamp
-	22, // 52: ironflow.v1.StepAttempt.error:type_name -> google.protobuf.Value
-	21, // 53: ironflow.v1.Error.details:type_name -> google.protobuf.Struct
-	19, // 54: ironflow.v1.ErrorInfo.metadata:type_name -> ironflow.v1.ErrorInfo.MetadataEntry
-	55, // [55:55] is the sub-list for method output_type
-	55, // [55:55] is the sub-list for method input_type
-	55, // [55:55] is the sub-list for extension type_name
-	55, // [55:55] is the sub-list for extension extendee
-	0,  // [0:55] is the sub-list for field type_name
+	21, // 24: ironflow.v1.Run.started_at:type_name -> google.protobuf.Timestamp
+	21, // 25: ironflow.v1.Run.ended_at:type_name -> google.protobuf.Timestamp
+	21, // 26: ironflow.v1.Run.created_at:type_name -> google.protobuf.Timestamp
+	21, // 27: ironflow.v1.Run.updated_at:type_name -> google.protobuf.Timestamp
+	21, // 28: ironflow.v1.Run.timeout_at:type_name -> google.protobuf.Timestamp
+	21, // 29: ironflow.v1.Run.claimed_at:type_name -> google.protobuf.Timestamp
+	23, // 30: ironflow.v1.Run.error_value:type_name -> google.protobuf.Value
+	17, // 31: ironflow.v1.Run.attempts:type_name -> ironflow.v1.StepAttempt
+	14, // 32: ironflow.v1.Run.cancellation_event:type_name -> ironflow.v1.CancellationEvent
+	4,  // 33: ironflow.v1.Step.step_type:type_name -> ironflow.v1.StepType
+	3,  // 34: ironflow.v1.Step.status:type_name -> ironflow.v1.StepStatus
+	22, // 35: ironflow.v1.Step.input:type_name -> google.protobuf.Struct
+	23, // 36: ironflow.v1.Step.input_value:type_name -> google.protobuf.Value
+	22, // 37: ironflow.v1.Step.output:type_name -> google.protobuf.Struct
+	23, // 38: ironflow.v1.Step.output_value:type_name -> google.protobuf.Value
+	18, // 39: ironflow.v1.Step.error:type_name -> ironflow.v1.Error
+	21, // 40: ironflow.v1.Step.started_at:type_name -> google.protobuf.Timestamp
+	21, // 41: ironflow.v1.Step.ended_at:type_name -> google.protobuf.Timestamp
+	22, // 42: ironflow.v1.Step.original_output:type_name -> google.protobuf.Struct
+	23, // 43: ironflow.v1.Step.original_output_value:type_name -> google.protobuf.Value
+	21, // 44: ironflow.v1.Step.patched_at:type_name -> google.protobuf.Timestamp
+	21, // 45: ironflow.v1.Step.sleep_until:type_name -> google.protobuf.Timestamp
+	21, // 46: ironflow.v1.Step.wait_timeout:type_name -> google.protobuf.Timestamp
+	21, // 47: ironflow.v1.Step.created_at:type_name -> google.protobuf.Timestamp
+	21, // 48: ironflow.v1.Step.updated_at:type_name -> google.protobuf.Timestamp
+	23, // 49: ironflow.v1.Step.error_value:type_name -> google.protobuf.Value
+	17, // 50: ironflow.v1.Step.attempts:type_name -> ironflow.v1.StepAttempt
+	21, // 51: ironflow.v1.StepAttempt.started_at:type_name -> google.protobuf.Timestamp
+	21, // 52: ironflow.v1.StepAttempt.ended_at:type_name -> google.protobuf.Timestamp
+	23, // 53: ironflow.v1.StepAttempt.error:type_name -> google.protobuf.Value
+	22, // 54: ironflow.v1.Error.details:type_name -> google.protobuf.Struct
+	20, // 55: ironflow.v1.ErrorInfo.metadata:type_name -> ironflow.v1.ErrorInfo.MetadataEntry
+	56, // [56:56] is the sub-list for method output_type
+	56, // [56:56] is the sub-list for method input_type
+	56, // [56:56] is the sub-list for extension type_name
+	56, // [56:56] is the sub-list for extension extendee
+	0,  // [0:56] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_types_proto_init() }
@@ -2431,14 +2519,14 @@ func file_ironflow_v1_types_proto_init() {
 	if File_ironflow_v1_types_proto != nil {
 		return
 	}
-	file_ironflow_v1_types_proto_msgTypes[10].OneofWrappers = []any{}
+	file_ironflow_v1_types_proto_msgTypes[11].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ironflow_v1_types_proto_rawDesc), len(file_ironflow_v1_types_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

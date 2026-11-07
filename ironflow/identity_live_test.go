@@ -84,7 +84,7 @@ func TestLiveIdentity(t *testing.T) {
 		}
 		for _, tn := range tenants {
 			if tn.ID == orgID {
-				if tn.Name != orgName || tn.EnvCount != 1 || tn.KeyCount != 1 || tn.CreatedAt == "" {
+				if tn.Name != orgName || tn.EnvCount != 1 || tn.KeyCount != 1 || tn.CreatedAt.IsZero() {
 					t.Errorf("tenant row = %+v, want %q with 1 env and 1 key", tn, orgName)
 				}
 				return

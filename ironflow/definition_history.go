@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
 )
@@ -93,6 +92,9 @@ func (pc *ProjectionClient) ListHistory(ctx context.Context, name string, opts D
 	for _, e := range resp.Msg.GetEntries() {
 		page.Entries = append(page.Entries, projectionHistoryEntryFromProto(e))
 	}
+	if err := requireTimestamps(page); err != nil {
+		return nil, err
+	}
 	return page, nil
 }
 
@@ -104,6 +106,9 @@ func (pc *ProjectionClient) GetRevision(ctx context.Context, name string, revisi
 		return nil, connectError(err)
 	}
 	entry := projectionHistoryEntryFromProto(resp.Msg.GetEntry())
+	if err := requireTimestamps(entry); err != nil {
+		return nil, err
+	}
 	return &entry, nil
 }
 
@@ -118,6 +123,9 @@ func (sc *SchemaClient) ListHistory(ctx context.Context, eventName string, versi
 	for _, e := range resp.Msg.GetEntries() {
 		page.Entries = append(page.Entries, schemaHistoryEntryFromProto(e))
 	}
+	if err := requireTimestamps(page); err != nil {
+		return nil, err
+	}
 	return page, nil
 }
 
@@ -129,14 +137,10 @@ func (sc *SchemaClient) GetRevision(ctx context.Context, eventName string, versi
 		return nil, connectError(err)
 	}
 	entry := schemaHistoryEntryFromProto(resp.Msg.GetEntry())
-	return &entry, nil
-}
-
-func timeOrZero(ts *timestamppb.Timestamp) time.Time {
-	if ts == nil {
-		return time.Time{}
+	if err := requireTimestamps(entry); err != nil {
+		return nil, err
 	}
-	return ts.AsTime()
+	return &entry, nil
 }
 
 func projectionHistoryEntryFromProto(e *ironflowv1.ProjectionHistoryEntry) ProjectionHistoryEntry {
@@ -152,7 +156,7 @@ func projectionHistoryEntryFromProto(e *ironflowv1.ProjectionHistoryEntry) Proje
 		ActorID:      e.GetActorId(),
 		ChangeReason: e.GetChangeReason(),
 		ChangeType:   e.GetChangeType(),
-		RecordedAt:   timeOrZero(e.GetRecordedAt()),
+		RecordedAt:   timeFromProto(e.GetRecordedAt()),
 	}
 }
 
@@ -168,6 +172,6 @@ func schemaHistoryEntryFromProto(e *ironflowv1.SchemaHistoryEntry) SchemaHistory
 		ActorID:      e.GetActorId(),
 		ChangeReason: e.GetChangeReason(),
 		ChangeType:   e.GetChangeType(),
-		RecordedAt:   timeOrZero(e.GetRecordedAt()),
+		RecordedAt:   timeFromProto(e.GetRecordedAt()),
 	}
 }

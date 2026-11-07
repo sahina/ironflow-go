@@ -195,7 +195,7 @@ func TestLiveReadiness(t *testing.T) {
 		var types []string
 		for _, e := range trail.Events {
 			types = append(types, e.EventType)
-			if e.RunID != seed.RunID || e.FunctionID != seed.FunctionID || e.CreatedAt == "" {
+			if e.RunID != seed.RunID || e.FunctionID != seed.FunctionID || e.CreatedAt.IsZero() {
 				t.Errorf("event %+v does not belong to run %s / function %s", e, seed.RunID, seed.FunctionID)
 			}
 			if strings.HasPrefix(e.EventType, "step.") && e.StepID != seed.StepID {
@@ -397,7 +397,7 @@ func TestLiveReadiness(t *testing.T) {
 	// No runner is connected, so the rebuild stays running until it is cancelled.
 	t.Run("proj-rebuild, proj-rebuild-status and proj-rebuild-cancel", func(t *testing.T) {
 		job, err := pc.Rebuild(ctx, own.Name)
-		if err != nil || job.Name != own.Name || job.Status != "running" || job.StartedAt == "" {
+		if err != nil || job.Name != own.Name || job.Status != "running" || job.StartedAt == nil || job.StartedAt.IsZero() {
 			t.Fatalf("Rebuild = %+v, %v; want a running job for %s", job, err, own.Name)
 		}
 		if got := statusOf(t); got != "rebuilding" {
@@ -814,7 +814,7 @@ func liveRuns(ctx context.Context, t *testing.T, client *Client, seed readinessS
 		if err != nil || state.PauseReason != "injection" || len(state.Steps) != 1 {
 			t.Fatalf("GetPausedState = %+v, %v; want injection with one step", state, err)
 		}
-		if st := state.Steps[0]; st.ID != hold.NoteStepID || st.Status != "completed" || st.Injected || st.CompletedAt == "" || !sameJSON(st.Output, map[string]any{"sdk": "go"}) {
+		if st := state.Steps[0]; st.ID != hold.NoteStepID || st.Status != "completed" || st.Injected || st.CompletedAt == nil || st.CompletedAt.IsZero() || !sameJSON(st.Output, map[string]any{"sdk": "go"}) {
 			t.Fatalf("paused step = %+v (output %s), want %s completed with {sdk: go}", st, st.Output, hold.NoteStepID)
 		}
 	})

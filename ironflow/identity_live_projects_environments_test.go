@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 // TestLiveIdentityProjectsEnvironments covers project-crud and env-crud
@@ -24,7 +23,7 @@ func TestLiveIdentityProjectsEnvironments(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		if project.ID == "" || project.Name != name || project.Description != "created" || project.OrgID != tn.orgID || project.CreatedAt == "" {
+		if project.ID == "" || project.Name != name || project.Description != "created" || project.OrgID != tn.orgID || project.CreatedAt.IsZero() {
 			t.Fatalf("Create = %+v", project)
 		}
 		list, err := projects.List(ctx)
@@ -47,8 +46,7 @@ func TestLiveIdentityProjectsEnvironments(t *testing.T) {
 		updatedDesc, cleared := "updated", ""
 		got, err := projects.Update(ctx, project.ID, UpdateProjectInput{Name: renamed, Description: &updatedDesc})
 		// The two stamps can carry different zones, so compare the instants.
-		before, _ := time.Parse(time.RFC3339Nano, project.UpdatedAt)
-		after, _ := time.Parse(time.RFC3339Nano, got.UpdatedAt)
+		before, after := project.UpdatedAt, got.UpdatedAt
 		if err != nil || got.ID != project.ID || got.Name != renamed || got.Description != "updated" || after.Before(before) || after.IsZero() {
 			t.Fatalf("Update = %+v, %v", got, err)
 		}
@@ -83,7 +81,7 @@ func TestLiveIdentityProjectsEnvironments(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateEnvironment: %v", err)
 		}
-		if env.ID == "" || env.Name != "staging" || env.ProjectID != project.ID || env.CreatedAt == "" {
+		if env.ID == "" || env.Name != "staging" || env.ProjectID != project.ID || env.CreatedAt.IsZero() {
 			t.Fatalf("CreateEnvironment = %+v", env)
 		}
 		if _, err := projects.CreateEnvironment(ctx, CreateEnvironmentInput{Name: "Not Valid!", ProjectID: project.ID}); httpStatusOf(err) != http.StatusBadRequest {

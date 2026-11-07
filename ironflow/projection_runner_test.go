@@ -1098,8 +1098,8 @@ func TestProjectionRunner_HandlerContextPopulated(t *testing.T) {
 	if capturedCtx.Event.Seq != 42 {
 		t.Errorf("expected ctx.Event.Seq=42, got %d", capturedCtx.Event.Seq)
 	}
-	if capturedCtx.Event.Timestamp != "2024-03-15T10:30:00Z" {
-		t.Errorf("expected ctx.Event.Timestamp=2024-03-15T10:30:00Z, got %q", capturedCtx.Event.Timestamp)
+	if want := time.Date(2024, 3, 15, 10, 30, 0, 0, time.UTC); !capturedCtx.Event.Timestamp.Equal(want) {
+		t.Errorf("expected ctx.Event.Timestamp=%s, got %s", want, capturedCtx.Event.Timestamp)
 	}
 	if capturedCtx.Projection.Name != "context-test" {
 		t.Errorf("expected ctx.Projection.Name=context-test, got %q", capturedCtx.Projection.Name)

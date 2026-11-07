@@ -3,17 +3,18 @@ package ironflow
 import (
 	"context"
 	"net/url"
+	"time"
 )
 
 // User represents a dashboard user account.
 type User struct {
-	ID        string   `json:"id"`
-	OrgID     string   `json:"org_id"`
-	Email     string   `json:"email"`
-	Name      string   `json:"name,omitempty"`
-	Roles     []string `json:"roles,omitempty"`
-	CreatedAt string   `json:"created_at,omitempty"`
-	UpdatedAt string   `json:"updated_at,omitempty"`
+	ID        string    `json:"id"`
+	OrgID     string    `json:"org_id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name,omitempty"`
+	Roles     []string  `json:"roles,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitzero"`
+	UpdatedAt time.Time `json:"updated_at,omitzero"`
 }
 
 // CreateUserInput contains parameters for creating a new user.
@@ -39,11 +40,11 @@ type ChangePasswordInput struct {
 
 // Tenant represents a tenant (organization) in the platform.
 type Tenant struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	EnvCount  int    `json:"env_count"`
-	KeyCount  int    `json:"key_count"`
-	CreatedAt string `json:"created_at,omitempty"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	EnvCount  int       `json:"env_count"`
+	KeyCount  int       `json:"key_count"`
+	CreatedAt time.Time `json:"created_at,omitzero"`
 }
 
 // ProvisionTenantInput creates an organization and its first environment.

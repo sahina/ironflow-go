@@ -29,13 +29,13 @@ func (s *streamRegistryService) ListStreams(context.Context, *connect.Request[ir
 	if s.failure != nil {
 		return nil, s.failure
 	}
-	return connect.NewResponse(&ironflowv1.ListStreamsResponse{Streams: []*ironflowv1.GetStreamInfoResponse{{EntityId: "order/1", EntityType: "order", Version: 9007199254740993, EventCount: 2, UpdatedAt: timestamppb.New(time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC))}}}), nil
+	return connect.NewResponse(&ironflowv1.ListStreamsResponse{Streams: []*ironflowv1.GetStreamInfoResponse{{EntityId: "order/1", EntityType: "order", Version: 9007199254740993, EventCount: 2, CreatedAt: timestamppb.New(time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)), UpdatedAt: timestamppb.New(time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC))}}}), nil
 }
 func (s *streamRegistryService) GetEntityHistory(_ context.Context, r *connect.Request[ironflowv1.GetEntityHistoryRequest]) (*connect.Response[ironflowv1.GetEntityHistoryResponse], error) {
 	if r.Msg.EntityId != "order/1" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("wrong entity"))
 	}
-	return connect.NewResponse(&ironflowv1.GetEntityHistoryResponse{Entries: []*ironflowv1.EntityHistoryEntry{{EventName: "order.created", EntityVersion: 9007199254740993, EventDataValue: s.snapshot.StateValue}}}), nil
+	return connect.NewResponse(&ironflowv1.GetEntityHistoryResponse{Entries: []*ironflowv1.EntityHistoryEntry{{EventName: "order.created", EntityVersion: 9007199254740993, EventDataValue: s.snapshot.StateValue, Timestamp: timestamppb.New(time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC))}}}), nil
 }
 func (s *streamRegistryService) CreateSnapshot(_ context.Context, r *connect.Request[ironflowv1.CreateSnapshotRequest]) (*connect.Response[ironflowv1.CreateSnapshotResponse], error) {
 	if r.Header().Get("Authorization") != "Bearer key" {
@@ -59,7 +59,7 @@ func TestStreamRegistryConnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(streams) != 1 || streams[0].Version != 9007199254740993 || streams[0].LastEventAt != "2026-09-06T12:00:00Z" {
+	if len(streams) != 1 || streams[0].Version != 9007199254740993 || !streams[0].LastEventAt.Equal(mustTime(t, "2026-09-06T12:00:00Z")) {
 		t.Fatalf("streams=%+v", streams)
 	}
 	input := CreateSnapshotInput{EntityType: "order", EntityVersion: 9007199254740993, State: []any{"created", true}}
@@ -74,7 +74,7 @@ func TestStreamRegistryConnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.EntityVersion != input.EntityVersion || !reflect.DeepEqual(snapshot.State, input.State) || snapshot.CreatedAt != "2026-09-06T12:00:00Z" {
+	if snapshot.EntityVersion != input.EntityVersion || !reflect.DeepEqual(snapshot.State, input.State) || !snapshot.CreatedAt.Equal(mustTime(t, "2026-09-06T12:00:00Z")) {
 		t.Fatalf("snapshot=%+v", snapshot)
 	}
 	history, err := client.GetEntityHistory(ctx, "order/1")
@@ -135,7 +135,7 @@ type pagedHistoryService struct {
 func (s *pagedHistoryService) GetEntityHistory(_ context.Context, r *connect.Request[ironflowv1.GetEntityHistoryRequest]) (*connect.Response[ironflowv1.GetEntityHistoryResponse], error) {
 	s.seen = append(s.seen, r.Msg)
 	entry := func(v int64) *ironflowv1.EntityHistoryEntry {
-		return &ironflowv1.EntityHistoryEntry{EventName: "order.updated", EntityVersion: v}
+		return &ironflowv1.EntityHistoryEntry{EventName: "order.updated", EntityVersion: v, Timestamp: timestamppb.New(time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC))}
 	}
 	if s.stuck {
 		return connect.NewResponse(&ironflowv1.GetEntityHistoryResponse{Entries: []*ironflowv1.EntityHistoryEntry{entry(r.Msg.FromVersion)}, NextCursor: r.Msg.FromVersion}), nil

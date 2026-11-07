@@ -15,10 +15,10 @@ type APIKeyInfo struct {
 	// EnvironmentID is the environment the key is bound to.
 	EnvironmentID string `json:"environment_id,omitempty"`
 	// ToolScopes limits the agent tools the key may call.
-	ToolScopes []string `json:"tool_scopes,omitempty"`
-	CreatedAt  string   `json:"created_at"`
-	ExpiresAt  *string  `json:"expires_at,omitempty"`
-	LastUsedAt *string  `json:"last_used_at,omitempty"`
+	ToolScopes []string   `json:"tool_scopes,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
 // APIKeyWithSecret includes the raw key (only returned on create/rotate).
@@ -119,12 +119,13 @@ const (
 
 // PolicySet is an org's Rego policy set.
 type PolicySet struct {
-	Version   int64             `json:"version"` // 0 when the org has no set
-	Modules   map[string]string `json:"modules"`
-	Decision  string            `json:"decision,omitempty"`
-	Mode      string            `json:"mode"` // "enforce" or "monitor"
-	UpdatedAt string            `json:"updated_at,omitempty"`
-	UpdatedBy string            `json:"updated_by,omitempty"`
+	Version  int64             `json:"version"` // 0 when the org has no set
+	Modules  map[string]string `json:"modules"`
+	Decision string            `json:"decision,omitempty"`
+	Mode     string            `json:"mode"` // "enforce" or "monitor"
+	// UpdatedAt is nil when the org has no set (Version 0).
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+	UpdatedBy string     `json:"updated_by,omitempty"`
 	// EnforcementActive is false when the server runs with policy enforcement
 	// off, so an "enforce" set is stored but not applied. Nil from a server
 	// that omits it.
@@ -142,11 +143,11 @@ type PolicySetInput struct {
 
 // PolicySetVersion summarizes one stored version.
 type PolicySetVersion struct {
-	Version   int64  `json:"version"`
-	Mode      string `json:"mode"`
-	Decision  string `json:"decision,omitempty"`
-	CreatedAt string `json:"created_at"`
-	CreatedBy string `json:"created_by,omitempty"`
+	Version   int64     `json:"version"`
+	Mode      string    `json:"mode"`
+	Decision  string    `json:"decision,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	CreatedBy string    `json:"created_by,omitempty"`
 }
 
 // PolicySetDryRunInput evaluates Input against Set, or against the active set when Set is nil.

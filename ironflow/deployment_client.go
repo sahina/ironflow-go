@@ -113,7 +113,8 @@ type FunctionExecutionRouting struct {
 	TransitionID       string
 	// TransitionStartedAt is nil unless Mode is FunctionRoutingAdopting.
 	TransitionStartedAt *time.Time
-	UpdatedAt           time.Time
+	// UpdatedAt is nil when the server has no routing row to read it from.
+	UpdatedAt *time.Time
 }
 
 // Register stores an immutable deployment. Registering the identical tuple
@@ -194,9 +195,7 @@ func (dc *DeploymentClient) GetExecutionRouting(ctx context.Context, functionID 
 		t := ts.AsTime()
 		r.TransitionStartedAt = &t
 	}
-	if ts := m.GetUpdatedAt(); ts != nil {
-		r.UpdatedAt = ts.AsTime()
-	}
+	r.UpdatedAt = optionalTimeFromProto(m.GetUpdatedAt())
 	return r, nil
 }
 
@@ -233,6 +232,9 @@ func deploymentFromProto(pd *ironflowv1.Deployment) (*Deployment, error) {
 	}
 	if ts := pd.GetCreatedAt(); ts != nil {
 		d.CreatedAt = ts.AsTime()
+	}
+	if err := requireTimestamps(d); err != nil {
+		return nil, err
 	}
 	return d, nil
 }

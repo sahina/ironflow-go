@@ -1,7 +1,6 @@
 package ironflow
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -63,15 +62,26 @@ func (c Context) markResumeHandled() {
 }
 
 func (c Context) createBranchContext(parallelName string, branchIndex int) *BranchContext {
-	return c.exec.createBranchContext(parallelName, branchIndex)
+	var b *BranchContext
+	if c.branch != nil {
+		b = c.branch.createBranchContext(parallelName, branchIndex)
+	} else {
+		b = c.exec.createBranchContext(parallelName, branchIndex)
+	}
+	b.logContext = &c
+	return b
 }
 
 func (c Context) execution() *executionContext {
 	return c.exec
 }
 
-// markScopedUsed is a no-op: the root Context is never a branch.
-func (c Context) markScopedUsed() {}
+// markScopedUsed retains branch usage tracking for explicit scoped callbacks.
+func (c Context) markScopedUsed() {
+	if c.branch != nil {
+		c.branch.markScopedUsed()
+	}
+}
 
 // enclosingClaimsFor attributes root step-id claims to a fan-out.
 //
@@ -255,7 +265,7 @@ func Parallel[T any](ctx Context, name string, branches []func(*BranchContext) (
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	yieldSigs := make([]*yieldSignal, branchCount)
+	branchPanics := make([]any, branchCount)
 	cancelled := false
 
 	// Semaphore for concurrency control
@@ -306,20 +316,14 @@ func Parallel[T any](ctx Context, name string, branches []func(*BranchContext) (
 				return
 			}
 
-			// Execute with panic recovery (for yield signals)
+			// Recover here so the caller can handle panics on its own goroutine.
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						if signal, ok := r.(*yieldSignal); ok {
-							// Capture yield signal
-							mu.Lock()
-							yieldSigs[idx] = signal
-							cancelled = true
-							mu.Unlock()
-						} else {
-							// Re-panic non-yield panics
-							panic(r)
-						}
+						mu.Lock()
+						branchPanics[idx] = r
+						cancelled = true
+						mu.Unlock()
 					}
 				}()
 
@@ -342,10 +346,14 @@ func Parallel[T any](ctx Context, name string, branches []func(*BranchContext) (
 
 	wg.Wait()
 
-	// Handle yield signal (re-panic to pause execution)
-	for _, signal := range yieldSigs {
-		if signal != nil {
-			panic(signal)
+	for _, r := range branchPanics {
+		if _, yielded := r.(*yieldSignal); r != nil && !yielded {
+			panic(r)
+		}
+	}
+	for _, r := range branchPanics {
+		if r != nil {
+			panic(r)
 		}
 	}
 
@@ -458,111 +466,8 @@ func RunWithBranch[T any](b *BranchContext, name string, fn func() (T, error), o
 // runBranchWithStepID is RunWithBranch with the memoized step ID handed to fn;
 // see runWithStepID.
 func runBranchWithStepID[T any](b *BranchContext, name string, fn func(stepID string) (T, error), opts ...StepOption) (T, error) {
-	b.markScopedUsed()
-
-	var zero T
-	if err := b.parent.cancellationErr(); err != nil {
-		return zero, err
-	}
-
-	if b.parent.testInterceptor != nil {
-		return testRunStep[T](b.parent, name)
-	}
-
-	stepID := b.generateStepID(name)
-
-	// Check if step is already completed (memoized)
-	if completed, ok := b.getCompletedStep(stepID); ok && completed.Status == "completed" {
-		// Unmarshal the output to the expected type
-		outputBytes, err := json.Marshal(completed.Output)
-		if err != nil {
-			return zero, NewStepError(fmt.Sprintf("failed to marshal memoized output: %v", err), stepID, name, false, err)
-		}
-
-		var result T
-		if err := json.Unmarshal(outputBytes, &result); err != nil {
-			return zero, NewStepError(fmt.Sprintf("failed to unmarshal memoized output: %v", err), stepID, name, false, err)
-		}
-
-		return result, nil
-	}
-
-	// Resolve options
-	var options stepOptions
-	for _, opt := range opts {
-		opt(&options)
-	}
-
-	// Resolve timeout: step-level > function-level > no timeout
-	timeout := options.Timeout
-	if timeout == 0 && b.parent.stepTimeout > 0 {
-		timeout = b.parent.stepTimeout
-	}
-
-	// Execute the step
-	startedAt := time.Now()
-
-	// Report to the stream like Run does (streaming worker only); without it a
-	// branch step leaves no row and reruns on resume (#2413).
-	reporter := b.parent.stepReporter
-	if reporter != nil {
-		reporter.ReportStepStarted(stepID, name, "invoke")
-	}
-	recordStep := func(step *StepResult) {
-		b.recordStep(step)
-		if reporter != nil && step.Status == "failed" && step.Error != nil {
-			reporter.ReportStepFailed(step.ID, step.Name, step.Type, step.Error.Message, int(step.Duration.Milliseconds()))
-		}
-	}
-
-	result, err, timedOut := runWithTimeout(func() (T, error) { return fn(stepID) }, timeout, stepID, name, startedAt, recordStep)
-	if timedOut {
-		return zero, err
-	}
-
-	endedAt := time.Now()
-	duration := endedAt.Sub(startedAt)
-
-	if err != nil {
-		// Record failed step
-		stepResult := &StepResult{
-			ID:        stepID,
-			Name:      name,
-			Type:      "invoke",
-			Status:    "failed",
-			StartedAt: startedAt,
-			EndedAt:   &endedAt,
-			Duration:  duration,
-			Error: &StepErrorInfo{
-				Message:   err.Error(),
-				Retryable: IsRetryable(err),
-			},
-		}
-		b.recordStep(stepResult)
-		if reporter != nil {
-			reporter.ReportStepFailed(stepID, name, "invoke", err.Error(), int(duration.Milliseconds()))
-		}
-
-		return zero, NewStepError(err.Error(), stepID, name, IsRetryable(err), err)
-	}
-
-	// Record successful step
-	stepResult := &StepResult{
-		ID:        stepID,
-		Name:      name,
-		Type:      "invoke",
-		Status:    "completed",
-		StartedAt: startedAt,
-		EndedAt:   &endedAt,
-		Duration:  duration,
-		Output:    result,
-	}
-	b.recordStep(stepResult)
-	if reporter != nil {
-		reporter.ReportStepCompleted(stepID, name, "invoke", result, int(duration.Milliseconds()))
-	}
-
-	return result, nil
+	ctx := branchLoggingContext(b)
+	return runWithStepID(ctx, name, fn, opts...)
 }
 
 // SleepWithBranch pauses execution for a duration using a BranchContext.
@@ -652,7 +557,7 @@ func ParallelWithBranch[T any](b *BranchContext, name string, branches []func(*B
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	yieldSigs := make([]*yieldSignal, branchCount)
+	branchPanics := make([]any, branchCount)
 	cancelled := false
 
 	// Semaphore for concurrency control
@@ -696,18 +601,14 @@ func ParallelWithBranch[T any](b *BranchContext, name string, branches []func(*B
 				}
 			}
 
-			// Execute with panic recovery
+			// Recover here so the caller can handle panics on its own goroutine.
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						if signal, ok := r.(*yieldSignal); ok {
-							mu.Lock()
-							yieldSigs[idx] = signal
-							cancelled = true
-							mu.Unlock()
-						} else {
-							panic(r)
-						}
+						mu.Lock()
+						branchPanics[idx] = r
+						cancelled = true
+						mu.Unlock()
 					}
 				}()
 
@@ -730,10 +631,14 @@ func ParallelWithBranch[T any](b *BranchContext, name string, branches []func(*B
 
 	wg.Wait()
 
-	// Handle yield signal
-	for _, signal := range yieldSigs {
-		if signal != nil {
-			panic(signal)
+	for _, r := range branchPanics {
+		if _, yielded := r.(*yieldSignal); r != nil && !yielded {
+			panic(r)
+		}
+	}
+	for _, r := range branchPanics {
+		if r != nil {
+			panic(r)
 		}
 	}
 

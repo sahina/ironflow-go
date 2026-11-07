@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -16,14 +17,14 @@ type ConfigResponse struct {
 	Name      string         `json:"name"`
 	Data      map[string]any `json:"data"`
 	Revision  uint64         `json:"revision"`
-	UpdatedAt string         `json:"updatedAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
 }
 
 // ConfigEntry represents a summary of a config entry (without full data).
 type ConfigEntry struct {
-	Name      string `json:"name"`
-	Revision  uint64 `json:"revision"`
-	UpdatedAt string `json:"updatedAt"`
+	Name      string    `json:"name"`
+	Revision  uint64    `json:"revision"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // ConfigSetResult is the result of a set or patch operation.
@@ -130,14 +131,16 @@ type ConfigWatchEvent struct {
 	// Revision is the new revision number.
 	Revision uint64 `json:"revision"`
 	// UpdatedAt is the timestamp of the update.
-	UpdatedAt string `json:"updatedAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // ConfigWatchCallbacks are called when config changes occur.
 type ConfigWatchCallbacks struct {
 	// OnUpdate is called when the config is updated.
 	OnUpdate func(event ConfigWatchEvent)
-	// OnError is called when an error occurs. The watch stops after an error.
+	// OnError is called when an error occurs. The watch stops after an error,
+	// except a frame with an unreadable timestamp: that frame is skipped and the
+	// watch stays open.
 	OnError func(err error)
 	// OnClose is called when the watch connection is closed normally.
 	OnClose func()
@@ -167,7 +170,8 @@ func (w *ConfigWatcher) Stop() {
 //
 // The watch runs in a background goroutine. Call ConfigWatcher.Stop() to end it.
 // OnUpdate is called for every config change. OnError is called on errors (the
-// watch stops). OnClose is called on normal server-side close.
+// watch stops, unless a frame only had an unreadable timestamp). OnClose is
+// called on normal server-side close.
 //
 // Example:
 //
@@ -243,10 +247,20 @@ func (cc *ConfigClient) Watch(ctx context.Context, name string, callbacks Config
 				return
 			}
 
+			wireUpdatedAt, _ := msg["updatedAt"].(string)
+			updatedAt, err := time.Parse(time.RFC3339Nano, wireUpdatedAt)
+			if err != nil {
+				// Nothing returns to a caller from here, and one bad frame must not end the watch.
+				if callbacks.OnError != nil {
+					callbacks.OnError(fmt.Errorf("config watch frame: %w", err))
+				}
+				continue
+			}
+
 			event := ConfigWatchEvent{
 				Type:      msgType,
 				Name:      func() string { s, _ := msg["name"].(string); return s }(),
-				UpdatedAt: func() string { s, _ := msg["updatedAt"].(string); return s }(),
+				UpdatedAt: updatedAt,
 			}
 
 			if d, ok := msg["data"]; ok && d != nil {

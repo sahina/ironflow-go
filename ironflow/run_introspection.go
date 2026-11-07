@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
 	"github.com/sahina/ironflow-go/api/ironflow/v1/ironflowv1connect"
@@ -69,6 +68,9 @@ func (c *Client) GetRunSteps(ctx context.Context, runID string) (*RunStepsResult
 	for _, step := range response.Msg.Steps {
 		result.Steps = append(result.Steps, runStepFromProto(step))
 	}
+	if err := requireTimestamps(result); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -81,17 +83,10 @@ func (c *Client) GetRunStreams(ctx context.Context, runID string) (*RunStreamsRe
 	return &result, nil
 }
 
-func inspectionTimestamp(value *timestamppb.Timestamp) *time.Time {
-	if value == nil {
-		return nil
-	}
-	result := value.AsTime()
-	return &result
-}
 func runStepFromProto(s *ironflowv1.Step) RunStep {
 	result := RunStep{ID: s.Id, RunID: s.RunId, StepID: s.StepId, StepType: strings.ToLower(strings.TrimPrefix(s.StepType.String(), "STEP_TYPE_")), Sequence: int(s.Sequence), Status: s.StoredStatus,
 		Input: streamPayload(s.Input, s.InputValue), Output: streamPayload(s.Output, s.OutputValue), OriginalOutput: streamPayload(s.OriginalOutput, s.OriginalOutputValue), InputHash: s.InputHash, Attempt: int(s.Attempt),
-		StartedAt: inspectionTimestamp(s.StartedAt), EndedAt: inspectionTimestamp(s.EndedAt), SleepUntil: inspectionTimestamp(s.SleepUntil), WaitTimeout: inspectionTimestamp(s.WaitTimeout), WaitEventName: s.WaitEventName, PatchedAt: inspectionTimestamp(s.PatchedAt), PatchedBy: s.PatchedBy, CompensationFor: s.CompensationFor, CreatedAt: s.CreatedAt.AsTime(), UpdatedAt: s.UpdatedAt.AsTime()}
+		StartedAt: optionalTimeFromProto(s.StartedAt), EndedAt: optionalTimeFromProto(s.EndedAt), SleepUntil: optionalTimeFromProto(s.SleepUntil), WaitTimeout: optionalTimeFromProto(s.WaitTimeout), WaitEventName: s.WaitEventName, PatchedAt: optionalTimeFromProto(s.PatchedAt), PatchedBy: s.PatchedBy, CompensationFor: s.CompensationFor, CreatedAt: timeFromProto(s.CreatedAt), UpdatedAt: timeFromProto(s.UpdatedAt)}
 	if result.Status == "" {
 		result.Status = strings.ToLower(strings.TrimPrefix(s.Status.String(), "STEP_STATUS_"))
 	}

@@ -88,10 +88,11 @@ func TestGetAuditTrail(t *testing.T) {
 		}
 
 		ctx := context.Background()
+		from, to := mustTime(t, "2026-01-01T00:00:00Z"), mustTime(t, "2026-02-01T00:00:00Z")
 		_, err := client.GetAuditTrail(ctx, "run-abc-123", GetAuditTrailOpts{
 			EventType:     "step.completed",
-			FromTimestamp: "2026-01-01T00:00:00Z",
-			ToTimestamp:   "2026-02-01T00:00:00Z",
+			FromTimestamp: &from,
+			ToTimestamp:   &to,
 			Limit:         50,
 			Cursor:        "cursor-abc",
 		})
@@ -307,7 +308,7 @@ func TestAuditEventTypes(t *testing.T) {
 			EventType:  "step.completed",
 			Payload:    map[string]any{"durationMs": 150},
 			Metadata:   map[string]string{"user": "test"},
-			CreatedAt:  "2026-02-27T00:00:00Z",
+			CreatedAt:  mustTime(t, "2026-02-27T00:00:00Z"),
 		}
 
 		data, err := json.Marshal(event)
@@ -338,7 +339,7 @@ func TestAuditEventTypes(t *testing.T) {
 			FunctionID: "fn-1",
 			EventType:  "run.created",
 			Payload:    map[string]any{},
-			CreatedAt:  "2026-02-27T00:00:00Z",
+			CreatedAt:  mustTime(t, "2026-02-27T00:00:00Z"),
 		}
 
 		data, err := json.Marshal(event)

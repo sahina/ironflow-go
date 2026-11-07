@@ -35,14 +35,14 @@ func TestLiveIdentityAPIKeys(t *testing.T) {
 		t.Fatalf("CreateAPIKey: %v", err)
 	}
 	if !strings.HasPrefix(created.Key, "ifkey_") || !strings.HasPrefix(created.Key, created.KeyPrefix) ||
-		created.Name != name || !slices.Equal(created.RoleIDs, []string{viewer}) || created.ID == "" || created.CreatedAt == "" {
+		created.Name != name || !slices.Equal(created.RoleIDs, []string{viewer}) || created.ID == "" || created.CreatedAt.IsZero() {
 		t.Fatalf("CreateAPIKey = %+v", created)
 	}
 	if created.ExpiresAt == nil {
 		t.Fatalf("expires_in 720h left no expiry: %+v", created)
 	}
-	if exp, err := time.Parse(time.RFC3339, *created.ExpiresAt); err != nil || time.Until(exp) < 29*24*time.Hour || time.Until(exp) > 31*24*time.Hour {
-		t.Errorf("expires_at = %q, want about 30 days out (%v)", *created.ExpiresAt, err)
+	if exp := *created.ExpiresAt; time.Until(exp) < 29*24*time.Hour || time.Until(exp) > 31*24*time.Hour {
+		t.Errorf("expires_at = %s, want about 30 days out", exp)
 	}
 
 	t.Run("apikey-crud", func(t *testing.T) {
@@ -87,10 +87,7 @@ func TestLiveIdentityAPIKeys(t *testing.T) {
 		if rotated.Name != name || !slices.Equal(rotated.RoleIDs, []string{viewer}) || rotated.ExpiresAt == nil {
 			t.Fatalf("RotateAPIKey changed the configuration: %+v, want name %q, roles [%s], an expiry", rotated, name, viewer)
 		}
-		// Compare the instants, not the strings: the two backends format the stored stamp differently.
-		was, _ := time.Parse(time.RFC3339Nano, *created.ExpiresAt)
-		now, _ := time.Parse(time.RFC3339Nano, *rotated.ExpiresAt)
-		if d := now.Sub(was).Abs(); d >= time.Second {
+		if d := rotated.ExpiresAt.Sub(*created.ExpiresAt).Abs(); d >= time.Second {
 			t.Errorf("RotateAPIKey moved the expiry from %s to %s", *created.ExpiresAt, *rotated.ExpiresAt)
 		}
 		if _, err := admin.GetAPIKey(ctx, created.ID); httpStatusOf(err) != http.StatusNotFound {

@@ -912,13 +912,13 @@ func (c *Client) PauseRun(ctx context.Context, runID string) (string, error) {
 func (c *Client) GetPausedState(ctx context.Context, runID string) (*PausedState, error) {
 	var resp struct {
 		Steps []struct {
-			ID          string `json:"id"`
-			Name        string `json:"name"`
-			Output      string `json:"output"`
-			Injected    bool   `json:"injected"`
-			CompletedAt string `json:"completedAt"`
-			StepType    string `json:"stepType"`
-			Status      string `json:"status"`
+			ID          string     `json:"id"`
+			Name        string     `json:"name"`
+			Output      string     `json:"output"`
+			Injected    bool       `json:"injected"`
+			CompletedAt *time.Time `json:"completedAt"`
+			StepType    string     `json:"stepType"`
+			Status      string     `json:"status"`
 			// Error is a proto bytes field, so it arrives base64-encoded.
 			Error string `json:"error"`
 		} `json:"steps"`
@@ -1097,7 +1097,7 @@ type ReadyStatus struct {
 }
 
 // Ready reads the readiness probe, GET /ready: the server's database and NATS
-// answer. Health reports liveness only. A server that is not ready returns an
+// answer and its JetStream streams have leaders. Health reports liveness only. A server that is not ready returns an
 // *IronflowError with code "NOT_READY", the failing dependencies in
 // Details["issues"] and Details["http_status"] set to 503.
 func (c *Client) Ready(ctx context.Context) (*ReadyStatus, error) {
@@ -1171,12 +1171,12 @@ func (c *Client) GetCapabilities(ctx context.Context) (*ServerCapabilities, erro
 
 // FunctionInfo describes a registered function.
 type FunctionInfo struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Status        string `json:"status"`
-	PreferredMode string `json:"preferred_mode"`
-	CreatedAt     string `json:"created_at"`
-	UpdatedAt     string `json:"updated_at"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Status        string    `json:"status"`
+	PreferredMode string    `json:"preferred_mode"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // WorkerVersion names the SDK and runtime a worker registered with.
@@ -1194,8 +1194,8 @@ type WorkerInfo struct {
 	Labels        map[string]string `json:"labels"`
 	Version       WorkerVersion     `json:"version"`
 	ActiveJobs    int               `json:"active_jobs"`
-	RegisteredAt  string            `json:"registered_at"`
-	LastHeartbeat string            `json:"last_heartbeat"`
+	RegisteredAt  time.Time         `json:"registered_at"`
+	LastHeartbeat time.Time         `json:"last_heartbeat"`
 	Transport     string            `json:"transport"`
 }
 
@@ -1230,7 +1230,10 @@ func (c *Client) ListFunctions(ctx context.Context) ([]FunctionInfo, error) {
 	}
 	result := make([]FunctionInfo, 0, len(resp.Msg.Functions))
 	for _, fn := range resp.Msg.Functions {
-		result = append(result, FunctionInfo{ID: fn.Id, Name: fn.Name, Status: strings.ToLower(strings.TrimPrefix(fn.Status.String(), "FUNCTION_STATUS_")), PreferredMode: strings.ToLower(strings.TrimPrefix(fn.PreferredMode.String(), "EXECUTION_MODE_")), CreatedAt: streamTimestamp(fn.CreatedAt), UpdatedAt: streamTimestamp(fn.UpdatedAt)})
+		result = append(result, FunctionInfo{ID: fn.Id, Name: fn.Name, Status: strings.ToLower(strings.TrimPrefix(fn.Status.String(), "FUNCTION_STATUS_")), PreferredMode: strings.ToLower(strings.TrimPrefix(fn.PreferredMode.String(), "EXECUTION_MODE_")), CreatedAt: timeFromProto(fn.CreatedAt), UpdatedAt: timeFromProto(fn.UpdatedAt)})
+	}
+	if err := requireTimestamps(result); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -1268,6 +1271,9 @@ func (c *Client) ListWorkers(ctx context.Context) ([]WorkerInfo, error) {
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, WrapError(err, "failed to decode response", "DECODE_ERROR", false)
+	}
+	if err := requireTimestamps(result.Workers); err != nil {
+		return nil, err
 	}
 
 	return result.Workers, nil
@@ -1764,8 +1770,8 @@ type consumerGroupResponse struct {
 	Metadata         map[string]any `json:"metadata"`
 	Status           string         `json:"status"`
 	MemberCount      int            `json:"memberCount"`
-	CreatedAt        string         `json:"createdAt"`
-	UpdatedAt        string         `json:"updatedAt"`
+	CreatedAt        time.Time      `json:"createdAt"`
+	UpdatedAt        time.Time      `json:"updatedAt"`
 }
 
 func mapAckModeToProto(mode AckMode) string {
@@ -1866,17 +1872,8 @@ func mapConsumerGroupResponse(r *consumerGroupResponse) *ConsumerGroup {
 		Metadata:         r.Metadata,
 		Status:           mapConsumerGroupStatusFromProto(r.Status),
 		MemberCount:      r.MemberCount,
-	}
-
-	if r.CreatedAt != "" {
-		if t, err := time.Parse(time.RFC3339, r.CreatedAt); err == nil {
-			group.CreatedAt = t
-		}
-	}
-	if r.UpdatedAt != "" {
-		if t, err := time.Parse(time.RFC3339, r.UpdatedAt); err == nil {
-			group.UpdatedAt = t
-		}
+		CreatedAt:        r.CreatedAt,
+		UpdatedAt:        r.UpdatedAt,
 	}
 
 	return group
@@ -2110,11 +2107,11 @@ func (c *Client) GetAuditTrail(ctx context.Context, runID string, opts ...GetAud
 		if o.EventType != "" {
 			req["event_type"] = o.EventType
 		}
-		if o.FromTimestamp != "" {
-			req["from_timestamp"] = o.FromTimestamp
+		if o.FromTimestamp != nil {
+			req["from_timestamp"] = o.FromTimestamp.UTC().Format(time.RFC3339Nano)
 		}
-		if o.ToTimestamp != "" {
-			req["to_timestamp"] = o.ToTimestamp
+		if o.ToTimestamp != nil {
+			req["to_timestamp"] = o.ToTimestamp.UTC().Format(time.RFC3339Nano)
 		}
 		if o.Limit > 0 {
 			req["limit"] = o.Limit
@@ -2135,7 +2132,7 @@ func (c *Client) GetAuditTrail(ctx context.Context, runID string, opts ...GetAud
 			EventType  string            `json:"eventType"`
 			Payload    map[string]any    `json:"payload"`
 			Metadata   map[string]string `json:"metadata"`
-			CreatedAt  string            `json:"createdAt"`
+			CreatedAt  time.Time         `json:"createdAt"`
 		} `json:"events"`
 		TotalCount int    `json:"totalCount"`
 		NextCursor string `json:"nextCursor"`
@@ -2375,6 +2372,7 @@ func (c *Client) executeRequest(ctx context.Context, httpClient *http.Client, me
 		if err := json.Unmarshal(respBody, result); err != nil {
 			return WrapError(err, "failed to unmarshal response", "UNMARSHAL_ERROR", false)
 		}
+		return requireTimestamps(result)
 	}
 
 	return nil
@@ -2514,22 +2512,24 @@ func parseRetryAfter(value string) time.Duration {
 // JSON names — IronflowService runs on Connect's default codec, which emits
 // lowerCamel and omits zero-valued fields (#1919).
 type runResponse struct {
-	ID          string `json:"id"`
-	FunctionID  string `json:"functionId"`
-	EventID     string `json:"eventId"`
-	Status      string `json:"status"`
-	Attempt     int    `json:"attempt"`
-	MaxAttempts int    `json:"maxAttempts"`
-	Input       any    `json:"input"`
-	Output      any    `json:"output"`
-	Error       *struct {
+	CancellationCause string             `json:"cancellationCause"`
+	CancellationEvent *CancellationEvent `json:"cancellationEvent"`
+	ID                string             `json:"id"`
+	FunctionID        string             `json:"functionId"`
+	EventID           string             `json:"eventId"`
+	Status            string             `json:"status"`
+	Attempt           int                `json:"attempt"`
+	MaxAttempts       int                `json:"maxAttempts"`
+	Input             any                `json:"input"`
+	Output            any                `json:"output"`
+	Error             *struct {
 		Message string `json:"message"`
 		Code    string `json:"code"`
 	} `json:"error"`
-	StartedAt string `json:"startedAt"`
-	EndedAt   string `json:"endedAt"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
+	StartedAt *time.Time `json:"startedAt"`
+	EndedAt   *time.Time `json:"endedAt"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
 }
 
 func mapRunResponse(r *runResponse) (*WorkflowRun, error) {
@@ -2539,14 +2539,16 @@ func mapRunResponse(r *runResponse) (*WorkflowRun, error) {
 	}
 
 	run := &WorkflowRun{
-		ID:          r.ID,
-		FunctionID:  r.FunctionID,
-		EventID:     r.EventID,
-		Status:      status,
-		Attempt:     r.Attempt,
-		MaxAttempts: r.MaxAttempts,
-		Input:       r.Input,
-		Output:      r.Output,
+		CancellationCause: r.CancellationCause,
+		CancellationEvent: r.CancellationEvent,
+		ID:                r.ID,
+		FunctionID:        r.FunctionID,
+		EventID:           r.EventID,
+		Status:            status,
+		Attempt:           r.Attempt,
+		MaxAttempts:       r.MaxAttempts,
+		Input:             r.Input,
+		Output:            r.Output,
 	}
 
 	if r.Error != nil {
@@ -2556,26 +2558,10 @@ func mapRunResponse(r *runResponse) (*WorkflowRun, error) {
 		}
 	}
 
-	if r.StartedAt != "" {
-		if t, err := time.Parse(time.RFC3339, r.StartedAt); err == nil {
-			run.StartedAt = &t
-		}
-	}
-	if r.EndedAt != "" {
-		if t, err := time.Parse(time.RFC3339, r.EndedAt); err == nil {
-			run.EndedAt = &t
-		}
-	}
-	if r.CreatedAt != "" {
-		if t, err := time.Parse(time.RFC3339, r.CreatedAt); err == nil {
-			run.CreatedAt = t
-		}
-	}
-	if r.UpdatedAt != "" {
-		if t, err := time.Parse(time.RFC3339, r.UpdatedAt); err == nil {
-			run.UpdatedAt = t
-		}
-	}
+	run.StartedAt = r.StartedAt
+	run.EndedAt = r.EndedAt
+	run.CreatedAt = r.CreatedAt
+	run.UpdatedAt = r.UpdatedAt
 
 	return run, nil
 }
@@ -2602,7 +2588,7 @@ func mapRunResponse(r *runResponse) (*WorkflowRun, error) {
 // Errors: 400 (partition rejected — external projection, or a managed
 // projection that declares no partition key and has no state row under the
 // requested partition), 404 (projection not found), 409 (paused /
-// rebuilding), 429 (wait capacity exceeded, or more than 64 distinct
+// rebuilding / its last rebuild failed), 429 (wait capacity exceeded, or more than 64 distinct
 // partitions of this projection already have a live wait), 503 (NATS bridge
 // unavailable, or the shared poller stopped before this wait attached — both
 // retryable).

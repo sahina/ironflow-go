@@ -50,12 +50,7 @@ go get github.com/sahina/ironflow-go/ironflow
 Requires **Go 1.26+**.
 
 The canonical external import is `github.com/sahina/ironflow-go/ironflow`.
-The module at `github.com/sahina/ironflow/sdk/go/ironflow` is for development
-inside the engine repository. Its local `api/go` replacement does not apply to
-consuming applications, so installing that module can fail with
-`unknown revision 000000000000`. Use the public mirror, including when pinning
-to an engine release such as `@v0.43.1`. Setting `GOPRIVATE` does not resolve
-the placeholder API version.
+Mirror tags match engine releases, so a version can be pinned such as `@v0.43.1`.
 
 ---
 
@@ -168,12 +163,13 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
     },
 
     ActorKey: "event.data.userId",    // JSON path; stored by the server, not used for routing yet
+    EndpointURL: "https://app.example.com/api/ironflow", // HTTP endpoint for push mode
     Secrets:  []string{"STRIPE_KEY"}, // secrets injected at runtime
     RecordingProfile:   ironflow.RecordingProfileSteps, // RecordingProfileAll | RecordingProfileRunLifecycle (run.created, run.status_changed) | RecordingProfileSteps (steps and compensations)
 
     Description: "Charges the card and sends the receipt", // human-readable summary
     Metadata:    map[string]any{"team": "payments"},        // custom metadata
-    Debounce: &ironflow.DebounceConfig{Period: 5 * time.Second, Key: "userId"}, // async-only
+    Debounce: &ironflow.DebounceConfig{Period: 5 * time.Second, Key: "userId", MaxWait: time.Minute}, // async-only; MaxWait is an optional cap (0 = none, else >= Period)
     CancelOn: []ironflow.CancelOnConfig{
         {Event: "order.cancelled", Match: "orderId"}, // path into the event data; auto-cancel in-flight runs; OR across specs
     },
@@ -195,6 +191,7 @@ Triggers: []ironflow.Trigger{
     {Event: "order.placed"},                          // exact event name
     {Event: "order.*"},                               // wildcard
     {Event: "order.placed", Expression: "data.amount > 100"}, // CEL filter
+    {Cron: "*/5 * * * *"},                                    // cron schedule; each tick starts a run
 }
 ```
 
@@ -371,6 +368,7 @@ Branch-scoped variants (the complete set -- every step primitive has one):
 - `SleepWithBranch(b, name, duration)`
 - `SleepUntilWithBranch(b, name, until)`
 - `WaitForEventWithBranch(b, name, filter)`
+- `WaitForEventOptionalWithBranch(b, name, filter)`
 - `CompensateInBranch(b, stepName, fn)`
 - `ParallelWithBranch[T](b, name, branches, opts...)` (nested parallel)
 - `MapWithBranch[T, R](b, name, items, fn, opts...)`
@@ -803,7 +801,7 @@ workers, err := client.ListWorkers(ctx)
 // Health check (liveness)
 status, err := client.Health(ctx) // returns "healthy"
 
-// Readiness: checks the database and NATS. A server that is not ready returns
+// Readiness: checks the database, NATS and the engine streams. A server that is not ready returns
 // an *IronflowError with Code "NOT_READY"; Details["issues"] names what failed.
 ready, err := client.Ready(ctx) // ready.Status == "ready"; ready.Warnings holds non-fatal advisories
 
@@ -1690,10 +1688,12 @@ for _, event := range result.Events {
 }
 
 // With filtering
+from := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+to := time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC)
 result, err := client.GetAuditTrail(ctx, runID, ironflow.GetAuditTrailOpts{
     EventType:     "step.completed",
-    FromTimestamp: "2025-01-01T00:00:00Z",
-    ToTimestamp:   "2025-12-31T23:59:59Z",
+    FromTimestamp: &from,
+    ToTimestamp:   &to,
     Limit:         50,
     Cursor:        "next-page-cursor",
 })
@@ -1778,7 +1778,7 @@ current, err := wh.GetSource(ctx, src.ID)
 src, err = wh.UpdateSource(ctx, ironflow.UpdateWebhookSourceInput{
     ID:                src.ID,
     Name:              "Stripe production (EU)",
-    ExpectedUpdatedAt: current.UpdatedAt,
+    ExpectedUpdatedAt: &current.UpdatedAt,
 })
 
 // Secret rotation. GracePeriod is tri-state: nil = server default (24h),

@@ -29,7 +29,7 @@ func TestLiveReadinessConfig(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Get: %v", err)
 		}
-		if got.Name != name || !reflect.DeepEqual(got.Data, data) || got.Revision != set.Revision || got.UpdatedAt == "" {
+		if got.Name != name || !reflect.DeepEqual(got.Data, data) || got.Revision != set.Revision || got.UpdatedAt.IsZero() {
 			t.Fatalf("Get = %+v, want %s with %v at revision %d", got, name, data, set.Revision)
 		}
 
@@ -45,7 +45,7 @@ func TestLiveReadinessConfig(t *testing.T) {
 			}
 			return nil
 		}
-		if e := find(); e == nil || e.Revision != set.Revision || e.UpdatedAt == "" {
+		if e := find(); e == nil || e.Revision != set.Revision || e.UpdatedAt.IsZero() {
 			t.Fatalf("List entry = %+v, want %s at revision %d", e, name, set.Revision)
 		}
 

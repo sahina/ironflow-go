@@ -3224,6 +3224,288 @@ func (x *RollbackFunctionResponse) GetFunction() *Function {
 	return nil
 }
 
+// A proposed event uses the same payload encoding as TriggerRequest.
+type ProposedMatchEvent struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Version        int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	Data           *structpb.Struct       `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
+	DataValue      *structpb.Value        `protobuf:"bytes,4,opt,name=data_value,json=dataValue,proto3" json:"data_value,omitempty"`
+	IdempotencyKey string                 `protobuf:"bytes,5,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ProposedMatchEvent) Reset() {
+	*x = ProposedMatchEvent{}
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProposedMatchEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProposedMatchEvent) ProtoMessage() {}
+
+func (x *ProposedMatchEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProposedMatchEvent.ProtoReflect.Descriptor instead.
+func (*ProposedMatchEvent) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *ProposedMatchEvent) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ProposedMatchEvent) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *ProposedMatchEvent) GetData() *structpb.Struct {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *ProposedMatchEvent) GetDataValue() *structpb.Value {
+	if x != nil {
+		return x.DataValue
+	}
+	return nil
+}
+
+func (x *ProposedMatchEvent) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type ExplainEventMatchRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Input:
+	//
+	//	*ExplainEventMatchRequest_EventId
+	//	*ExplainEventMatchRequest_Event
+	Input         isExplainEventMatchRequest_Input `protobuf_oneof:"input"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExplainEventMatchRequest) Reset() {
+	*x = ExplainEventMatchRequest{}
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExplainEventMatchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExplainEventMatchRequest) ProtoMessage() {}
+
+func (x *ExplainEventMatchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExplainEventMatchRequest.ProtoReflect.Descriptor instead.
+func (*ExplainEventMatchRequest) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *ExplainEventMatchRequest) GetInput() isExplainEventMatchRequest_Input {
+	if x != nil {
+		return x.Input
+	}
+	return nil
+}
+
+func (x *ExplainEventMatchRequest) GetEventId() string {
+	if x != nil {
+		if x, ok := x.Input.(*ExplainEventMatchRequest_EventId); ok {
+			return x.EventId
+		}
+	}
+	return ""
+}
+
+func (x *ExplainEventMatchRequest) GetEvent() *ProposedMatchEvent {
+	if x != nil {
+		if x, ok := x.Input.(*ExplainEventMatchRequest_Event); ok {
+			return x.Event
+		}
+	}
+	return nil
+}
+
+type isExplainEventMatchRequest_Input interface {
+	isExplainEventMatchRequest_Input()
+}
+
+type ExplainEventMatchRequest_EventId struct {
+	EventId string `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3,oneof"`
+}
+
+type ExplainEventMatchRequest_Event struct {
+	Event *ProposedMatchEvent `protobuf:"bytes,2,opt,name=event,proto3,oneof"`
+}
+
+func (*ExplainEventMatchRequest_EventId) isExplainEventMatchRequest_Input() {}
+
+func (*ExplainEventMatchRequest_Event) isExplainEventMatchRequest_Input() {}
+
+type FunctionMatch struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	FunctionId string                 `protobuf:"bytes,1,opt,name=function_id,json=functionId,proto3" json:"function_id,omitempty"`
+	Name       string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// matched, no_trigger, filter_false, cel_error, schema_reject, duplicate,
+	// or redacted_or_encrypted. No payloads or filter details are returned.
+	Reason        string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FunctionMatch) Reset() {
+	*x = FunctionMatch{}
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FunctionMatch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FunctionMatch) ProtoMessage() {}
+
+func (x *FunctionMatch) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FunctionMatch.ProtoReflect.Descriptor instead.
+func (*FunctionMatch) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *FunctionMatch) GetFunctionId() string {
+	if x != nil {
+		return x.FunctionId
+	}
+	return ""
+}
+
+func (x *FunctionMatch) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *FunctionMatch) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+// Current eligibility only; this does not guarantee dispatch or explain the past.
+type ExplainEventMatchResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventId       string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	EventName     string                 `protobuf:"bytes,2,opt,name=event_name,json=eventName,proto3" json:"event_name,omitempty"`
+	Functions     []*FunctionMatch       `protobuf:"bytes,3,rep,name=functions,proto3" json:"functions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExplainEventMatchResponse) Reset() {
+	*x = ExplainEventMatchResponse{}
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExplainEventMatchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExplainEventMatchResponse) ProtoMessage() {}
+
+func (x *ExplainEventMatchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ironflow_v1_ironflow_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExplainEventMatchResponse.ProtoReflect.Descriptor instead.
+func (*ExplainEventMatchResponse) Descriptor() ([]byte, []int) {
+	return file_ironflow_v1_ironflow_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *ExplainEventMatchResponse) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *ExplainEventMatchResponse) GetEventName() string {
+	if x != nil {
+		return x.EventName
+	}
+	return ""
+}
+
+func (x *ExplainEventMatchResponse) GetFunctions() []*FunctionMatch {
+	if x != nil {
+		return x.Functions
+	}
+	return nil
+}
+
 var File_ironflow_v1_ironflow_proto protoreflect.FileDescriptor
 
 const file_ironflow_v1_ironflow_proto_rawDesc = "" +
@@ -3471,7 +3753,28 @@ const file_ironflow_v1_ironflow_proto_rawDesc = "" +
 	"\aversion\x18\x02 \x01(\x03R\aversion\x12#\n" +
 	"\rchange_reason\x18\x03 \x01(\tR\fchangeReason\"M\n" +
 	"\x18RollbackFunctionResponse\x121\n" +
-	"\bfunction\x18\x01 \x01(\v2\x15.ironflow.v1.FunctionR\bfunction2\x82\x13\n" +
+	"\bfunction\x18\x01 \x01(\v2\x15.ironflow.v1.FunctionR\bfunction\"\xcf\x01\n" +
+	"\x12ProposedMatchEvent\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\x05R\aversion\x12+\n" +
+	"\x04data\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x04data\x125\n" +
+	"\n" +
+	"data_value\x18\x04 \x01(\v2\x16.google.protobuf.ValueR\tdataValue\x12'\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\"y\n" +
+	"\x18ExplainEventMatchRequest\x12\x1b\n" +
+	"\bevent_id\x18\x01 \x01(\tH\x00R\aeventId\x127\n" +
+	"\x05event\x18\x02 \x01(\v2\x1f.ironflow.v1.ProposedMatchEventH\x00R\x05eventB\a\n" +
+	"\x05input\"\\\n" +
+	"\rFunctionMatch\x12\x1f\n" +
+	"\vfunction_id\x18\x01 \x01(\tR\n" +
+	"functionId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x8f\x01\n" +
+	"\x19ExplainEventMatchResponse\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1d\n" +
+	"\n" +
+	"event_name\x18\x02 \x01(\tR\teventName\x128\n" +
+	"\tfunctions\x18\x03 \x03(\v2\x1a.ironflow.v1.FunctionMatchR\tfunctions2\xeb\x13\n" +
 	"\x0fIronflowService\x12_\n" +
 	"\x10RegisterFunction\x12$.ironflow.v1.RegisterFunctionRequest\x1a%.ironflow.v1.RegisterFunctionResponse\x12J\n" +
 	"\vGetFunction\x12\x1f.ironflow.v1.GetFunctionRequest\x1a\x15.ironflow.v1.Function\"\x03\x90\x02\x01\x12[\n" +
@@ -3481,7 +3784,8 @@ const file_ironflow_v1_ironflow_proto_rawDesc = "" +
 	"\x0eDeleteFunction\x12\".ironflow.v1.DeleteFunctionRequest\x1a\x16.google.protobuf.Empty\x12m\n" +
 	"\x13ListFunctionHistory\x12'.ironflow.v1.ListFunctionHistoryRequest\x1a(.ironflow.v1.ListFunctionHistoryResponse\"\x03\x90\x02\x01\x12p\n" +
 	"\x14GetFunctionAtVersion\x12(.ironflow.v1.GetFunctionAtVersionRequest\x1a).ironflow.v1.GetFunctionAtVersionResponse\"\x03\x90\x02\x01\x12_\n" +
-	"\x10RollbackFunction\x12$.ironflow.v1.RollbackFunctionRequest\x1a%.ironflow.v1.RollbackFunctionResponse\x12D\n" +
+	"\x10RollbackFunction\x12$.ironflow.v1.RollbackFunctionRequest\x1a%.ironflow.v1.RollbackFunctionResponse\x12g\n" +
+	"\x11ExplainEventMatch\x12%.ironflow.v1.ExplainEventMatchRequest\x1a&.ironflow.v1.ExplainEventMatchResponse\"\x03\x90\x02\x01\x12D\n" +
 	"\aTrigger\x12\x1b.ironflow.v1.TriggerRequest\x1a\x1c.ironflow.v1.TriggerResponse\x12A\n" +
 	"\x04Emit\x12\x1b.ironflow.v1.TriggerRequest\x1a\x1c.ironflow.v1.TriggerResponse\x12P\n" +
 	"\vTriggerSync\x12\x1f.ironflow.v1.TriggerSyncRequest\x1a .ironflow.v1.TriggerSyncResponse\x12e\n" +
@@ -3518,7 +3822,7 @@ func file_ironflow_v1_ironflow_proto_rawDescGZIP() []byte {
 	return file_ironflow_v1_ironflow_proto_rawDescData
 }
 
-var file_ironflow_v1_ironflow_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
+var file_ironflow_v1_ironflow_proto_msgTypes = make([]protoimpl.MessageInfo, 56)
 var file_ironflow_v1_ironflow_proto_goTypes = []any{
 	(*RegisterFunctionRequest)(nil),      // 0: ironflow.v1.RegisterFunctionRequest
 	(*RegisterFunctionResponse)(nil),     // 1: ironflow.v1.RegisterFunctionResponse
@@ -3571,146 +3875,156 @@ var file_ironflow_v1_ironflow_proto_goTypes = []any{
 	(*GetFunctionAtVersionResponse)(nil), // 48: ironflow.v1.GetFunctionAtVersionResponse
 	(*RollbackFunctionRequest)(nil),      // 49: ironflow.v1.RollbackFunctionRequest
 	(*RollbackFunctionResponse)(nil),     // 50: ironflow.v1.RollbackFunctionResponse
-	nil,                                  // 51: ironflow.v1.HealthResponse.ComponentsEntry
-	(*Trigger)(nil),                      // 52: ironflow.v1.Trigger
-	(*RetryConfig)(nil),                  // 53: ironflow.v1.RetryConfig
-	(*ConcurrencyConfig)(nil),            // 54: ironflow.v1.ConcurrencyConfig
-	(ExecutionMode)(0),                   // 55: ironflow.v1.ExecutionMode
-	(*structpb.Struct)(nil),              // 56: google.protobuf.Struct
-	(*DebounceConfig)(nil),               // 57: ironflow.v1.DebounceConfig
-	(*CancelOnSpec)(nil),                 // 58: ironflow.v1.CancelOnSpec
-	(*CircuitBreakerConfig)(nil),         // 59: ironflow.v1.CircuitBreakerConfig
-	(*ThrottleConfig)(nil),               // 60: ironflow.v1.ThrottleConfig
-	(*Function)(nil),                     // 61: ironflow.v1.Function
-	(FunctionStatus)(0),                  // 62: ironflow.v1.FunctionStatus
-	(*structpb.Value)(nil),               // 63: google.protobuf.Value
-	(*Error)(nil),                        // 64: ironflow.v1.Error
-	(RunStatus)(0),                       // 65: ironflow.v1.RunStatus
-	(*timestamppb.Timestamp)(nil),        // 66: google.protobuf.Timestamp
-	(*Run)(nil),                          // 67: ironflow.v1.Run
-	(*Step)(nil),                         // 68: ironflow.v1.Step
-	(*emptypb.Empty)(nil),                // 69: google.protobuf.Empty
+	(*ProposedMatchEvent)(nil),           // 51: ironflow.v1.ProposedMatchEvent
+	(*ExplainEventMatchRequest)(nil),     // 52: ironflow.v1.ExplainEventMatchRequest
+	(*FunctionMatch)(nil),                // 53: ironflow.v1.FunctionMatch
+	(*ExplainEventMatchResponse)(nil),    // 54: ironflow.v1.ExplainEventMatchResponse
+	nil,                                  // 55: ironflow.v1.HealthResponse.ComponentsEntry
+	(*Trigger)(nil),                      // 56: ironflow.v1.Trigger
+	(*RetryConfig)(nil),                  // 57: ironflow.v1.RetryConfig
+	(*ConcurrencyConfig)(nil),            // 58: ironflow.v1.ConcurrencyConfig
+	(ExecutionMode)(0),                   // 59: ironflow.v1.ExecutionMode
+	(*structpb.Struct)(nil),              // 60: google.protobuf.Struct
+	(*DebounceConfig)(nil),               // 61: ironflow.v1.DebounceConfig
+	(*CancelOnSpec)(nil),                 // 62: ironflow.v1.CancelOnSpec
+	(*CircuitBreakerConfig)(nil),         // 63: ironflow.v1.CircuitBreakerConfig
+	(*ThrottleConfig)(nil),               // 64: ironflow.v1.ThrottleConfig
+	(*Function)(nil),                     // 65: ironflow.v1.Function
+	(FunctionStatus)(0),                  // 66: ironflow.v1.FunctionStatus
+	(*structpb.Value)(nil),               // 67: google.protobuf.Value
+	(*Error)(nil),                        // 68: ironflow.v1.Error
+	(RunStatus)(0),                       // 69: ironflow.v1.RunStatus
+	(*timestamppb.Timestamp)(nil),        // 70: google.protobuf.Timestamp
+	(*Run)(nil),                          // 71: ironflow.v1.Run
+	(*Step)(nil),                         // 72: ironflow.v1.Step
+	(*emptypb.Empty)(nil),                // 73: google.protobuf.Empty
 }
 var file_ironflow_v1_ironflow_proto_depIdxs = []int32{
-	52, // 0: ironflow.v1.RegisterFunctionRequest.triggers:type_name -> ironflow.v1.Trigger
-	53, // 1: ironflow.v1.RegisterFunctionRequest.retry:type_name -> ironflow.v1.RetryConfig
-	54, // 2: ironflow.v1.RegisterFunctionRequest.concurrency:type_name -> ironflow.v1.ConcurrencyConfig
-	55, // 3: ironflow.v1.RegisterFunctionRequest.preferred_mode:type_name -> ironflow.v1.ExecutionMode
-	56, // 4: ironflow.v1.RegisterFunctionRequest.metadata:type_name -> google.protobuf.Struct
-	57, // 5: ironflow.v1.RegisterFunctionRequest.debounce:type_name -> ironflow.v1.DebounceConfig
-	58, // 6: ironflow.v1.RegisterFunctionRequest.cancel_on:type_name -> ironflow.v1.CancelOnSpec
-	59, // 7: ironflow.v1.RegisterFunctionRequest.circuit_breaker:type_name -> ironflow.v1.CircuitBreakerConfig
-	60, // 8: ironflow.v1.RegisterFunctionRequest.throttle:type_name -> ironflow.v1.ThrottleConfig
-	61, // 9: ironflow.v1.RegisterFunctionResponse.function:type_name -> ironflow.v1.Function
-	62, // 10: ironflow.v1.ListFunctionsRequest.status:type_name -> ironflow.v1.FunctionStatus
-	61, // 11: ironflow.v1.ListFunctionsResponse.functions:type_name -> ironflow.v1.Function
-	62, // 12: ironflow.v1.UpdateFunctionStatusRequest.status:type_name -> ironflow.v1.FunctionStatus
-	56, // 13: ironflow.v1.TriggerRequest.data:type_name -> google.protobuf.Struct
-	63, // 14: ironflow.v1.TriggerRequest.data_value:type_name -> google.protobuf.Value
-	56, // 15: ironflow.v1.TriggerRequest.metadata:type_name -> google.protobuf.Struct
-	64, // 16: ironflow.v1.TriggerResponse.error:type_name -> ironflow.v1.Error
-	56, // 17: ironflow.v1.TriggerSyncRequest.data:type_name -> google.protobuf.Struct
-	63, // 18: ironflow.v1.TriggerSyncRequest.data_value:type_name -> google.protobuf.Value
-	56, // 19: ironflow.v1.TriggerSyncRequest.metadata:type_name -> google.protobuf.Struct
+	56, // 0: ironflow.v1.RegisterFunctionRequest.triggers:type_name -> ironflow.v1.Trigger
+	57, // 1: ironflow.v1.RegisterFunctionRequest.retry:type_name -> ironflow.v1.RetryConfig
+	58, // 2: ironflow.v1.RegisterFunctionRequest.concurrency:type_name -> ironflow.v1.ConcurrencyConfig
+	59, // 3: ironflow.v1.RegisterFunctionRequest.preferred_mode:type_name -> ironflow.v1.ExecutionMode
+	60, // 4: ironflow.v1.RegisterFunctionRequest.metadata:type_name -> google.protobuf.Struct
+	61, // 5: ironflow.v1.RegisterFunctionRequest.debounce:type_name -> ironflow.v1.DebounceConfig
+	62, // 6: ironflow.v1.RegisterFunctionRequest.cancel_on:type_name -> ironflow.v1.CancelOnSpec
+	63, // 7: ironflow.v1.RegisterFunctionRequest.circuit_breaker:type_name -> ironflow.v1.CircuitBreakerConfig
+	64, // 8: ironflow.v1.RegisterFunctionRequest.throttle:type_name -> ironflow.v1.ThrottleConfig
+	65, // 9: ironflow.v1.RegisterFunctionResponse.function:type_name -> ironflow.v1.Function
+	66, // 10: ironflow.v1.ListFunctionsRequest.status:type_name -> ironflow.v1.FunctionStatus
+	65, // 11: ironflow.v1.ListFunctionsResponse.functions:type_name -> ironflow.v1.Function
+	66, // 12: ironflow.v1.UpdateFunctionStatusRequest.status:type_name -> ironflow.v1.FunctionStatus
+	60, // 13: ironflow.v1.TriggerRequest.data:type_name -> google.protobuf.Struct
+	67, // 14: ironflow.v1.TriggerRequest.data_value:type_name -> google.protobuf.Value
+	60, // 15: ironflow.v1.TriggerRequest.metadata:type_name -> google.protobuf.Struct
+	68, // 16: ironflow.v1.TriggerResponse.error:type_name -> ironflow.v1.Error
+	60, // 17: ironflow.v1.TriggerSyncRequest.data:type_name -> google.protobuf.Struct
+	67, // 18: ironflow.v1.TriggerSyncRequest.data_value:type_name -> google.protobuf.Value
+	60, // 19: ironflow.v1.TriggerSyncRequest.metadata:type_name -> google.protobuf.Struct
 	11, // 20: ironflow.v1.TriggerSyncResponse.results:type_name -> ironflow.v1.RunResult
-	65, // 21: ironflow.v1.RunResult.status:type_name -> ironflow.v1.RunStatus
-	56, // 22: ironflow.v1.RunResult.output:type_name -> google.protobuf.Struct
-	63, // 23: ironflow.v1.RunResult.output_value:type_name -> google.protobuf.Value
-	64, // 24: ironflow.v1.RunResult.error:type_name -> ironflow.v1.Error
-	56, // 25: ironflow.v1.InvokeFunctionRequest.data:type_name -> google.protobuf.Struct
-	63, // 26: ironflow.v1.InvokeFunctionRequest.data_value:type_name -> google.protobuf.Value
-	56, // 27: ironflow.v1.InvokeFunctionSyncRequest.data:type_name -> google.protobuf.Struct
-	63, // 28: ironflow.v1.InvokeFunctionSyncRequest.data_value:type_name -> google.protobuf.Value
-	56, // 29: ironflow.v1.InvokeFunctionSyncRequest.metadata:type_name -> google.protobuf.Struct
+	69, // 21: ironflow.v1.RunResult.status:type_name -> ironflow.v1.RunStatus
+	60, // 22: ironflow.v1.RunResult.output:type_name -> google.protobuf.Struct
+	67, // 23: ironflow.v1.RunResult.output_value:type_name -> google.protobuf.Value
+	68, // 24: ironflow.v1.RunResult.error:type_name -> ironflow.v1.Error
+	60, // 25: ironflow.v1.InvokeFunctionRequest.data:type_name -> google.protobuf.Struct
+	67, // 26: ironflow.v1.InvokeFunctionRequest.data_value:type_name -> google.protobuf.Value
+	60, // 27: ironflow.v1.InvokeFunctionSyncRequest.data:type_name -> google.protobuf.Struct
+	67, // 28: ironflow.v1.InvokeFunctionSyncRequest.data_value:type_name -> google.protobuf.Value
+	60, // 29: ironflow.v1.InvokeFunctionSyncRequest.metadata:type_name -> google.protobuf.Struct
 	11, // 30: ironflow.v1.InvokeFunctionSyncResponse.result:type_name -> ironflow.v1.RunResult
 	7,  // 31: ironflow.v1.TriggerBatchRequest.events:type_name -> ironflow.v1.TriggerRequest
 	8,  // 32: ironflow.v1.TriggerBatchResponse.results:type_name -> ironflow.v1.TriggerResponse
-	65, // 33: ironflow.v1.ListRunsRequest.status:type_name -> ironflow.v1.RunStatus
-	66, // 34: ironflow.v1.ListRunsRequest.since:type_name -> google.protobuf.Timestamp
-	66, // 35: ironflow.v1.ListRunsRequest.until:type_name -> google.protobuf.Timestamp
-	65, // 36: ironflow.v1.ListRunsRequest.statuses:type_name -> ironflow.v1.RunStatus
-	67, // 37: ironflow.v1.ListRunsResponse.runs:type_name -> ironflow.v1.Run
-	68, // 38: ironflow.v1.GetRunStepsResponse.steps:type_name -> ironflow.v1.Step
-	65, // 39: ironflow.v1.DeleteRunsRequest.status:type_name -> ironflow.v1.RunStatus
-	66, // 40: ironflow.v1.DeleteRunsRequest.until:type_name -> google.protobuf.Timestamp
-	56, // 41: ironflow.v1.PatchStepRequest.output:type_name -> google.protobuf.Struct
-	63, // 42: ironflow.v1.PatchStepRequest.output_value:type_name -> google.protobuf.Value
+	69, // 33: ironflow.v1.ListRunsRequest.status:type_name -> ironflow.v1.RunStatus
+	70, // 34: ironflow.v1.ListRunsRequest.since:type_name -> google.protobuf.Timestamp
+	70, // 35: ironflow.v1.ListRunsRequest.until:type_name -> google.protobuf.Timestamp
+	69, // 36: ironflow.v1.ListRunsRequest.statuses:type_name -> ironflow.v1.RunStatus
+	71, // 37: ironflow.v1.ListRunsResponse.runs:type_name -> ironflow.v1.Run
+	72, // 38: ironflow.v1.GetRunStepsResponse.steps:type_name -> ironflow.v1.Step
+	69, // 39: ironflow.v1.DeleteRunsRequest.status:type_name -> ironflow.v1.RunStatus
+	70, // 40: ironflow.v1.DeleteRunsRequest.until:type_name -> google.protobuf.Timestamp
+	60, // 41: ironflow.v1.PatchStepRequest.output:type_name -> google.protobuf.Struct
+	67, // 42: ironflow.v1.PatchStepRequest.output_value:type_name -> google.protobuf.Value
 	36, // 43: ironflow.v1.GetPausedStateResponse.steps:type_name -> ironflow.v1.PausedStepInfo
-	66, // 44: ironflow.v1.PausedStepInfo.completed_at:type_name -> google.protobuf.Timestamp
-	66, // 45: ironflow.v1.HealthResponse.timestamp:type_name -> google.protobuf.Timestamp
-	51, // 46: ironflow.v1.HealthResponse.components:type_name -> ironflow.v1.HealthResponse.ComponentsEntry
-	66, // 47: ironflow.v1.InfoResponse.started_at:type_name -> google.protobuf.Timestamp
-	61, // 48: ironflow.v1.FunctionHistoryEntry.function_snapshot:type_name -> ironflow.v1.Function
-	66, // 49: ironflow.v1.FunctionHistoryEntry.recorded_at:type_name -> google.protobuf.Timestamp
+	70, // 44: ironflow.v1.PausedStepInfo.completed_at:type_name -> google.protobuf.Timestamp
+	70, // 45: ironflow.v1.HealthResponse.timestamp:type_name -> google.protobuf.Timestamp
+	55, // 46: ironflow.v1.HealthResponse.components:type_name -> ironflow.v1.HealthResponse.ComponentsEntry
+	70, // 47: ironflow.v1.InfoResponse.started_at:type_name -> google.protobuf.Timestamp
+	65, // 48: ironflow.v1.FunctionHistoryEntry.function_snapshot:type_name -> ironflow.v1.Function
+	70, // 49: ironflow.v1.FunctionHistoryEntry.recorded_at:type_name -> google.protobuf.Timestamp
 	44, // 50: ironflow.v1.ListFunctionHistoryResponse.entries:type_name -> ironflow.v1.FunctionHistoryEntry
 	44, // 51: ironflow.v1.GetFunctionAtVersionResponse.entry:type_name -> ironflow.v1.FunctionHistoryEntry
-	61, // 52: ironflow.v1.RollbackFunctionResponse.function:type_name -> ironflow.v1.Function
-	41, // 53: ironflow.v1.HealthResponse.ComponentsEntry.value:type_name -> ironflow.v1.ComponentHealth
-	0,  // 54: ironflow.v1.IronflowService.RegisterFunction:input_type -> ironflow.v1.RegisterFunctionRequest
-	2,  // 55: ironflow.v1.IronflowService.GetFunction:input_type -> ironflow.v1.GetFunctionRequest
-	3,  // 56: ironflow.v1.IronflowService.ListFunctions:input_type -> ironflow.v1.ListFunctionsRequest
-	12, // 57: ironflow.v1.IronflowService.InvokeFunction:input_type -> ironflow.v1.InvokeFunctionRequest
-	5,  // 58: ironflow.v1.IronflowService.UpdateFunctionStatus:input_type -> ironflow.v1.UpdateFunctionStatusRequest
-	6,  // 59: ironflow.v1.IronflowService.DeleteFunction:input_type -> ironflow.v1.DeleteFunctionRequest
-	45, // 60: ironflow.v1.IronflowService.ListFunctionHistory:input_type -> ironflow.v1.ListFunctionHistoryRequest
-	47, // 61: ironflow.v1.IronflowService.GetFunctionAtVersion:input_type -> ironflow.v1.GetFunctionAtVersionRequest
-	49, // 62: ironflow.v1.IronflowService.RollbackFunction:input_type -> ironflow.v1.RollbackFunctionRequest
-	7,  // 63: ironflow.v1.IronflowService.Trigger:input_type -> ironflow.v1.TriggerRequest
-	7,  // 64: ironflow.v1.IronflowService.Emit:input_type -> ironflow.v1.TriggerRequest
-	9,  // 65: ironflow.v1.IronflowService.TriggerSync:input_type -> ironflow.v1.TriggerSyncRequest
-	14, // 66: ironflow.v1.IronflowService.InvokeFunctionSync:input_type -> ironflow.v1.InvokeFunctionSyncRequest
-	16, // 67: ironflow.v1.IronflowService.TriggerBatch:input_type -> ironflow.v1.TriggerBatchRequest
-	18, // 68: ironflow.v1.IronflowService.GetRun:input_type -> ironflow.v1.GetRunRequest
-	19, // 69: ironflow.v1.IronflowService.ListRuns:input_type -> ironflow.v1.ListRunsRequest
-	21, // 70: ironflow.v1.IronflowService.GetRunSteps:input_type -> ironflow.v1.GetRunStepsRequest
-	23, // 71: ironflow.v1.IronflowService.CancelRun:input_type -> ironflow.v1.CancelRunRequest
-	24, // 72: ironflow.v1.IronflowService.DeleteRun:input_type -> ironflow.v1.DeleteRunRequest
-	25, // 73: ironflow.v1.IronflowService.DeleteRuns:input_type -> ironflow.v1.DeleteRunsRequest
-	27, // 74: ironflow.v1.IronflowService.RedactEvent:input_type -> ironflow.v1.RedactEventRequest
-	28, // 75: ironflow.v1.IronflowService.RedactStep:input_type -> ironflow.v1.RedactStepRequest
-	29, // 76: ironflow.v1.IronflowService.RedactRun:input_type -> ironflow.v1.RedactRunRequest
-	30, // 77: ironflow.v1.IronflowService.PatchStep:input_type -> ironflow.v1.PatchStepRequest
-	31, // 78: ironflow.v1.IronflowService.ResumeRun:input_type -> ironflow.v1.ResumeRunRequest
-	32, // 79: ironflow.v1.IronflowService.PauseRun:input_type -> ironflow.v1.PauseRunRequest
-	34, // 80: ironflow.v1.IronflowService.GetPausedState:input_type -> ironflow.v1.GetPausedStateRequest
-	37, // 81: ironflow.v1.IronflowService.InjectStepOutput:input_type -> ironflow.v1.InjectStepOutputRequest
-	39, // 82: ironflow.v1.IronflowService.Health:input_type -> ironflow.v1.HealthRequest
-	42, // 83: ironflow.v1.IronflowService.Info:input_type -> ironflow.v1.InfoRequest
-	1,  // 84: ironflow.v1.IronflowService.RegisterFunction:output_type -> ironflow.v1.RegisterFunctionResponse
-	61, // 85: ironflow.v1.IronflowService.GetFunction:output_type -> ironflow.v1.Function
-	4,  // 86: ironflow.v1.IronflowService.ListFunctions:output_type -> ironflow.v1.ListFunctionsResponse
-	13, // 87: ironflow.v1.IronflowService.InvokeFunction:output_type -> ironflow.v1.InvokeFunctionResponse
-	61, // 88: ironflow.v1.IronflowService.UpdateFunctionStatus:output_type -> ironflow.v1.Function
-	69, // 89: ironflow.v1.IronflowService.DeleteFunction:output_type -> google.protobuf.Empty
-	46, // 90: ironflow.v1.IronflowService.ListFunctionHistory:output_type -> ironflow.v1.ListFunctionHistoryResponse
-	48, // 91: ironflow.v1.IronflowService.GetFunctionAtVersion:output_type -> ironflow.v1.GetFunctionAtVersionResponse
-	50, // 92: ironflow.v1.IronflowService.RollbackFunction:output_type -> ironflow.v1.RollbackFunctionResponse
-	8,  // 93: ironflow.v1.IronflowService.Trigger:output_type -> ironflow.v1.TriggerResponse
-	8,  // 94: ironflow.v1.IronflowService.Emit:output_type -> ironflow.v1.TriggerResponse
-	10, // 95: ironflow.v1.IronflowService.TriggerSync:output_type -> ironflow.v1.TriggerSyncResponse
-	15, // 96: ironflow.v1.IronflowService.InvokeFunctionSync:output_type -> ironflow.v1.InvokeFunctionSyncResponse
-	17, // 97: ironflow.v1.IronflowService.TriggerBatch:output_type -> ironflow.v1.TriggerBatchResponse
-	67, // 98: ironflow.v1.IronflowService.GetRun:output_type -> ironflow.v1.Run
-	20, // 99: ironflow.v1.IronflowService.ListRuns:output_type -> ironflow.v1.ListRunsResponse
-	22, // 100: ironflow.v1.IronflowService.GetRunSteps:output_type -> ironflow.v1.GetRunStepsResponse
-	67, // 101: ironflow.v1.IronflowService.CancelRun:output_type -> ironflow.v1.Run
-	69, // 102: ironflow.v1.IronflowService.DeleteRun:output_type -> google.protobuf.Empty
-	26, // 103: ironflow.v1.IronflowService.DeleteRuns:output_type -> ironflow.v1.DeleteRunsResponse
-	69, // 104: ironflow.v1.IronflowService.RedactEvent:output_type -> google.protobuf.Empty
-	69, // 105: ironflow.v1.IronflowService.RedactStep:output_type -> google.protobuf.Empty
-	69, // 106: ironflow.v1.IronflowService.RedactRun:output_type -> google.protobuf.Empty
-	68, // 107: ironflow.v1.IronflowService.PatchStep:output_type -> ironflow.v1.Step
-	67, // 108: ironflow.v1.IronflowService.ResumeRun:output_type -> ironflow.v1.Run
-	33, // 109: ironflow.v1.IronflowService.PauseRun:output_type -> ironflow.v1.PauseRunResponse
-	35, // 110: ironflow.v1.IronflowService.GetPausedState:output_type -> ironflow.v1.GetPausedStateResponse
-	38, // 111: ironflow.v1.IronflowService.InjectStepOutput:output_type -> ironflow.v1.InjectStepOutputResponse
-	40, // 112: ironflow.v1.IronflowService.Health:output_type -> ironflow.v1.HealthResponse
-	43, // 113: ironflow.v1.IronflowService.Info:output_type -> ironflow.v1.InfoResponse
-	84, // [84:114] is the sub-list for method output_type
-	54, // [54:84] is the sub-list for method input_type
-	54, // [54:54] is the sub-list for extension type_name
-	54, // [54:54] is the sub-list for extension extendee
-	0,  // [0:54] is the sub-list for field type_name
+	65, // 52: ironflow.v1.RollbackFunctionResponse.function:type_name -> ironflow.v1.Function
+	60, // 53: ironflow.v1.ProposedMatchEvent.data:type_name -> google.protobuf.Struct
+	67, // 54: ironflow.v1.ProposedMatchEvent.data_value:type_name -> google.protobuf.Value
+	51, // 55: ironflow.v1.ExplainEventMatchRequest.event:type_name -> ironflow.v1.ProposedMatchEvent
+	53, // 56: ironflow.v1.ExplainEventMatchResponse.functions:type_name -> ironflow.v1.FunctionMatch
+	41, // 57: ironflow.v1.HealthResponse.ComponentsEntry.value:type_name -> ironflow.v1.ComponentHealth
+	0,  // 58: ironflow.v1.IronflowService.RegisterFunction:input_type -> ironflow.v1.RegisterFunctionRequest
+	2,  // 59: ironflow.v1.IronflowService.GetFunction:input_type -> ironflow.v1.GetFunctionRequest
+	3,  // 60: ironflow.v1.IronflowService.ListFunctions:input_type -> ironflow.v1.ListFunctionsRequest
+	12, // 61: ironflow.v1.IronflowService.InvokeFunction:input_type -> ironflow.v1.InvokeFunctionRequest
+	5,  // 62: ironflow.v1.IronflowService.UpdateFunctionStatus:input_type -> ironflow.v1.UpdateFunctionStatusRequest
+	6,  // 63: ironflow.v1.IronflowService.DeleteFunction:input_type -> ironflow.v1.DeleteFunctionRequest
+	45, // 64: ironflow.v1.IronflowService.ListFunctionHistory:input_type -> ironflow.v1.ListFunctionHistoryRequest
+	47, // 65: ironflow.v1.IronflowService.GetFunctionAtVersion:input_type -> ironflow.v1.GetFunctionAtVersionRequest
+	49, // 66: ironflow.v1.IronflowService.RollbackFunction:input_type -> ironflow.v1.RollbackFunctionRequest
+	52, // 67: ironflow.v1.IronflowService.ExplainEventMatch:input_type -> ironflow.v1.ExplainEventMatchRequest
+	7,  // 68: ironflow.v1.IronflowService.Trigger:input_type -> ironflow.v1.TriggerRequest
+	7,  // 69: ironflow.v1.IronflowService.Emit:input_type -> ironflow.v1.TriggerRequest
+	9,  // 70: ironflow.v1.IronflowService.TriggerSync:input_type -> ironflow.v1.TriggerSyncRequest
+	14, // 71: ironflow.v1.IronflowService.InvokeFunctionSync:input_type -> ironflow.v1.InvokeFunctionSyncRequest
+	16, // 72: ironflow.v1.IronflowService.TriggerBatch:input_type -> ironflow.v1.TriggerBatchRequest
+	18, // 73: ironflow.v1.IronflowService.GetRun:input_type -> ironflow.v1.GetRunRequest
+	19, // 74: ironflow.v1.IronflowService.ListRuns:input_type -> ironflow.v1.ListRunsRequest
+	21, // 75: ironflow.v1.IronflowService.GetRunSteps:input_type -> ironflow.v1.GetRunStepsRequest
+	23, // 76: ironflow.v1.IronflowService.CancelRun:input_type -> ironflow.v1.CancelRunRequest
+	24, // 77: ironflow.v1.IronflowService.DeleteRun:input_type -> ironflow.v1.DeleteRunRequest
+	25, // 78: ironflow.v1.IronflowService.DeleteRuns:input_type -> ironflow.v1.DeleteRunsRequest
+	27, // 79: ironflow.v1.IronflowService.RedactEvent:input_type -> ironflow.v1.RedactEventRequest
+	28, // 80: ironflow.v1.IronflowService.RedactStep:input_type -> ironflow.v1.RedactStepRequest
+	29, // 81: ironflow.v1.IronflowService.RedactRun:input_type -> ironflow.v1.RedactRunRequest
+	30, // 82: ironflow.v1.IronflowService.PatchStep:input_type -> ironflow.v1.PatchStepRequest
+	31, // 83: ironflow.v1.IronflowService.ResumeRun:input_type -> ironflow.v1.ResumeRunRequest
+	32, // 84: ironflow.v1.IronflowService.PauseRun:input_type -> ironflow.v1.PauseRunRequest
+	34, // 85: ironflow.v1.IronflowService.GetPausedState:input_type -> ironflow.v1.GetPausedStateRequest
+	37, // 86: ironflow.v1.IronflowService.InjectStepOutput:input_type -> ironflow.v1.InjectStepOutputRequest
+	39, // 87: ironflow.v1.IronflowService.Health:input_type -> ironflow.v1.HealthRequest
+	42, // 88: ironflow.v1.IronflowService.Info:input_type -> ironflow.v1.InfoRequest
+	1,  // 89: ironflow.v1.IronflowService.RegisterFunction:output_type -> ironflow.v1.RegisterFunctionResponse
+	65, // 90: ironflow.v1.IronflowService.GetFunction:output_type -> ironflow.v1.Function
+	4,  // 91: ironflow.v1.IronflowService.ListFunctions:output_type -> ironflow.v1.ListFunctionsResponse
+	13, // 92: ironflow.v1.IronflowService.InvokeFunction:output_type -> ironflow.v1.InvokeFunctionResponse
+	65, // 93: ironflow.v1.IronflowService.UpdateFunctionStatus:output_type -> ironflow.v1.Function
+	73, // 94: ironflow.v1.IronflowService.DeleteFunction:output_type -> google.protobuf.Empty
+	46, // 95: ironflow.v1.IronflowService.ListFunctionHistory:output_type -> ironflow.v1.ListFunctionHistoryResponse
+	48, // 96: ironflow.v1.IronflowService.GetFunctionAtVersion:output_type -> ironflow.v1.GetFunctionAtVersionResponse
+	50, // 97: ironflow.v1.IronflowService.RollbackFunction:output_type -> ironflow.v1.RollbackFunctionResponse
+	54, // 98: ironflow.v1.IronflowService.ExplainEventMatch:output_type -> ironflow.v1.ExplainEventMatchResponse
+	8,  // 99: ironflow.v1.IronflowService.Trigger:output_type -> ironflow.v1.TriggerResponse
+	8,  // 100: ironflow.v1.IronflowService.Emit:output_type -> ironflow.v1.TriggerResponse
+	10, // 101: ironflow.v1.IronflowService.TriggerSync:output_type -> ironflow.v1.TriggerSyncResponse
+	15, // 102: ironflow.v1.IronflowService.InvokeFunctionSync:output_type -> ironflow.v1.InvokeFunctionSyncResponse
+	17, // 103: ironflow.v1.IronflowService.TriggerBatch:output_type -> ironflow.v1.TriggerBatchResponse
+	71, // 104: ironflow.v1.IronflowService.GetRun:output_type -> ironflow.v1.Run
+	20, // 105: ironflow.v1.IronflowService.ListRuns:output_type -> ironflow.v1.ListRunsResponse
+	22, // 106: ironflow.v1.IronflowService.GetRunSteps:output_type -> ironflow.v1.GetRunStepsResponse
+	71, // 107: ironflow.v1.IronflowService.CancelRun:output_type -> ironflow.v1.Run
+	73, // 108: ironflow.v1.IronflowService.DeleteRun:output_type -> google.protobuf.Empty
+	26, // 109: ironflow.v1.IronflowService.DeleteRuns:output_type -> ironflow.v1.DeleteRunsResponse
+	73, // 110: ironflow.v1.IronflowService.RedactEvent:output_type -> google.protobuf.Empty
+	73, // 111: ironflow.v1.IronflowService.RedactStep:output_type -> google.protobuf.Empty
+	73, // 112: ironflow.v1.IronflowService.RedactRun:output_type -> google.protobuf.Empty
+	72, // 113: ironflow.v1.IronflowService.PatchStep:output_type -> ironflow.v1.Step
+	71, // 114: ironflow.v1.IronflowService.ResumeRun:output_type -> ironflow.v1.Run
+	33, // 115: ironflow.v1.IronflowService.PauseRun:output_type -> ironflow.v1.PauseRunResponse
+	35, // 116: ironflow.v1.IronflowService.GetPausedState:output_type -> ironflow.v1.GetPausedStateResponse
+	38, // 117: ironflow.v1.IronflowService.InjectStepOutput:output_type -> ironflow.v1.InjectStepOutputResponse
+	40, // 118: ironflow.v1.IronflowService.Health:output_type -> ironflow.v1.HealthResponse
+	43, // 119: ironflow.v1.IronflowService.Info:output_type -> ironflow.v1.InfoResponse
+	89, // [89:120] is the sub-list for method output_type
+	58, // [58:89] is the sub-list for method input_type
+	58, // [58:58] is the sub-list for extension type_name
+	58, // [58:58] is the sub-list for extension extendee
+	0,  // [0:58] is the sub-list for field type_name
 }
 
 func init() { file_ironflow_v1_ironflow_proto_init() }
@@ -3719,13 +4033,17 @@ func file_ironflow_v1_ironflow_proto_init() {
 		return
 	}
 	file_ironflow_v1_types_proto_init()
+	file_ironflow_v1_ironflow_proto_msgTypes[52].OneofWrappers = []any{
+		(*ExplainEventMatchRequest_EventId)(nil),
+		(*ExplainEventMatchRequest_Event)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ironflow_v1_ironflow_proto_rawDesc), len(file_ironflow_v1_ironflow_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   52,
+			NumMessages:   56,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

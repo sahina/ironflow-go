@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -18,12 +17,6 @@ import (
 
 func (c *Client) entityRPC() ironflowv1connect.EntityStreamServiceClient {
 	return ironflowv1connect.NewEntityStreamServiceClient(c.httpClient, c.serverURL, connect.WithProtoJSON(), connect.WithInterceptors(c.interceptor()))
-}
-func streamTimestamp(value *timestamppb.Timestamp) string {
-	if value == nil {
-		return ""
-	}
-	return value.AsTime().Format(time.RFC3339Nano)
 }
 func streamPayload(object *structpb.Struct, value *structpb.Value) any {
 	if value != nil {
@@ -44,7 +37,10 @@ func (c *Client) ListStreams(ctx context.Context) ([]StreamListEntry, error) {
 	}
 	result := make([]StreamListEntry, 0, len(resp.Msg.Streams))
 	for _, s := range resp.Msg.Streams {
-		result = append(result, StreamListEntry{EntityID: s.EntityId, EntityType: s.EntityType, Version: s.Version, EventCount: s.EventCount, LastEventAt: streamTimestamp(s.UpdatedAt), CreatedAt: streamTimestamp(s.CreatedAt)})
+		result = append(result, StreamListEntry{EntityID: s.EntityId, EntityType: s.EntityType, Version: s.Version, EventCount: s.EventCount, LastEventAt: timeFromProto(s.UpdatedAt), CreatedAt: timeFromProto(s.CreatedAt)})
+	}
+	if err := requireTimestamps(result); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -84,7 +80,7 @@ func (c *Client) GetEntityHistory(ctx context.Context, entityID string, opts ...
 			return nil, connectError(err)
 		}
 		for _, e := range resp.Msg.Entries {
-			result = append(result, EntityHistoryEntry{EventName: e.EventName, Data: streamPayload(e.EventData, e.EventDataValue), EntityVersion: e.EntityVersion, Timestamp: streamTimestamp(e.Timestamp)})
+			result = append(result, EntityHistoryEntry{EventName: e.EventName, Data: streamPayload(e.EventData, e.EventDataValue), EntityVersion: e.EntityVersion, Timestamp: timeFromProto(e.Timestamp)})
 		}
 		if resp.Msg.NextCursor == 0 {
 			break
@@ -93,6 +89,9 @@ func (c *Client) GetEntityHistory(ctx context.Context, entityID string, opts ...
 			return nil, fmt.Errorf("ironflow: GetEntityHistory cursor did not advance (from %d to %d)", req.FromVersion, resp.Msg.NextCursor)
 		}
 		req.FromVersion = resp.Msg.NextCursor
+	}
+	if err := requireTimestamps(result); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -134,7 +133,10 @@ func (c *Client) GetSnapshot(ctx context.Context, entityID string, opts ...GetSn
 		return nil, connectError(err)
 	}
 	s := resp.Msg
-	return &StreamSnapshot{SnapshotID: s.SnapshotId, EntityID: s.EntityId, EntityType: s.EntityType, EntityVersion: s.EntityVersion, State: streamPayload(s.State, s.StateValue), CreatedAt: streamTimestamp(s.CreatedAt)}, nil
+	if s.CreatedAt == nil {
+		return nil, NewError("response is missing required timestamp StreamSnapshot.CreatedAt", "INVALID_RESPONSE", false)
+	}
+	return &StreamSnapshot{SnapshotID: s.SnapshotId, EntityID: s.EntityId, EntityType: s.EntityType, EntityVersion: s.EntityVersion, State: streamPayload(s.State, s.StateValue), CreatedAt: optionalTimeFromProto(s.CreatedAt)}, nil
 }
 
 // DeleteStream appends the $stream.deleted tombstone to an entity stream and

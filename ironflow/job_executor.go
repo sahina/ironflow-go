@@ -70,9 +70,17 @@ type jobExecutor struct {
 // execute runs a job assignment through the function handler and reports
 // the result via the provided reporter.
 func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter jobReporter) error {
+	var execErr error
+	parent, state := "", ""
+	if job.Context != nil {
+		parent, state = job.Context.Traceparent, job.Context.Tracestate
+	}
+	ctx, span := startProcess(ctx, parent, state)
+	defer finishSpan(span, &execErr)
 	fn, ok := e.functions[job.FunctionID]
 	if !ok {
 		fnErr := fmt.Errorf("function not found: %s", job.FunctionID)
+		execErr = fnErr
 		e.callOnError(fnErr, job)
 		return reportFailed(ctx, reporter, job.JobID, &PushError{
 			Message:   fnErr.Error(),
@@ -177,7 +185,6 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 
 	// Execute with panic recovery
 	var result any
-	var execErr error
 
 	func() {
 		defer func() {
@@ -199,6 +206,7 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 	}()
 
 	if exec.cancellationErr() != nil {
+		execErr = ctx.Err()
 		return nil
 	}
 
@@ -220,6 +228,7 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 	if signal, ok := isYieldSignal(execErr); ok {
 		steps, offset := checkpointer.finish()
 		if exec.cancellationErr() != nil {
+			execErr = ctx.Err()
 			return nil
 		}
 		return reportYielded(ctx, reporter, job.JobID, signal.info, steps, offset)
@@ -235,12 +244,14 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 		}
 
 		if exec.cancellationErr() != nil {
+			execErr = ctx.Err()
 			return nil
 		}
 		e.callOnError(execErr, job)
 
 		steps, offset := checkpointer.finish()
 		if exec.cancellationErr() != nil {
+			execErr = ctx.Err()
 			return nil
 		}
 		if checkpointer == nil {
@@ -278,6 +289,7 @@ func (e *jobExecutor) execute(ctx context.Context, job *jobAssignment, reporter 
 	// Success - include executed steps
 	steps, offset := checkpointer.finish()
 	if exec.cancellationErr() != nil {
+		execErr = ctx.Err()
 		return nil
 	}
 	return reportCompleted(ctx, reporter, job.JobID, result, steps, offset)
@@ -476,7 +488,9 @@ type completedStep struct {
 
 // jobContext carries per-job context (secrets, trace info, etc.).
 type jobContext struct {
-	Secrets map[string]string `json:"secrets,omitempty"`
+	Secrets     map[string]string `json:"secrets,omitempty"`
+	Traceparent string            `json:"traceparent,omitempty"`
+	Tracestate  string            `json:"tracestate,omitempty"`
 }
 
 // jobSecrets extracts the secrets map from a jobAssignment's context.

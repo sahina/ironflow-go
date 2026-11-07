@@ -169,7 +169,7 @@ func TestProjectClient_Create(t *testing.T) {
 		if project.Description != "A new project" {
 			t.Errorf("expected description 'A new project', got %s", project.Description)
 		}
-		if project.CreatedAt != "2026-03-28T00:00:00Z" {
+		if !project.CreatedAt.Equal(mustTime(t, "2026-03-28T00:00:00Z")) {
 			t.Errorf("expected createdAt '2026-03-28T00:00:00Z', got %s", project.CreatedAt)
 		}
 	})
@@ -230,7 +230,7 @@ func TestProjectClient_Update(t *testing.T) {
 		if project.Name != "renamed-project" {
 			t.Errorf("expected name 'renamed-project', got %s", project.Name)
 		}
-		if project.UpdatedAt != "2026-03-28T01:00:00Z" {
+		if !project.UpdatedAt.Equal(mustTime(t, "2026-03-28T01:00:00Z")) {
 			t.Errorf("expected updatedAt '2026-03-28T01:00:00Z', got %s", project.UpdatedAt)
 		}
 	})
@@ -488,7 +488,7 @@ func TestProjectClient_UpdateEnvironment(t *testing.T) {
 		if env.Name != "prod-renamed" {
 			t.Errorf("expected name 'prod-renamed', got %s", env.Name)
 		}
-		if env.UpdatedAt != "2026-03-28T02:00:00Z" {
+		if !env.UpdatedAt.Equal(mustTime(t, "2026-03-28T02:00:00Z")) {
 			t.Errorf("expected updatedAt '2026-03-28T02:00:00Z', got %s", env.UpdatedAt)
 		}
 	})
@@ -565,7 +565,7 @@ func TestProjectClient_Update_Description(t *testing.T) {
 			client, cleanup := setupMockProjectServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				_ = json.NewDecoder(r.Body).Decode(&body)
 				w.Header().Set("Content-Type", "application/json")
-				_ = json.NewEncoder(w).Encode(map[string]any{"id": "proj_abc123", "name": "p"})
+				_ = json.NewEncoder(w).Encode(map[string]any{"id": "proj_abc123", "name": "p", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"})
 			}))
 			defer cleanup()
 

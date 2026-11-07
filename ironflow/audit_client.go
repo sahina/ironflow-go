@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 // ListAuditEventsOpts configures an environment-wide audit query.
@@ -11,8 +12,8 @@ type ListAuditEventsOpts struct {
 	RunID         string
 	FunctionID    string
 	EventType     string
-	FromTimestamp string
-	ToTimestamp   string
+	FromTimestamp *time.Time
+	ToTimestamp   *time.Time
 	Limit         int
 	Cursor        string
 }
@@ -29,11 +30,11 @@ func (c *Client) ListAuditEvents(ctx context.Context, opts ListAuditEventsOpts) 
 	if opts.EventType != "" {
 		query.Set("event_type", opts.EventType)
 	}
-	if opts.FromTimestamp != "" {
-		query.Set("from", opts.FromTimestamp)
+	if opts.FromTimestamp != nil {
+		query.Set("from", opts.FromTimestamp.UTC().Format(time.RFC3339Nano))
 	}
-	if opts.ToTimestamp != "" {
-		query.Set("to", opts.ToTimestamp)
+	if opts.ToTimestamp != nil {
+		query.Set("to", opts.ToTimestamp.UTC().Format(time.RFC3339Nano))
 	}
 	if opts.Limit > 0 {
 		query.Set("limit", strconv.Itoa(opts.Limit))

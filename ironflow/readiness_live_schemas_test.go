@@ -34,7 +34,7 @@ func TestLiveReadinessSchemas(t *testing.T) {
 
 	t.Run("schema-read", func(t *testing.T) {
 		latest, err := schemas.Get(ctx, name)
-		if err != nil || latest.Name != name || latest.Version != 2 || !reflect.DeepEqual(latest.Schema, doc("orderRef")) || latest.CreatedAt == "" {
+		if err != nil || latest.Name != name || latest.Version != 2 || !reflect.DeepEqual(latest.Schema, doc("orderRef")) || latest.CreatedAt == nil || latest.CreatedAt.IsZero() {
 			t.Fatalf("Get = %+v, %v, want v2 of %s with %v", latest, err, name, doc("orderRef"))
 		}
 		first, err := schemas.GetVersion(ctx, name, 1)

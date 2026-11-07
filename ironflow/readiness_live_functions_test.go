@@ -86,7 +86,7 @@ func TestLiveReadinessFunctions(t *testing.T) {
 		}
 		for _, f := range all {
 			if f.ID == id {
-				if f.Name != "Readiness functions (Go)" || f.Status != "active" || f.PreferredMode != "push" || f.CreatedAt == "" || f.UpdatedAt == "" {
+				if f.Name != "Readiness functions (Go)" || f.Status != "active" || f.PreferredMode != "push" || f.CreatedAt.IsZero() || f.UpdatedAt.IsZero() {
 					t.Fatalf("listed = %+v, want name, active, push and both times", f)
 				}
 				return

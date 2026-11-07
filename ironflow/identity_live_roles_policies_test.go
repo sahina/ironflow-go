@@ -121,7 +121,7 @@ func TestLiveIdentityPolicySet(t *testing.T) {
 	}
 
 	put1, err := admin.PutPolicySet(ctx, v1, 0)
-	if err != nil || put1.Version != 1 || put1.Mode != "monitor" || !maps.Equal(put1.Modules, v1.Modules) || put1.UpdatedAt == "" {
+	if err != nil || put1.Version != 1 || put1.Mode != "monitor" || !maps.Equal(put1.Modules, v1.Modules) || put1.UpdatedAt == nil || put1.UpdatedAt.IsZero() {
 		t.Fatalf("PutPolicySet v1 = %+v, %v", put1, err)
 	}
 	if _, err := admin.PutPolicySet(ctx, v2, 0); !IsVersionConflict(err) {
@@ -142,7 +142,7 @@ func TestLiveIdentityPolicySet(t *testing.T) {
 	var seen []int64
 	for _, v := range versions {
 		seen = append(seen, v.Version)
-		if v.Mode != "monitor" || v.CreatedAt == "" {
+		if v.Mode != "monitor" || v.CreatedAt.IsZero() {
 			t.Errorf("version summary = %+v", v)
 		}
 	}

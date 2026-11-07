@@ -61,6 +61,9 @@ const (
 	// IronflowServiceRollbackFunctionProcedure is the fully-qualified name of the IronflowService's
 	// RollbackFunction RPC.
 	IronflowServiceRollbackFunctionProcedure = "/ironflow.v1.IronflowService/RollbackFunction"
+	// IronflowServiceExplainEventMatchProcedure is the fully-qualified name of the IronflowService's
+	// ExplainEventMatch RPC.
+	IronflowServiceExplainEventMatchProcedure = "/ironflow.v1.IronflowService/ExplainEventMatch"
 	// IronflowServiceTriggerProcedure is the fully-qualified name of the IronflowService's Trigger RPC.
 	IronflowServiceTriggerProcedure = "/ironflow.v1.IronflowService/Trigger"
 	// IronflowServiceEmitProcedure is the fully-qualified name of the IronflowService's Emit RPC.
@@ -142,6 +145,8 @@ type IronflowServiceClient interface {
 	GetFunctionAtVersion(context.Context, *connect.Request[v1.GetFunctionAtVersionRequest]) (*connect.Response[v1.GetFunctionAtVersionResponse], error)
 	// Roll back a function to a previous version
 	RollbackFunction(context.Context, *connect.Request[v1.RollbackFunctionRequest]) (*connect.Response[v1.RollbackFunctionResponse], error)
+	// Explain current routing eligibility without emitting or dispatching an event.
+	ExplainEventMatch(context.Context, *connect.Request[v1.ExplainEventMatchRequest]) (*connect.Response[v1.ExplainEventMatchResponse], error)
 	// Trigger an event (async by default)
 	Trigger(context.Context, *connect.Request[v1.TriggerRequest]) (*connect.Response[v1.TriggerResponse], error)
 	// Emit an event (alias for Trigger with emit semantics)
@@ -274,6 +279,13 @@ func NewIronflowServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 			httpClient,
 			baseURL+IronflowServiceRollbackFunctionProcedure,
 			connect.WithSchema(ironflowServiceMethods.ByName("RollbackFunction")),
+			connect.WithClientOptions(opts...),
+		),
+		explainEventMatch: connect.NewClient[v1.ExplainEventMatchRequest, v1.ExplainEventMatchResponse](
+			httpClient,
+			baseURL+IronflowServiceExplainEventMatchProcedure,
+			connect.WithSchema(ironflowServiceMethods.ByName("ExplainEventMatch")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 		trigger: connect.NewClient[v1.TriggerRequest, v1.TriggerResponse](
@@ -420,6 +432,7 @@ type ironflowServiceClient struct {
 	listFunctionHistory  *connect.Client[v1.ListFunctionHistoryRequest, v1.ListFunctionHistoryResponse]
 	getFunctionAtVersion *connect.Client[v1.GetFunctionAtVersionRequest, v1.GetFunctionAtVersionResponse]
 	rollbackFunction     *connect.Client[v1.RollbackFunctionRequest, v1.RollbackFunctionResponse]
+	explainEventMatch    *connect.Client[v1.ExplainEventMatchRequest, v1.ExplainEventMatchResponse]
 	trigger              *connect.Client[v1.TriggerRequest, v1.TriggerResponse]
 	emit                 *connect.Client[v1.TriggerRequest, v1.TriggerResponse]
 	triggerSync          *connect.Client[v1.TriggerSyncRequest, v1.TriggerSyncResponse]
@@ -486,6 +499,11 @@ func (c *ironflowServiceClient) GetFunctionAtVersion(ctx context.Context, req *c
 // RollbackFunction calls ironflow.v1.IronflowService.RollbackFunction.
 func (c *ironflowServiceClient) RollbackFunction(ctx context.Context, req *connect.Request[v1.RollbackFunctionRequest]) (*connect.Response[v1.RollbackFunctionResponse], error) {
 	return c.rollbackFunction.CallUnary(ctx, req)
+}
+
+// ExplainEventMatch calls ironflow.v1.IronflowService.ExplainEventMatch.
+func (c *ironflowServiceClient) ExplainEventMatch(ctx context.Context, req *connect.Request[v1.ExplainEventMatchRequest]) (*connect.Response[v1.ExplainEventMatchResponse], error) {
+	return c.explainEventMatch.CallUnary(ctx, req)
 }
 
 // Trigger calls ironflow.v1.IronflowService.Trigger.
@@ -614,6 +632,8 @@ type IronflowServiceHandler interface {
 	GetFunctionAtVersion(context.Context, *connect.Request[v1.GetFunctionAtVersionRequest]) (*connect.Response[v1.GetFunctionAtVersionResponse], error)
 	// Roll back a function to a previous version
 	RollbackFunction(context.Context, *connect.Request[v1.RollbackFunctionRequest]) (*connect.Response[v1.RollbackFunctionResponse], error)
+	// Explain current routing eligibility without emitting or dispatching an event.
+	ExplainEventMatch(context.Context, *connect.Request[v1.ExplainEventMatchRequest]) (*connect.Response[v1.ExplainEventMatchResponse], error)
 	// Trigger an event (async by default)
 	Trigger(context.Context, *connect.Request[v1.TriggerRequest]) (*connect.Response[v1.TriggerResponse], error)
 	// Emit an event (alias for Trigger with emit semantics)
@@ -742,6 +762,13 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 		IronflowServiceRollbackFunctionProcedure,
 		svc.RollbackFunction,
 		connect.WithSchema(ironflowServiceMethods.ByName("RollbackFunction")),
+		connect.WithHandlerOptions(opts...),
+	)
+	ironflowServiceExplainEventMatchHandler := connect.NewUnaryHandler(
+		IronflowServiceExplainEventMatchProcedure,
+		svc.ExplainEventMatch,
+		connect.WithSchema(ironflowServiceMethods.ByName("ExplainEventMatch")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	ironflowServiceTriggerHandler := connect.NewUnaryHandler(
@@ -894,6 +921,8 @@ func NewIronflowServiceHandler(svc IronflowServiceHandler, opts ...connect.Handl
 			ironflowServiceGetFunctionAtVersionHandler.ServeHTTP(w, r)
 		case IronflowServiceRollbackFunctionProcedure:
 			ironflowServiceRollbackFunctionHandler.ServeHTTP(w, r)
+		case IronflowServiceExplainEventMatchProcedure:
+			ironflowServiceExplainEventMatchHandler.ServeHTTP(w, r)
 		case IronflowServiceTriggerProcedure:
 			ironflowServiceTriggerHandler.ServeHTTP(w, r)
 		case IronflowServiceEmitProcedure:
@@ -979,6 +1008,10 @@ func (UnimplementedIronflowServiceHandler) GetFunctionAtVersion(context.Context,
 
 func (UnimplementedIronflowServiceHandler) RollbackFunction(context.Context, *connect.Request[v1.RollbackFunctionRequest]) (*connect.Response[v1.RollbackFunctionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.RollbackFunction is not implemented"))
+}
+
+func (UnimplementedIronflowServiceHandler) ExplainEventMatch(context.Context, *connect.Request[v1.ExplainEventMatchRequest]) (*connect.Response[v1.ExplainEventMatchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ironflow.v1.IronflowService.ExplainEventMatch is not implemented"))
 }
 
 func (UnimplementedIronflowServiceHandler) Trigger(context.Context, *connect.Request[v1.TriggerRequest]) (*connect.Response[v1.TriggerResponse], error) {

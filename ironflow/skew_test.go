@@ -188,11 +188,11 @@ func TestUnknownEnumPassesThrough(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/ironflow.v1.IronflowService/GetRun":
-			_, _ = w.Write([]byte(`{"id":"r1","status":"RUN_STATUS_ZZ_FUTURE"}`))
+			_, _ = w.Write([]byte(`{"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","id":"r1","status":"RUN_STATUS_ZZ_FUTURE"}`))
 		case "/ironflow.v1.IronflowService/ListRuns":
-			_, _ = w.Write([]byte(`{"runs":[{"id":"r1","status":"RUN_STATUS_ZZ_FUTURE"},{"id":"r2","status":"RUN_STATUS_COMPLETED"}],"total":2}`))
+			_, _ = w.Write([]byte(`{"runs":[{"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","id":"r1","status":"RUN_STATUS_ZZ_FUTURE"},{"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","id":"r2","status":"RUN_STATUS_COMPLETED"}],"total":2}`))
 		case "/ironflow.v1.IronflowService/GetRunSteps":
-			_, _ = w.Write([]byte(`{"steps":[{"id":"s1","stepType":"STEP_TYPE_ZZ_FUTURE","status":"STEP_STATUS_ZZ_FUTURE"},{"id":"s2"}]}`))
+			_, _ = w.Write([]byte(`{"steps":[{"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","id":"s1","stepType":"STEP_TYPE_ZZ_FUTURE","status":"STEP_STATUS_ZZ_FUTURE"},{"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z","id":"s2"}]}`))
 		}
 	}))
 	defer srv.Close()

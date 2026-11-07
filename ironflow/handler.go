@@ -305,7 +305,7 @@ func CreateHandler[TEvent any](config HandlerConfig[TEvent]) Function {
 			Run:     ctx.Run,
 			Secrets: ctx.Secrets,
 			Step:    &StepClient{ctx: ctx},
-			Logger:  NewLogger(LoggerConfig{Prefix: fmt.Sprintf("[%s]", id)}),
+			Logger:  ctx.Logger(),
 			ctx:     ctx,
 		}
 

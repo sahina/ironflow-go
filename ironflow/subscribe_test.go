@@ -1808,8 +1808,8 @@ func TestSubscriptionClient_ReceiveEventWithMetadata(t *testing.T) {
 			t.Fatal("expected metadata")
 		}
 
-		if event.Meta.Timestamp != "2025-01-01T00:00:00Z" {
-			t.Errorf("expected timestamp %q, got %q", "2025-01-01T00:00:00Z", event.Meta.Timestamp)
+		if want := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC); event.Meta.Timestamp == nil || !event.Meta.Timestamp.Equal(want) {
+			t.Errorf("expected timestamp %s, got %v", want, event.Meta.Timestamp)
 		}
 
 		if event.Meta.Sequence != 42 {
@@ -2893,7 +2893,7 @@ func TestJoinConsumerGroup_DefaultsToWebSocketAndAcks(t *testing.T) {
 		case "/api/v1/capabilities":
 			_ = json.NewEncoder(w).Encode(map[string]any{"transports": []string{"websocket", "grpc-bidirectional"}})
 		case "/ironflow.v1.PubSubService/GetConsumerGroup":
-			_ = json.NewEncoder(w).Encode(map[string]any{"name": "g", "namespace": "default", "pattern": "topic:orders"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"name": "g", "namespace": "default", "pattern": "topic:orders", "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z"})
 		default:
 			ws.ServeHTTP(w, r)
 		}
@@ -2932,5 +2932,56 @@ func TestJoinConsumerGroup_DefaultsToWebSocketAndAcks(t *testing.T) {
 	}
 	if nakMsg.AckType != "nak" || nakMsg.EventID != "evt_join" || nakMsg.SubscriptionID != "sub_join_1" {
 		t.Errorf("unexpected ack frame: %+v", nakMsg)
+	}
+}
+
+// An entity event with no timestamp goes to OnError and the subscription stays open.
+func TestSubscribeEntityStream_MissingTimestampGoesToOnError(t *testing.T) {
+	server := newMockWSServer()
+	defer server.Close()
+	frame := func(data string) map[string]any {
+		return map[string]any{"type": "event", "subscriptionId": "sub_ts", "topic": "t", "data": json.RawMessage(data)}
+	}
+	server.onMessage = func(data []byte) {
+		var msg wsSubscribeRequest
+		if err := json.Unmarshal(data, &msg); err != nil || msg.Type != "subscribe" {
+			return
+		}
+		_ = server.SendMessage(map[string]any{"type": "subscription_result", "results": []map[string]any{{"pattern": msg.Subscription.Pattern, "status": "ok", "subscriptionId": "sub_ts"}}})
+		_ = server.SendMessage(frame(`{"name":"a"}`))
+		_ = server.SendMessage(frame(`{"name":"b","timestamp":"2026-01-01T00:00:00Z"}`))
+	}
+	client := NewSubscriptionClient(SubscriptionClientConfig{WSURL: server.URL()})
+	defer client.Close()
+	ctx := context.Background()
+	if err := client.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	events, errs := make(chan StreamEvent, 2), make(chan error, 2)
+	sub, err := client.SubscribeEntityStream(ctx, "order-1", EntitySubscribeOptions{
+		EntityType: "order",
+		OnEvent:    func(e StreamEvent) { events <- e },
+		OnError:    func(err error) { errs <- err },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Unsubscribe()
+
+	select {
+	case err := <-errs:
+		if !strings.Contains(err.Error(), "missing required timestamp") {
+			t.Errorf("OnError = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no error for the event with no timestamp")
+	}
+	select {
+	case e := <-events:
+		if e.Name != "b" {
+			t.Errorf("delivered %q, want b", e.Name)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the subscription stopped after the bad event")
 	}
 }

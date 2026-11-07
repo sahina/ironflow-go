@@ -49,7 +49,7 @@ func TestListAuditEvents(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"events": []map[string]any{{
 				"id": "audit-1", "run_id": "run-1", "function_id": "fn-1",
-				"event_type": "run.completed", "payload": map[string]any{}, "created_at": "now",
+				"event_type": "run.completed", "payload": map[string]any{}, "created_at": "2026-03-04T05:06:07Z",
 			}},
 			"total_count": 1,
 			"next_cursor": "next",

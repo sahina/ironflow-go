@@ -42,9 +42,7 @@ type ToolDef struct {
 	// requires the agent:tools:invoke action).
 	RequiredScopes []string `protobuf:"bytes,4,rep,name=required_scopes,json=requiredScopes,proto3" json:"required_scopes,omitempty"`
 	// Per-tool dispatch timeout in milliseconds. Bounded
-	// [1ms, 60000ms] by the SDK contract; server caps at the env
-	// setting IRONFLOW_AGENT_TOOLS_MAX_TIMEOUT_MS (default 60000).
-	// Hard cap is 120000ms.
+	// [1ms, 60000ms] by the SDK contract; the server caps it at 60000ms.
 	TimeoutMs     uint32 `protobuf:"varint,5,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

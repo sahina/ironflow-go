@@ -3,6 +3,7 @@ package ironflow
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestTimeTravelTypes_Marshal(t *testing.T) {
@@ -31,7 +32,7 @@ func TestTimeTravelTypes_Marshal(t *testing.T) {
 func TestTimeTravelTimelineEvent_Marshal(t *testing.T) {
 	event := TimeTravelTimelineEvent{
 		ID: "e1", EventType: "step.completed", Summary: "Step 'x' completed",
-		Significant: true, Timestamp: "2026-01-15T10:30:00Z",
+		Significant: true, Timestamp: time.Date(2026, 1, 15, 10, 30, 0, 0, time.UTC),
 	}
 	data, err := json.Marshal(event)
 	if err != nil {

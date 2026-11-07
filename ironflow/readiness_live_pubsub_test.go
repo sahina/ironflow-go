@@ -76,9 +76,8 @@ func TestLiveReadinessPubsub(t *testing.T) {
 				// The delivery time, which is not the publish time: near now.
 				checkTimestamp := func(ev *SubscriptionEvent) {
 					t.Helper()
-					at, err := time.Parse(time.RFC3339Nano, ev.Meta.Timestamp)
-					if err != nil || time.Since(at).Abs() > time.Minute {
-						t.Fatalf("event %s timestamp = %q (%v), want a time near now", ev.ID, ev.Meta.Timestamp, err)
+					if at := ev.Meta.Timestamp; at == nil || time.Since(*at).Abs() > time.Minute {
+						t.Fatalf("event %s timestamp = %v, want a time near now", ev.ID, at)
 					}
 				}
 				decode := func(ev *SubscriptionEvent) map[string]any {

@@ -57,14 +57,15 @@ type WebhookVerifyConfig struct {
 
 // WebhookSource represents a registered webhook source.
 type WebhookSource struct {
-	ID                        string         `json:"id"`
-	Name                      string         `json:"name"`
-	EventPrefix               string         `json:"event_prefix"`
-	VerifyHeader              string         `json:"verify_header,omitempty"`
-	VerifyAlgorithm           string         `json:"verify_algorithm,omitempty"`
-	VerifySecretSet           bool           `json:"verify_secret_set,omitempty"`
-	VerifySecretPrevSet       bool           `json:"verify_secret_prev_set,omitempty"`
-	VerifySecretPrevExpiresAt string         `json:"verify_secret_prev_expires_at,omitempty"`
+	ID                  string `json:"id"`
+	Name                string `json:"name"`
+	EventPrefix         string `json:"event_prefix"`
+	VerifyHeader        string `json:"verify_header,omitempty"`
+	VerifyAlgorithm     string `json:"verify_algorithm,omitempty"`
+	VerifySecretSet     bool   `json:"verify_secret_set,omitempty"`
+	VerifySecretPrevSet bool   `json:"verify_secret_prev_set,omitempty"`
+	// VerifySecretPrevExpiresAt is nil when no previous secret is in its grace window.
+	VerifySecretPrevExpiresAt *time.Time     `json:"verify_secret_prev_expires_at,omitempty"`
 	SourceType                string         `json:"source_type,omitempty"`
 	Metadata                  map[string]any `json:"metadata,omitempty"`
 	// IngestTokenPrefix is a short display fragment (ifwh_ + 8 chars) of the
@@ -78,20 +79,20 @@ type WebhookSource struct {
 	// VerifyConfig is the signature descriptor (ADR 0049). Nil means legacy
 	// verification via VerifyHeader/VerifyAlgorithm.
 	VerifyConfig *WebhookVerifyConfig `json:"verify_config,omitempty"`
-	CreatedAt    string               `json:"created_at,omitempty"`
-	UpdatedAt    string               `json:"updated_at,omitempty"`
+	CreatedAt    time.Time            `json:"created_at,omitzero"`
+	UpdatedAt    time.Time            `json:"updated_at,omitzero"`
 }
 
 // WebhookDelivery represents a single webhook delivery attempt.
 type WebhookDelivery struct {
-	ID           string `json:"id"`
-	SourceID     string `json:"source_id"`
-	ExternalID   string `json:"external_id,omitempty"`
-	Status       string `json:"status"`
-	EventID      string `json:"event_id,omitempty"`
-	Error        string `json:"error,omitempty"`
-	SignatureKey string `json:"signature_key,omitempty"`
-	CreatedAt    string `json:"created_at,omitempty"`
+	ID           string    `json:"id"`
+	SourceID     string    `json:"source_id"`
+	ExternalID   string    `json:"external_id,omitempty"`
+	Status       string    `json:"status"`
+	EventID      string    `json:"event_id,omitempty"`
+	Error        string    `json:"error,omitempty"`
+	SignatureKey string    `json:"signature_key,omitempty"`
+	CreatedAt    time.Time `json:"created_at,omitzero"`
 }
 
 // ListWebhookDeliveriesOpts configures a ListDeliveries query.
@@ -219,7 +220,7 @@ type UpdateWebhookSourceInput struct {
 	// Worth sending precisely because VerifyConfig is preserve-on-omit — an
 	// unguarded rename can otherwise revert someone else's descriptor change.
 	// Omit to skip the check.
-	ExpectedUpdatedAt string `json:"expected_updated_at,omitempty"`
+	ExpectedUpdatedAt *time.Time `json:"expected_updated_at,omitempty"`
 	// Metadata replaces the metadata blob entirely. nil clears the column.
 	Metadata map[string]any `json:"metadata,omitempty"`
 }

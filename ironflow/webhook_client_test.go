@@ -240,6 +240,8 @@ func TestWebhookManagementClient_GetSource(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
 				"id":           "wh_stripe",
+				"created_at":   "2026-01-01T00:00:00Z",
+				"updated_at":   "2026-01-01T00:00:00Z",
 				"name":         "stripe",
 				"event_prefix": "stripe.",
 				"source_type":  "api",
@@ -288,6 +290,8 @@ func TestWebhookManagementClient_UpdateSource(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
 				"id":                "wh_x",
+				"created_at":        "2026-01-01T00:00:00Z",
+				"updated_at":        "2026-01-01T00:00:00Z",
 				"name":              "renamed",
 				"event_prefix":      "stripe.",
 				"verify_header":     "X-New",
@@ -354,6 +358,8 @@ func TestWebhookManagementClient_RotateSecret(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
 				"id":                "wh_x",
+				"created_at":        "2026-01-01T00:00:00Z",
+				"updated_at":        "2026-01-01T00:00:00Z",
 				"name":              "rot",
 				"verify_secret_set": true,
 				"source_type":       "api",
@@ -387,7 +393,7 @@ func TestWebhookManagementClient_RotateSecret(t *testing.T) {
 		client, cleanup := setupMockWebhookServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			json.NewDecoder(r.Body).Decode(&receivedBody)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"id": "wh_x", "verify_secret_set": true})
+			json.NewEncoder(w).Encode(map[string]any{"id": "wh_x", "verify_secret_set": true, "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"})
 		}))
 		defer cleanup()
 
@@ -438,16 +444,20 @@ func TestWebhookManagementClient_ListDeliveries(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{
 				"deliveries": []map[string]any{
 					{
-						"id":        "del-1",
-						"source_id": "stripe",
-						"status":    "delivered",
-						"event_id":  "evt-123",
+						"id":         "del-1",
+						"created_at": "2026-01-01T00:00:00Z",
+						"updated_at": "2026-01-01T00:00:00Z",
+						"source_id":  "stripe",
+						"status":     "delivered",
+						"event_id":   "evt-123",
 					},
 					{
-						"id":        "del-2",
-						"source_id": "stripe",
-						"status":    "failed",
-						"error":     "timeout",
+						"id":         "del-2",
+						"created_at": "2026-01-01T00:00:00Z",
+						"updated_at": "2026-01-01T00:00:00Z",
+						"source_id":  "stripe",
+						"status":     "failed",
+						"error":      "timeout",
 					},
 				},
 				"total_count": 2,
@@ -559,7 +569,7 @@ func TestWebhookManagementClient_RotateIngestToken(t *testing.T) {
 		client, cleanup := setupMockWebhookServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			json.NewDecoder(r.Body).Decode(&receivedBody)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"id": "whs_1"})
+			json.NewEncoder(w).Encode(map[string]any{"id": "whs_1", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"})
 		}))
 		defer cleanup()
 
@@ -578,7 +588,7 @@ func TestWebhookManagementClient_RotateIngestToken(t *testing.T) {
 		client, cleanup := setupMockWebhookServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			json.NewDecoder(r.Body).Decode(&receivedBody)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"id": "whs_1"})
+			json.NewEncoder(w).Encode(map[string]any{"id": "whs_1", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"})
 		}))
 		defer cleanup()
 

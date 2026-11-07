@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	ironflowv1 "github.com/sahina/ironflow-go/api/ironflow/v1"
 	"github.com/sahina/ironflow-go/api/ironflow/v1/ironflowv1connect"
@@ -19,7 +20,7 @@ type snapshotRequestService struct {
 
 func (s *snapshotRequestService) GetSnapshot(_ context.Context, r *connect.Request[ironflowv1.GetSnapshotRequest]) (*connect.Response[ironflowv1.GetSnapshotResponse], error) {
 	s.got = r.Msg
-	return connect.NewResponse(&ironflowv1.GetSnapshotResponse{SnapshotId: "snap-1", EntityId: r.Msg.EntityId}), nil
+	return connect.NewResponse(&ironflowv1.GetSnapshotResponse{SnapshotId: "snap-1", EntityId: r.Msg.EntityId, CreatedAt: timestamppb.Now()}), nil
 }
 
 // BeforeVersion must reach the server, and a call without options must keep

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -29,8 +30,37 @@ type fakeProjectionStream struct {
 	stream streamFunc
 }
 
+// StreamProjectionEvents opens every stream with the OPEN frame of a server
+// that honors the delivery position (ADR 0164).
 func (f fakeProjectionStream) StreamProjectionEvents(ctx context.Context, req *connect.Request[ironflowv1.StreamProjectionEventsRequest], s *connect.ServerStream[ironflowv1.ProjectionEvent]) error {
+	if err := s.Send(&ironflowv1.ProjectionEvent{Kind: ironflowv1.ProjectionEventKind_PROJECTION_EVENT_KIND_OPEN, Seq: req.Msg.GetPosition()}); err != nil {
+		return err
+	}
 	return f.stream(ctx, req, s)
+}
+
+// positionEcho adds the honored position to a poll response that has none,
+// as a server that honors the delivery position does (ADR 0164).
+func positionEcho(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/PollProjectionEvents") {
+			next(w, r)
+			return
+		}
+		rec := httptest.NewRecorder()
+		next(rec, r)
+		body := rec.Body.Bytes()
+		var resp map[string]any
+		if rec.Code == http.StatusOK && json.Unmarshal(body, &resp) == nil {
+			if _, ok := resp["position"]; !ok {
+				resp["position"] = "0"
+				body, _ = json.Marshal(resp)
+			}
+		}
+		maps.Copy(w.Header(), rec.Header())
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(body)
+	}
 }
 
 // newProjectionStreamServer serves StreamProjectionEvents over Connect (when
@@ -52,7 +82,7 @@ func leaseRPCs(next http.HandlerFunc) http.HandlerFunc {
 		case "ReleaseProjectionLease":
 			_, _ = w.Write([]byte(`{}`))
 		default:
-			next(w, r)
+			positionEcho(next)(w, r)
 		}
 	}
 }
@@ -64,7 +94,7 @@ func newProjectionServer(t *testing.T, mux *http.ServeMux, stream streamFunc, un
 		_, h := ironflowv1connect.NewProjectionServiceHandler(fakeProjectionStream{stream: stream})
 		mux.Handle(ironflowv1connect.ProjectionServiceStreamProjectionEventsProcedure, h)
 	}
-	mux.Handle("/", unary)
+	mux.Handle("/", positionEcho(unary))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

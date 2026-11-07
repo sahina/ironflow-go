@@ -35,7 +35,7 @@ func TestLiveReadinessOperationalControls(t *testing.T) {
 			t.Fatalf("by run = %v (total %d), want %v", got, byRun.TotalCount, want)
 		}
 		for _, e := range byRun.Events {
-			if e.ID == "" || e.RunID != seed.RunID || e.FunctionID != seed.FunctionID || e.CreatedAt == "" {
+			if e.ID == "" || e.RunID != seed.RunID || e.FunctionID != seed.FunctionID || e.CreatedAt.IsZero() {
 				t.Fatalf("event %+v does not belong to run %s / function %s", e, seed.RunID, seed.FunctionID)
 			}
 		}
@@ -60,11 +60,12 @@ func TestLiveReadinessOperationalControls(t *testing.T) {
 		}
 
 		// The seed took BeforeRun before it triggered the run, so the window decides.
-		after, err := client.ListAuditEvents(ctx, ListAuditEventsOpts{RunID: seed.RunID, FromTimestamp: seed.BeforeRun})
+		beforeRun := mustTime(t, seed.BeforeRun)
+		after, err := client.ListAuditEvents(ctx, ListAuditEventsOpts{RunID: seed.RunID, FromTimestamp: &beforeRun})
 		if err != nil || after.TotalCount != len(want) {
 			t.Fatalf("from BeforeRun = %+v, %v, want %d events", after, err, len(want))
 		}
-		before, err := client.ListAuditEvents(ctx, ListAuditEventsOpts{RunID: seed.RunID, ToTimestamp: seed.BeforeRun})
+		before, err := client.ListAuditEvents(ctx, ListAuditEventsOpts{RunID: seed.RunID, ToTimestamp: &beforeRun})
 		if err != nil || len(before.Events) != 0 {
 			t.Fatalf("to BeforeRun = %+v, %v, want no events", before, err)
 		}

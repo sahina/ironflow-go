@@ -1120,11 +1120,12 @@ func protoToJobAssignment(pa *ironflowv1.JobAssignment) (*jobAssignment, error) 
 		})
 	}
 
-	// Extract secrets from context
 	var jobCtx *jobContext
-	if pa.GetContext() != nil && len(pa.GetContext().GetSecrets()) > 0 {
+	if pa.GetContext() != nil {
 		jobCtx = &jobContext{
-			Secrets: pa.GetContext().GetSecrets(),
+			Secrets:     pa.GetContext().GetSecrets(),
+			Traceparent: pa.GetContext().GetTraceparent(),
+			Tracestate:  pa.GetContext().GetTracestate(),
 		}
 	}
 
