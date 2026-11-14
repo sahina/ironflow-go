@@ -16,6 +16,6 @@
 //
 // Mirrors the surface of @ironflow/node/agent (Lane B-1, JS) so
 // cross-language agent stacks share semantics — codes, idempotency,
-// turn counter, classified LLM errors. See docs/explanation/comparison-agents.md
+// turn counter, classified LLM errors. See docs/explanation/agentic-fit.md
 // for the layering model.
 package agent

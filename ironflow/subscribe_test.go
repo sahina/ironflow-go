@@ -1445,10 +1445,7 @@ func TestSubscriptionClient_ReconnectPreservesOptionsWithoutReplay(t *testing.T)
 		Replay:          25,
 		IncludeMetadata: true,
 		Filter:          "data.total > 100",
-		Namespace:       "production",
 		ConsumerGroup:   "processors",
-		AckMode:         AckModeManual,
-		Backpressure:    BackpressureBlock,
 	})
 	if err != nil {
 		t.Fatalf("Subscribe failed: %v", err)
@@ -1474,10 +1471,7 @@ func TestSubscriptionClient_ReconnectPreservesOptionsWithoutReplay(t *testing.T)
 	}
 	if reconnect.Subscription.Options.IncludeMetadata != initial.Subscription.Options.IncludeMetadata ||
 		reconnect.Subscription.Options.Filter != initial.Subscription.Options.Filter ||
-		reconnect.Subscription.Options.Namespace != initial.Subscription.Options.Namespace ||
-		reconnect.Subscription.Options.ConsumerGroup != initial.Subscription.Options.ConsumerGroup ||
-		reconnect.Subscription.Options.AckMode != initial.Subscription.Options.AckMode ||
-		reconnect.Subscription.Options.Backpressure != initial.Subscription.Options.Backpressure {
+		reconnect.Subscription.Options.ConsumerGroup != initial.Subscription.Options.ConsumerGroup {
 		t.Fatalf("reconnect options differ from initial options: initial=%+v reconnect=%+v",
 			initial.Subscription.Options, reconnect.Subscription.Options)
 	}
@@ -2041,69 +2035,7 @@ func waitForCondition(t *testing.T, timeout time.Duration, condFn func() bool) {
 // SubscribeAckable Tests
 // ============================================================================
 
-func TestSubscribeAckable_SendsManualAckMode(t *testing.T) {
-	server := newMockWSServer()
-	defer server.Close()
-
-	server.onMessage = func(data []byte) {
-		var msg wsSubscribeRequest
-		if err := json.Unmarshal(data, &msg); err != nil {
-			return
-		}
-		if msg.Type == "subscribe" {
-			server.SendMessage(map[string]any{
-				"type": "subscription_result",
-				"results": []map[string]any{
-					{
-						"pattern":        msg.Subscription.Pattern,
-						"status":         "ok",
-						"subscriptionId": "sub_ack_1",
-					},
-				},
-			})
-		}
-	}
-
-	client := NewSubscriptionClient(SubscriptionClientConfig{
-		WSURL: server.URL(),
-	})
-	defer client.Close()
-
-	ctx := context.Background()
-
-	if err := client.Connect(ctx); err != nil {
-		t.Fatalf("Connect failed: %v", err)
-	}
-
-	// Subscribe with nil opts — SubscribeAckable should force manual ack mode
-	sub, err := client.SubscribeAckable(ctx, "system.run.>", nil)
-	if err != nil {
-		t.Fatalf("SubscribeAckable failed: %v", err)
-	}
-	defer sub.Unsubscribe()
-
-	// Verify the subscribe message included ackMode=manual
-	messages := waitForMessages(t, server, 1, 2*time.Second)
-
-	var sentMsg wsSubscribeRequest
-	if err := json.Unmarshal(messages[0], &sentMsg); err != nil {
-		t.Fatalf("failed to unmarshal message: %v", err)
-	}
-
-	if sentMsg.Type != "subscribe" {
-		t.Errorf("expected type %q, got %q", "subscribe", sentMsg.Type)
-	}
-
-	if sentMsg.Subscription.Options == nil {
-		t.Fatal("expected options to be set")
-	}
-
-	if sentMsg.Subscription.Options.AckMode != "manual" {
-		t.Errorf("expected ackMode %q, got %q", "manual", sentMsg.Subscription.Options.AckMode)
-	}
-}
-
-func TestSubscribeAckable_SendsManualAckModeWithExistingOpts(t *testing.T) {
+func TestSubscribeAckable_SendsNoAckMode(t *testing.T) {
 	server := newMockWSServer()
 	defer server.Close()
 
@@ -2137,11 +2069,9 @@ func TestSubscribeAckable_SendsManualAckModeWithExistingOpts(t *testing.T) {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
-	// Subscribe with existing opts — SubscribeAckable should override ack mode
 	sub, err := client.SubscribeAckable(ctx, "system.run.>", &SubscribeOptions{
 		Replay:        5,
 		ConsumerGroup: "my-group",
-		AckMode:       AckModeAuto, // This should be overridden to manual
 	})
 	if err != nil {
 		t.Fatalf("SubscribeAckable failed: %v", err)
@@ -2150,25 +2080,34 @@ func TestSubscribeAckable_SendsManualAckModeWithExistingOpts(t *testing.T) {
 
 	messages := waitForMessages(t, server, 1, 2*time.Second)
 
-	var sentMsg wsSubscribeRequest
-	if err := json.Unmarshal(messages[0], &sentMsg); err != nil {
+	// The group's ack mode lives on the group; the frame must not carry one.
+	var raw struct {
+		Subscription struct {
+			Options map[string]any `json:"options"`
+		} `json:"subscription"`
+	}
+	if err := json.Unmarshal(messages[0], &raw); err != nil {
 		t.Fatalf("failed to unmarshal message: %v", err)
 	}
-
-	if sentMsg.Subscription.Options == nil {
-		t.Fatal("expected options to be set")
+	if _, ok := raw.Subscription.Options["ackMode"]; ok {
+		t.Errorf("subscribe frame must not carry ackMode: %v", raw.Subscription.Options)
 	}
-
-	if sentMsg.Subscription.Options.AckMode != "manual" {
-		t.Errorf("expected ackMode %q, got %q", "manual", sentMsg.Subscription.Options.AckMode)
+	if raw.Subscription.Options["consumerGroup"] != "my-group" {
+		t.Errorf("expected consumerGroup %q, got %v", "my-group", raw.Subscription.Options["consumerGroup"])
 	}
-
-	if sentMsg.Subscription.Options.Replay != 5 {
-		t.Errorf("expected replay %d, got %d", 5, sentMsg.Subscription.Options.Replay)
+	if raw.Subscription.Options["replay"] != float64(5) {
+		t.Errorf("expected replay 5, got %v", raw.Subscription.Options["replay"])
 	}
+}
 
-	if sentMsg.Subscription.Options.ConsumerGroup != "my-group" {
-		t.Errorf("expected consumerGroup %q, got %q", "my-group", sentMsg.Subscription.Options.ConsumerGroup)
+func TestSubscribeAckable_RequiresConsumerGroup(t *testing.T) {
+	client := NewSubscriptionClient(SubscriptionClientConfig{WSURL: "ws://unused"})
+	defer client.Close()
+
+	for _, opts := range []*SubscribeOptions{nil, {Replay: 1}} {
+		if _, err := client.SubscribeAckable(context.Background(), "system.run.>", opts); err == nil {
+			t.Errorf("SubscribeAckable(%+v) = nil error, want ConsumerGroup required", opts)
+		}
 	}
 }
 
@@ -2206,7 +2145,7 @@ func TestSubscribeAckable_ReceivesEvents(t *testing.T) {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
-	sub, err := client.SubscribeAckable(ctx, "system.run.>", nil)
+	sub, err := client.SubscribeAckable(ctx, "system.run.>", &SubscribeOptions{ConsumerGroup: "g"})
 	if err != nil {
 		t.Fatalf("SubscribeAckable failed: %v", err)
 	}
@@ -2278,7 +2217,7 @@ func TestSubscribeAckable_Ack(t *testing.T) {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
-	sub, err := client.SubscribeAckable(ctx, "system.run.>", nil)
+	sub, err := client.SubscribeAckable(ctx, "system.run.>", &SubscribeOptions{ConsumerGroup: "g"})
 	if err != nil {
 		t.Fatalf("SubscribeAckable failed: %v", err)
 	}
@@ -2352,7 +2291,7 @@ func TestSubscribeAckable_Nak(t *testing.T) {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
-	sub, err := client.SubscribeAckable(ctx, "system.run.>", nil)
+	sub, err := client.SubscribeAckable(ctx, "system.run.>", &SubscribeOptions{ConsumerGroup: "g"})
 	if err != nil {
 		t.Fatalf("SubscribeAckable failed: %v", err)
 	}
@@ -2425,7 +2364,7 @@ func TestSubscribeAckable_NakZeroDelay(t *testing.T) {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
-	sub, err := client.SubscribeAckable(ctx, "system.run.>", nil)
+	sub, err := client.SubscribeAckable(ctx, "system.run.>", &SubscribeOptions{ConsumerGroup: "g"})
 	if err != nil {
 		t.Fatalf("SubscribeAckable failed: %v", err)
 	}
@@ -2486,7 +2425,7 @@ func TestSubscribeAckable_Term(t *testing.T) {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
-	sub, err := client.SubscribeAckable(ctx, "system.run.>", nil)
+	sub, err := client.SubscribeAckable(ctx, "system.run.>", &SubscribeOptions{ConsumerGroup: "g"})
 	if err != nil {
 		t.Fatalf("SubscribeAckable failed: %v", err)
 	}
@@ -2570,7 +2509,7 @@ func TestSubscribeAckable_Unsubscribe(t *testing.T) {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
-	sub, err := client.SubscribeAckable(ctx, "system.run.>", nil)
+	sub, err := client.SubscribeAckable(ctx, "system.run.>", &SubscribeOptions{ConsumerGroup: "g"})
 	if err != nil {
 		t.Fatalf("SubscribeAckable failed: %v", err)
 	}
@@ -2628,7 +2567,7 @@ func TestSubscribeAckable_AckNakTermSequence(t *testing.T) {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
-	sub, err := client.SubscribeAckable(ctx, "system.run.>", nil)
+	sub, err := client.SubscribeAckable(ctx, "system.run.>", &SubscribeOptions{ConsumerGroup: "g"})
 	if err != nil {
 		t.Fatalf("SubscribeAckable failed: %v", err)
 	}
@@ -2983,5 +2922,32 @@ func TestSubscribeEntityStream_MissingTimestampGoesToOnError(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the subscription stopped after the bad event")
+	}
+}
+
+func TestSubscriptionClient_DeletedGroupIsTerminal(t *testing.T) {
+	client := NewSubscriptionClient(SubscriptionClientConfig{Logger: NewNoopLogger()})
+	sub := &Subscription{ID: "member", Pattern: "orders.*", events: make(chan *SubscriptionEvent, 1), errors: make(chan *SubscriptionError, 1), client: client, done: make(chan struct{})}
+	client.subscriptions[sub.ID] = sub
+	client.subByPattern[sub.Pattern] = sub.ID
+	client.handleMessage([]byte(`{"type":"subscription_error","subscriptionId":"member","code":"not_found","message":"Consumer group membership closed","retrying":false}`))
+	select {
+	case err := <-sub.Errors():
+		if err.Code != "not_found" || err.Retrying {
+			t.Fatalf("error = %+v", err)
+		}
+	default:
+		t.Fatal("missing terminal error")
+	}
+	select {
+	case _, ok := <-sub.Events():
+		if ok {
+			t.Fatal("unexpected event")
+		}
+	default:
+		t.Fatal("events left open")
+	}
+	if len(client.subscriptions) != 0 || len(client.subByPattern) != 0 {
+		t.Fatal("deleted membership would reconnect")
 	}
 }

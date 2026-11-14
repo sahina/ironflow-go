@@ -102,15 +102,6 @@ type SubscribeOptions struct {
 
 	// ConsumerGroup is the consumer group to join for load-balanced delivery.
 	ConsumerGroup string
-
-	// AckMode is the acknowledgment mode (auto or manual).
-	AckMode AckMode
-
-	// Backpressure is the backpressure handling mode.
-	Backpressure BackpressureMode
-
-	// Namespace is the event namespace (default: "default").
-	Namespace string
 }
 
 // SubscriptionEvent represents an event received from a subscription.
@@ -255,8 +246,8 @@ func (s *Subscription) Unsubscribe() {
 
 // AckableSubscription is a subscription that supports manual acknowledgment.
 //
-// Use this when SubscribeOptions.AckMode is set to AckModeManual.
-// Events must be acknowledged, negatively acknowledged, or terminated.
+// It is what a consumer-group join returns; the group's own ack mode decides
+// whether events must be acknowledged, negatively acknowledged, or terminated.
 type AckableSubscription struct {
 	*Subscription
 
@@ -606,8 +597,7 @@ func newWSSubscribeRequest(pattern string, opts *SubscribeOptions) wsSubscribeRe
 	}
 
 	needsOptions := opts.Replay > 0 || opts.StartAfterSequence != nil ||
-		opts.IncludeMetadata || opts.Filter != "" || opts.ConsumerGroup != "" ||
-		opts.AckMode != "" || opts.Backpressure != "" || opts.Namespace != ""
+		opts.IncludeMetadata || opts.Filter != "" || opts.ConsumerGroup != ""
 	if !needsOptions {
 		return req
 	}
@@ -618,9 +608,6 @@ func newWSSubscribeRequest(pattern string, opts *SubscribeOptions) wsSubscribeRe
 		IncludeMetadata:    opts.IncludeMetadata || opts.StartAfterSequence != nil,
 		Filter:             opts.Filter,
 		ConsumerGroup:      opts.ConsumerGroup,
-		AckMode:            string(opts.AckMode),
-		Backpressure:       string(opts.Backpressure),
-		Namespace:          opts.Namespace,
 	}
 	return req
 }
@@ -768,10 +755,10 @@ func (c *SubscriptionClient) cancelSubscribeAttempt(
 	c.pendingMu.Unlock()
 }
 
-// SubscribeAckable subscribes to events with manual acknowledgment support.
-//
-// This method forces AckMode to manual and returns an AckableSubscription
-// with Ack, Nak, and Term methods.
+// SubscribeAckable joins a consumer group and returns an AckableSubscription
+// with Ack, Nak, and Term methods. opts.ConsumerGroup is required: a plain
+// subscription holds no message to acknowledge. The group's own ack mode
+// decides whether acknowledgments are needed.
 //
 // Example:
 //
@@ -791,10 +778,9 @@ func (c *SubscriptionClient) cancelSubscribeAttempt(
 //	    sub.Ack(event.ID)
 //	}
 func (c *SubscriptionClient) SubscribeAckable(ctx context.Context, pattern string, opts *SubscribeOptions) (*AckableSubscription, error) {
-	if opts == nil {
-		opts = &SubscribeOptions{}
+	if opts == nil || opts.ConsumerGroup == "" {
+		return nil, errors.New("SubscribeAckable requires SubscribeOptions.ConsumerGroup")
 	}
-	opts.AckMode = AckModeManual
 
 	sub, err := c.Subscribe(ctx, pattern, opts)
 	if err != nil {
@@ -1344,6 +1330,11 @@ func (c *SubscriptionClient) handleSubscriptionError(data []byte) {
 		Retrying:       msg.Retrying,
 	}
 
+	if msg.Code == "not_found" && !msg.Retrying {
+		c.terminateWebSocketSubscription(sub, subErr)
+		return
+	}
+
 	select {
 	case sub.errors <- subErr:
 	case <-sub.done:
@@ -1515,9 +1506,6 @@ type wsSubscriptionOptions struct {
 	IncludeMetadata    bool    `json:"includeMetadata,omitempty"`
 	Filter             string  `json:"filter,omitempty"`
 	ConsumerGroup      string  `json:"consumerGroup,omitempty"`
-	AckMode            string  `json:"ackMode,omitempty"`
-	Backpressure       string  `json:"backpressure,omitempty"`
-	Namespace          string  `json:"namespace,omitempty"`
 }
 
 type wsUnsubscribeRequest struct {

@@ -200,6 +200,6 @@ The `ironflowtest.NewClient` test harness drives the underlying step interceptor
 
 - JS counterpart: [`@ironflow/node/agent`](../../../js/node/README.md#agent-primitives)
 - LangGraph adapter: [`@ironflow/langgraph`](../../../js/langgraph/README.md)
-- Layering model: [`docs/explanation/comparison-agents.md`](../../../../docs/explanation/comparison-agents.md)
+- Layering model: [`docs/explanation/agentic-fit.md`](../../../../docs/explanation/agentic-fit.md)
 - Crash-resume tutorial: [`docs/tutorials/agent-survives-crash.md`](../../../../docs/tutorials/agent-survives-crash.md)
 - Working examples: [`examples/agents/doc-processor-agent`](../../../../examples/agents/doc-processor-agent), [`examples/agents/code-review-agent`](../../../../examples/agents/code-review-agent), [`examples/ai-agent`](../../../../examples/ai-agent)

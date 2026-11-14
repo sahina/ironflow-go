@@ -2,12 +2,12 @@ package ironflow
 
 // #1963: a 409 has to be distinguishable, and never retryable.
 //
-// ResumeRun is the reason. When an identical resume is already in flight inside
-// the stream's dedupe window the server leaves the run exactly as it was found
-// and answers 409, telling the caller to wait. This SDK is Connect-only, so
-// before #1963 it received that as a 500 -- and its status table marks anything
+// ResumeRun was the reason. The server once answered a repeated resume with a
+// 409 that told the caller to wait, and this SDK is Connect-only, so before
+// #1963 it received that as a 500 -- and its status table marks anything
 // >= 500 Retryable, so the one error whose entire purpose is "do not retry"
-// asked callers to retry.
+// asked callers to retry. That server answer is gone (#3869); the mapping it
+// forced still covers every other 409 with the already_exists code.
 //
 // Two properties, both of which a caller depends on: errors.Is finds
 // ErrConflict, and Retryable is false.

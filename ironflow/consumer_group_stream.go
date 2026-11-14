@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,7 +27,9 @@ var ErrStaleAck = errors.New("ironflow: the event is not pending on the current 
 type AckError struct {
 	EventID string
 	// Code is "invalid_argument", "not_found" (the group or this member is
-	// gone; do not retry) or "internal" (the server may succeed on a retry).
+	// gone; do not retry), "unavailable" (NATS cannot take the ack now; retry
+	// it, or let the event redeliver) or "internal" (the server may succeed on
+	// a retry).
 	Code    string
 	Message string
 }
@@ -110,7 +114,7 @@ type queuedEvent struct {
 }
 
 func (c *Client) joinConsumerGroupGrpc(ctx context.Context, groupName string, options *JoinConsumerGroupOptions) (*AckableSubscription, error) {
-	httpClient := newH2CClient(c.serverURL)
+	httpClient := newGroupStreamClient(c.serverURL)
 	gctx, cancel := context.WithCancel(ctx)
 	g := &groupStream{
 		rpc: ironflowv1connect.NewPubSubServiceClient(httpClient, c.serverURL,
@@ -118,7 +122,6 @@ func (c *Client) joinConsumerGroupGrpc(ctx context.Context, groupName string, op
 		httpClient: httpClient,
 		logger:     c.logger,
 		join: &ironflowv1.JoinConsumerGroupRequest{
-			Namespace:  options.Namespace,
 			GroupName:  groupName,
 			ConsumerId: options.ConsumerID,
 		},
@@ -135,7 +138,21 @@ func (c *Client) joinConsumerGroupGrpc(ctx context.Context, groupName string, op
 		errors:     make(chan *SubscriptionError, 10),
 	}
 
+	budget := newSubscriptionRetryBudget()
+	delay := g.firstDelay
 	sc, err := g.open(gctx)
+	for err != nil && isAmbiguousBodyError(err) {
+		err = budget.ended(err)
+		if !isRetryableSubscriptionError(gctx, err) {
+			break
+		}
+		if !waitForSubscriptionReconnect(gctx, g.stopCh, nil, delay) {
+			err = contextEnded(gctx, "the join ctx ended the subscription")
+			break
+		}
+		delay = nextSubscriptionReconnectDelay(delay, groupStreamMaxDelay, groupStreamBackoff)
+		sc, err = g.open(gctx)
+	}
 	if err != nil {
 		cancel()
 		httpClient.CloseIdleConnections()
@@ -144,7 +161,7 @@ func (c *Client) joinConsumerGroupGrpc(ctx context.Context, groupName string, op
 	}
 
 	go g.pump()
-	go g.run(gctx, sc)
+	go g.run(gctx, sc, budget)
 
 	return &AckableSubscription{
 		Subscription: &Subscription{
@@ -158,6 +175,34 @@ func (c *Client) joinConsumerGroupGrpc(ctx context.Context, groupName string, op
 		},
 		acker: g,
 	}, nil
+}
+
+func newGroupStreamClient(serverURL string) *http.Client {
+	// A nil transport on https is http.DefaultTransport, so a program's own TLS
+	// and proxy settings apply, as they do on the cursor client and the worker.
+	var t http.RoundTripper
+	if !strings.HasPrefix(serverURL, "https://") {
+		// No Proxy: cleartext HTTP/2 dials the server directly, as newH2CClient does.
+		h2c := &http.Transport{Protocols: new(http.Protocols)}
+		h2c.Protocols.SetUnencryptedHTTP2(true)
+		t = h2c
+	}
+	return withLostConnectionMark(withSDKHeader(&http.Client{Transport: closeAfterRequest{t}}))
+}
+
+// closeAfterRequest gives each stream a connection that no later request
+// reuses. Without it the pool hands a reconnect the connection that failed or
+// went silent.
+type closeAfterRequest struct{ inner http.RoundTripper }
+
+func (t closeAfterRequest) RoundTrip(r *http.Request) (*http.Response, error) {
+	inner := t.inner
+	if inner == nil {
+		inner = http.DefaultTransport
+	}
+	r2 := *r
+	r2.Close = true
+	return inner.RoundTrip(&r2)
 }
 
 func (g *groupStream) current() *streamConn {
@@ -182,16 +227,37 @@ func (g *groupStream) open(ctx context.Context) (*streamConn, error) {
 		_ = stream.CloseResponse()
 	}()
 
-	fail := func(err error) (*streamConn, error) {
+	var silent atomic.Bool
+	idle := time.AfterFunc(g.idleWait, func() {
+		silent.Store(true)
 		connCancel()
+	})
+	fail := func(err error) (*streamConn, error) {
+		idle.Stop()
+		connCancel()
+		if silent.Load() && ctx.Err() == nil {
+			err = connect.NewError(connect.CodeUnavailable, fmt.Errorf("no frame from the server within %s", g.idleWait))
+		}
+		// open returns a stream or an error. A nil error here is a join that
+		// produced neither, and the caller panics on the nil stream.
+		if err == nil {
+			if ctx.Err() != nil {
+				err = ctx.Err()
+			} else {
+				err = connect.NewError(connect.CodeInternal, errors.New("join produced no stream"))
+			}
+		}
 		return nil, err
 	}
 
-	if err := stream.Send(&ironflowv1.SubscribeBidirectionalRequest{Payload: &ironflowv1.SubscribeBidirectionalRequest_Join{Join: g.join}}); err != nil {
-		if errors.Is(err, io.EOF) {
-			_, err = stream.Receive() // the server's real status
-		}
-		return fail(err)
+	// Send returns an error wrapping io.EOF when the server has already ended
+	// the stream: a refusal, or RST_STREAM while this join is still being
+	// written. The frame it sent first stays readable. Receive returns that
+	// frame with a nil error, and the reset is the next read. A nil error is
+	// a frame, not an empty join: dropping it would hand the caller a nil stream.
+	sendErr := stream.Send(&ironflowv1.SubscribeBidirectionalRequest{Payload: &ironflowv1.SubscribeBidirectionalRequest_Join{Join: g.join}})
+	if sendErr != nil && !errors.Is(sendErr, io.EOF) {
+		return fail(sendErr)
 	}
 	msg, err := stream.Receive()
 	if err != nil {
@@ -200,6 +266,10 @@ func (g *groupStream) open(ctx context.Context) (*streamConn, error) {
 	joined := msg.GetJoined()
 	if joined == nil {
 		return fail(connect.NewError(connect.CodeInternal, errors.New("first frame was not joined")))
+	}
+	idle.Stop()
+	if silent.Load() {
+		return fail(connCtx.Err())
 	}
 
 	sc := &streamConn{
@@ -227,15 +297,11 @@ func (g *groupStream) open(ctx context.Context) (*streamConn, error) {
 }
 
 // run reads streams until Unsubscribe, ctx cancel or a terminal error.
-func (g *groupStream) run(ctx context.Context, sc *streamConn) {
+func (g *groupStream) run(ctx context.Context, sc *streamConn, budget subscriptionRetryBudget) {
 	defer func() {
 		// ctx (the join ctx) ended the subscription: say so on Errors().
-		if err := ctx.Err(); err != nil && !g.stopped() {
-			code := connect.CodeCanceled
-			if errors.Is(err, context.DeadlineExceeded) {
-				code = connect.CodeDeadlineExceeded
-			}
-			g.report(g.current().subID, connect.NewError(code, fmt.Errorf("the join ctx ended the subscription: %w", err)))
+		if ctx.Err() != nil && !g.stopped() {
+			g.report(g.current().subID, contextEnded(ctx, "the join ctx ended the subscription"))
 		}
 		g.exiting.Store(true)
 		g.qmu.Lock()
@@ -254,13 +320,15 @@ func (g *groupStream) run(ctx context.Context, sc *streamConn) {
 
 	delay := g.firstDelay
 	for {
-		accepted, err := g.read(ctx, sc)
+		budget.established()
+		accepted, err := g.read(ctx, sc, &budget)
+		err = budget.ended(err)
 		if ctx.Err() != nil || g.stopped() {
 			return
 		}
 		// A clean server end (for instance a deleted group) reconnects; a rejoin
 		// that finds the group gone is NotFound, which is terminal.
-		if err != nil && !isRetryableSubscriptionError(err) {
+		if err != nil && !isRetryableSubscriptionError(ctx, err) {
 			g.report(sc.subID, err)
 			return
 		}
@@ -271,11 +339,16 @@ func (g *groupStream) run(ctx context.Context, sc *streamConn) {
 			delay = g.firstDelay
 		}
 		for {
+			if err != nil {
+				g.logger.Warn("consumer group stream failed; reconnecting",
+					"group", g.join.GetGroupName(), "error", err, "retry_in", delay)
+			}
 			if !waitForSubscriptionReconnect(ctx, g.stopCh, nil, delay) {
 				return
 			}
 			delay = nextSubscriptionReconnectDelay(delay, groupStreamMaxDelay, groupStreamBackoff)
-			next, err := g.open(ctx)
+			var next *streamConn
+			next, err = g.open(ctx)
 			if err == nil {
 				sc = next
 				break
@@ -283,7 +356,8 @@ func (g *groupStream) run(ctx context.Context, sc *streamConn) {
 			if ctx.Err() != nil || g.stopped() {
 				return
 			}
-			if !isRetryableSubscriptionError(err) {
+			err = budget.ended(err)
+			if !isRetryableSubscriptionError(ctx, err) {
 				g.report(sc.subID, serverTooOld(err))
 				return
 			}
@@ -293,7 +367,7 @@ func (g *groupStream) run(ctx context.Context, sc *streamConn) {
 
 // read consumes one stream to its end. err is nil for a clean end; accepted
 // reports that a frame past joined arrived.
-func (g *groupStream) read(ctx context.Context, sc *streamConn) (accepted bool, err error) {
+func (g *groupStream) read(ctx context.Context, sc *streamConn, budget *subscriptionRetryBudget) (accepted bool, err error) {
 	idle := time.AfterFunc(g.idleWait, func() {
 		sc.reset(connect.NewError(connect.CodeUnavailable, fmt.Errorf("no frame from the server within %s", g.idleWait)))
 	})
@@ -327,10 +401,16 @@ func (g *groupStream) read(ctx context.Context, sc *streamConn) (accepted bool, 
 			if !sc.manual {
 				select {
 				case g.events <- ev:
-				case <-g.stopCh:
-					return accepted, nil
-				case <-ctx.Done():
-					return accepted, nil
+				default:
+					waitingAt := budget.now()
+					select {
+					case g.events <- ev:
+					case <-g.stopCh:
+						return accepted, nil
+					case <-ctx.Done():
+						return accepted, nil
+					}
+					budget.deliveryBlockedSince(waitingAt)
 				}
 				continue
 			}

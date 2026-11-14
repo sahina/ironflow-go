@@ -783,7 +783,7 @@ func liveRuns(ctx context.Context, t *testing.T, client *Client, seed readinessS
 		if err != nil || steps.Count != 1 || len(steps.Steps) != 1 {
 			t.Fatalf("GetRunSteps(seed run) = %+v, %v; want one step", steps, err)
 		}
-		if st := steps.Steps[0]; st.StepID != seed.StepID || st.RunID != seed.RunID || st.Status != "completed" || !sameJSON(asJSON(st.Output), seed.StepOutput) {
+		if st := steps.Steps[0]; st.ID != seed.StepID || st.RunID != seed.RunID || st.Status != "completed" || !sameJSON(asJSON(st.Output), seed.StepOutput) {
 			t.Fatalf("seed step = %+v, want %s completed with %v", st, seed.StepID, seed.StepOutput)
 		}
 		held, err := client.GetRunSteps(ctx, hold.RunID)

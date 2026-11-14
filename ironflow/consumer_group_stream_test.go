@@ -148,19 +148,26 @@ func TestGroupStream_AckWaitsForResult(t *testing.T) {
 }
 
 func TestGroupStream_AckErrorCarriesCode(t *testing.T) {
-	c, _ := startFakeBidi(t, serveOneEvent(t, func(st *bidiStream, ack *ironflowv1.SubscriptionAck) error {
-		return sendResult(st, ack.GetAckId(), ack.GetEventId(), ironflowv1.AckResultCode_ACK_RESULT_CODE_INTERNAL, "nats down")
-	}))
-	sub := joinGroup(t, c, context.Background())
-	ev := nextEvent(t, sub)
+	for code, want := range map[ironflowv1.AckResultCode]string{
+		ironflowv1.AckResultCode_ACK_RESULT_CODE_INTERNAL:    "internal",
+		ironflowv1.AckResultCode_ACK_RESULT_CODE_UNAVAILABLE: "unavailable",
+	} {
+		t.Run(want, func(t *testing.T) {
+			c, _ := startFakeBidi(t, serveOneEvent(t, func(st *bidiStream, ack *ironflowv1.SubscriptionAck) error {
+				return sendResult(st, ack.GetAckId(), ack.GetEventId(), code, "nats down")
+			}))
+			sub := joinGroup(t, c, context.Background())
+			ev := nextEvent(t, sub)
 
-	err := sub.Ack(ev.ID)
-	var ackErr *AckError
-	if !errors.As(err, &ackErr) {
-		t.Fatalf("Ack error = %v, want *AckError", err)
-	}
-	if ackErr.Code != "internal" || ackErr.Message != "nats down" || ackErr.EventID != "evt-1" {
-		t.Fatalf("AckError = %+v", ackErr)
+			err := sub.Ack(ev.ID)
+			var ackErr *AckError
+			if !errors.As(err, &ackErr) {
+				t.Fatalf("Ack error = %v, want *AckError", err)
+			}
+			if ackErr.Code != want || ackErr.Message != "nats down" || ackErr.EventID != "evt-1" {
+				t.Fatalf("AckError = %+v", ackErr)
+			}
+		})
 	}
 }
 

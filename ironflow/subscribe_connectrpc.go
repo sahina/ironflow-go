@@ -3,6 +3,7 @@ package ironflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -146,6 +147,15 @@ func (s *GrpcSubscription) Unsubscribe() {
 	})
 }
 
+func (s *GrpcSubscription) closed() bool {
+	select {
+	case <-s.done:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *GrpcSubscription) setConsumerID(id string) {
 	s.consumerMu.Lock()
 	s.consumerID = id
@@ -185,7 +195,7 @@ func newGrpcSubscriptionClient(config GrpcSubscriptionClientConfig, apiKey strin
 		logger = NewLogger(LoggerConfig{Prefix: "[ironflow-grpc-subscribe]"})
 	}
 
-	httpClient := newH2CClient(config.ServerURL)
+	httpClient := withLostConnectionMark(newH2CClient(config.ServerURL))
 
 	opts := []connect.ClientOption{connect.WithProtoJSON()}
 	if apiKey != "" {
@@ -343,23 +353,6 @@ func (c *GrpcSubscriptionClient) Subscribe(ctx context.Context, pattern string, 
 		protoOpts.IncludeMetadata = opts.IncludeMetadata || opts.StartAfterSequence != nil
 		protoOpts.Filter = opts.Filter
 		protoOpts.ConsumerGroup = opts.ConsumerGroup
-		protoOpts.Namespace = opts.Namespace
-
-		switch opts.AckMode {
-		case AckModeAuto:
-			protoOpts.AckMode = ironflowv1.AckMode_ACK_MODE_AUTO
-		case AckModeManual:
-			protoOpts.AckMode = ironflowv1.AckMode_ACK_MODE_MANUAL
-		}
-
-		switch opts.Backpressure {
-		case BackpressureDrop:
-			protoOpts.Backpressure = ironflowv1.BackpressureMode_BACKPRESSURE_MODE_DROP
-		case BackpressureBlock:
-			protoOpts.Backpressure = ironflowv1.BackpressureMode_BACKPRESSURE_MODE_BLOCK
-		case BackpressureBuffer:
-			protoOpts.Backpressure = ironflowv1.BackpressureMode_BACKPRESSURE_MODE_BUFFER
-		}
 	}
 
 	req := &ironflowv1.SubscribeRequest{
@@ -402,6 +395,7 @@ func (c *GrpcSubscriptionClient) streamSubscription(ctx context.Context, sub *Gr
 	}
 	accepted := false
 	delay := c.config.ReconnectDelay
+	budget := newSubscriptionRetryBudget()
 
 	for {
 		attemptReq := proto.CloneOf(req)
@@ -416,6 +410,7 @@ func (c *GrpcSubscriptionClient) streamSubscription(ctx context.Context, sub *Gr
 		stream, err := c.pubsubClient.Subscribe(ctx, connect.NewRequest(attemptReq))
 		if err == nil {
 			for stream.Receive() {
+				budget.established()
 				msg := stream.Msg()
 				accepted = true
 				if id := msg.GetSubscriptionId(); id != "" {
@@ -438,12 +433,19 @@ func (c *GrpcSubscriptionClient) streamSubscription(ctx context.Context, sub *Gr
 					select {
 					case sub.events <- event:
 						delivered = true
-					case <-sub.done:
-						ended = true
-					case <-c.done:
-						ended = true
-					case <-ctx.Done():
-						ended = true
+					default:
+						waitingAt := budget.now()
+						select {
+						case sub.events <- event:
+							delivered = true
+						case <-sub.done:
+							ended = true
+						case <-c.done:
+							ended = true
+						case <-ctx.Done():
+							ended = true
+						}
+						budget.deliveryBlockedSince(waitingAt)
 					}
 				} else {
 					select {
@@ -471,15 +473,21 @@ func (c *GrpcSubscriptionClient) streamSubscription(ctx context.Context, sub *Gr
 			_ = stream.Close()
 		}
 
+		err = budget.ended(err)
 		if err == nil {
 			return
 		}
-		if !cursorEnabled || !isRetryableSubscriptionError(err) {
+		if !cursorEnabled || !isRetryableSubscriptionError(ctx, err) {
 			c.reportSubscriptionError(sub, err)
 			return
 		}
 
+		c.logger.Warn("subscription stream failed; reconnecting from the cursor",
+			"pattern", sub.Pattern, "cursor", cursor, "error", err, "retry_in", delay)
 		if !waitForSubscriptionReconnect(ctx, sub.done, c.done, delay) {
+			if ctx.Err() != nil && !sub.closed() {
+				c.reportSubscriptionError(sub, contextEnded(ctx, "the subscription ctx ended the subscription"))
+			}
 			return
 		}
 		delay = nextSubscriptionReconnectDelay(delay, c.config.MaxReconnectDelay, c.config.ReconnectBackoff)
@@ -541,18 +549,35 @@ func (c *GrpcSubscriptionClient) reportSubscriptionError(sub *GrpcSubscription, 
 	}
 }
 
-func isRetryableSubscriptionError(err error) bool {
+func isRetryableSubscriptionError(ctx context.Context, err error) bool {
+	var exhausted *subscriptionRetryExhausted
+	if ctx.Err() != nil || errors.As(err, &exhausted) {
+		return false
+	}
 	switch connect.CodeOf(err) {
 	case connect.CodeUnknown,
+		connect.CodeCanceled,
 		connect.CodeDeadlineExceeded,
 		connect.CodeResourceExhausted,
 		connect.CodeAborted,
 		connect.CodeInternal,
 		connect.CodeUnavailable:
 		return true
+	case connect.CodeInvalidArgument:
+		// A server refusal and a frame that arrived but cannot decode carry this
+		// code too; both would fail again.
+		return isLostConnection(err)
 	default:
 		return false
 	}
+}
+
+func contextEnded(ctx context.Context, what string) error {
+	code := connect.CodeCanceled
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		code = connect.CodeDeadlineExceeded
+	}
+	return connect.NewError(code, fmt.Errorf("%s: %w", what, ctx.Err()))
 }
 
 func waitForSubscriptionReconnect(ctx context.Context, subDone, clientDone <-chan struct{}, delay time.Duration) bool {
@@ -591,8 +616,7 @@ func (c *GrpcSubscriptionClient) removeSubscription(subID string) {
 type GrpcAckableSubscription struct {
 	*GrpcSubscription
 
-	group     string
-	namespace string
+	group string
 }
 
 // Ack acknowledges an event.
@@ -634,7 +658,6 @@ func (s *GrpcAckableSubscription) sendAck(eventID string, ackType ironflowv1.Ack
 	defer cancel()
 	// sdkcoverage: POST /ironflow.v1.PubSubService/AckEvent
 	_, err = s.client.pubsubClient.AckEvent(ctx, connect.NewRequest(&ironflowv1.AckEventRequest{
-		Namespace:        s.namespace,
 		GroupName:        s.group,
 		ConsumerId:       s.currentConsumerID(),
 		EventId:          eventID,
@@ -644,7 +667,8 @@ func (s *GrpcAckableSubscription) sendAck(eventID string, ackType ironflowv1.Ack
 	return err
 }
 
-// SubscribeAckable subscribes with manual acknowledgment support.
+// SubscribeAckable joins a consumer group and returns a subscription that can
+// acknowledge events. opts.ConsumerGroup is required: acks go to the group.
 //
 // Example:
 //
@@ -663,10 +687,9 @@ func (s *GrpcAckableSubscription) sendAck(eventID string, ackType ironflowv1.Ack
 //	    sub.Ack(event.ID)
 //	}
 func (c *GrpcSubscriptionClient) SubscribeAckable(ctx context.Context, pattern string, opts *SubscribeOptions) (*GrpcAckableSubscription, error) {
-	if opts == nil {
-		opts = &SubscribeOptions{}
+	if opts == nil || opts.ConsumerGroup == "" {
+		return nil, errors.New("SubscribeAckable requires SubscribeOptions.ConsumerGroup")
 	}
-	opts.AckMode = AckModeManual
 
 	sub, err := c.Subscribe(ctx, pattern, opts)
 	if err != nil {
@@ -676,7 +699,6 @@ func (c *GrpcSubscriptionClient) SubscribeAckable(ctx context.Context, pattern s
 	return &GrpcAckableSubscription{
 		GrpcSubscription: sub,
 		group:            opts.ConsumerGroup,
-		namespace:        opts.Namespace,
 	}, nil
 }
 

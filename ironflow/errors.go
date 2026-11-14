@@ -60,10 +60,9 @@ var (
 
 	// ErrConflict is returned when the server rejects a request because it
 	// conflicts with state already in flight (HTTP 409 / Connect
-	// CodeAlreadyExists). ResumeRun returns it when an identical resume is
-	// already inside the stream's dedupe window (#1963); the run is left as it
-	// was found, so the caller should wait for the first resume to land rather
-	// than retry. Never Retryable — retrying is the thing it is reporting
+	// CodeAlreadyExists), such as an idempotency key reused with a different
+	// request. The server left its state as it was found, so the caller should
+	// not resend the same body. Never Retryable — retrying is the thing it is reporting
 	// against.
 	//
 	// Two Connect codes serialize to 409 with opposite retry advice, so the

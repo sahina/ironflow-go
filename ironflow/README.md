@@ -614,7 +614,6 @@ result, err := client.Emit(ctx, "order.placed", data,
     ironflow.WithEmitIdempotencyKey("order-123"),
     ironflow.WithEmitVersion(2),
     ironflow.WithEmitMetadata(map[string]any{"source": "api"}),
-    ironflow.WithEmitNamespace("production"),
 )
 
 // Sync emit -- waits for EVERY run the event triggers, one result each
@@ -854,7 +853,7 @@ group, err := client.CreateConsumerGroup(ctx, ironflow.ConsumerGroupConfig{
 })
 
 // Join a consumer group over WebSocket, the default. Both transports can ack,
-// nak and term. Options: WithJoinNamespace, WithJoinConsumerID (accepted but not
+// nak and term. Options: WithJoinConsumerID (accepted but not
 // sent today -- the server mints the ack identity), WithJoinTransport ("websocket" | "grpc").
 // "grpc" joins over one SubscribeBidirectional stream. Ack, Nak and Term then wait
 // for the server result and can return *AckError, ErrStaleAck (the stream
@@ -882,9 +881,6 @@ group, err = client.UpdateConsumerGroup(ctx, "order-processors", ironflow.Update
 })
 err := client.DeleteConsumerGroup(ctx, "order-processors")
 ```
-
-Every consumer-group call takes `ironflow.WithConsumerGroupNamespace(...)` to
-target a namespace other than `default`.
 
 ### Agent Tool Discovery
 
@@ -953,7 +949,6 @@ sub, err := subClient.Subscribe(ctx, "events:order.*", &ironflow.SubscribeOption
     Replay:          10,                // replay last 10 events
     IncludeMetadata: true,              // include timestamp/sequence
     Filter:          `data.total > 50`, // CEL filter
-    Namespace:       "default",         // event namespace
 })
 if err != nil {
     log.Fatal(err)
@@ -1054,8 +1049,8 @@ causes a reconnect every 5 seconds. Over ConnectRPC the wait ends when the ctx
 passed to `Subscribe` is canceled.
 
 The WebSocket client applies `Replay` only to the initial subscribe request.
-Reconnects preserve `Filter`, `ConsumerGroup`, `IncludeMetadata`, `AckMode`,
-`Backpressure`, and `Namespace`, but omit the original replay count. A fan-out
+Reconnects preserve `Filter`, `ConsumerGroup` and `IncludeMetadata`, but omit
+the original replay count. A fan-out
 subscription without a cursor reconnects at the current tail and can miss
 events published while it was offline.
 
@@ -1081,7 +1076,9 @@ for event := range ackSub.Events() {
 
 `grpcClient.SubscribeAckable` with a `ConsumerGroup` acks, naks and terms through
 the `AckEvent` RPC. It uses the consumer ID the server sends on each event.
-Manual ack applies to consumer groups only.
+Manual ack applies to consumer groups only: `SubscribeAckable` requires
+`ConsumerGroup`, and the group's own `AckMode` decides whether events need
+acknowledging. A subscription has no ack mode of its own.
 
 ---
 
@@ -2056,8 +2053,8 @@ errors.Is(err, ironflow.ErrPreconditionFailed)    // HTTP 412 -- an If-Match or 
 errors.Is(err, ironflow.ErrPreconditionRequired)  // HTTP 428 -- the write needs an If-Match header and carried none
 errors.Is(err, ironflow.ErrPayloadTooLarge)        // HTTP 413 (file storage)
 errors.Is(err, ironflow.ErrUnsupportedMediaType)   // HTTP 415 (file storage)
-errors.Is(err, ironflow.ErrConflict)   // HTTP 409 / Connect AlreadyExists — an identical
-                                        // request is already in flight; wait, do not retry
+errors.Is(err, ironflow.ErrConflict)   // HTTP 409 / Connect AlreadyExists — the request
+                                        // conflicts with kept state; do not resend it
 errors.Is(err, ironflow.ErrContended)  // HTTP 409 / Connect Aborted — a concurrent write won
                                         // and nothing was applied; re-read, then reissue
 errors.Is(err, ironflow.ErrInjectionUnverified) // Connect Aborted — the step DID change;

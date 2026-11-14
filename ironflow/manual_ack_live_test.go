@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -101,5 +102,72 @@ func runLiveNakScenario(t *testing.T, opts ...JoinConsumerGroupOption) {
 		case <-window:
 			t.Fatalf("nak did not redeliver %q within 20s", target)
 		}
+	}
+}
+
+func TestLiveManualAckGroupResumesAfterLostConnection(t *testing.T) {
+	serverURL := os.Getenv("IRONFLOW_TEST_SERVER")
+	if serverURL == "" {
+		t.Skip("IRONFLOW_TEST_SERVER not set; run `make test-sdk-manual-ack-live`")
+	}
+	for name, opts := range map[string][]JoinConsumerGroupOption{
+		"websocket": nil,
+		"stream":    {WithJoinTransport("grpc")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			apiKey := os.Getenv("IRONFLOW_TEST_API_KEY")
+			client := NewClient(ClientConfig{ServerURL: serverURL, APIKey: apiKey})
+			proxy := startCutProxy(t, strings.TrimPrefix(serverURL, "http://"))
+			worker := NewClient(ClientConfig{ServerURL: proxy.url(), APIKey: apiKey, Logger: NewNoopLogger()})
+
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			suffix := fmt.Sprintf("%s-%d", name, time.Now().UnixNano())
+			topic, group := "gosdk.cut."+suffix, "cut-group-"+suffix
+			if _, err := client.CreateConsumerGroup(ctx, ConsumerGroupConfig{
+				Name: group, Pattern: "topic:" + topic, AckMode: AckModeManual,
+				RedeliverDelayMs: 60000, MaxRedeliveries: 5,
+			}); err != nil {
+				t.Fatalf("create group: %v", err)
+			}
+			sub, err := worker.JoinConsumerGroup(ctx, group, opts...)
+			if err != nil {
+				t.Fatalf("join group: %v", err)
+			}
+			defer sub.Unsubscribe()
+
+			awaitNewEvent := func(step string) {
+				t.Helper()
+				published := map[string]bool{}
+				tick := time.NewTicker(300 * time.Millisecond)
+				defer tick.Stop()
+				deadline := time.After(25 * time.Second)
+				for {
+					select {
+					case <-tick.C:
+						res, err := client.Publish(ctx, topic, map[string]any{"step": step})
+						if err == nil {
+							published[res.EventID] = true
+						}
+					case ev, ok := <-sub.Events():
+						if !ok {
+							t.Fatalf("%s: the subscription ended: %+v", step, <-sub.Errors())
+						}
+						if !published[ev.ID] {
+							continue
+						}
+						return
+					case <-deadline:
+						t.Fatalf("%s: no event within 25s", step)
+					}
+				}
+			}
+
+			awaitNewEvent("before any cut")
+			proxy.rst()
+			awaitNewEvent("after RST")
+			proxy.fin()
+			awaitNewEvent("after FIN")
+		})
 	}
 }

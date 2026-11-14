@@ -78,7 +78,6 @@ func TestGrpcAckableSubscription_AcksThroughAckEvent(t *testing.T) {
 
 	sub, err := client.SubscribeAckable(context.Background(), "topic:orders", &SubscribeOptions{
 		ConsumerGroup: "workers",
-		Namespace:     "default",
 	})
 	if err != nil {
 		t.Fatalf("SubscribeAckable: %v", err)
@@ -115,8 +114,8 @@ func TestGrpcAckableSubscription_AcksThroughAckEvent(t *testing.T) {
 			t.Fatalf("ack %d never reached AckEvent", i)
 		}
 		m := req.Msg
-		if m.GroupName != "workers" || m.Namespace != "default" || m.ConsumerId != "consumer-abc" || m.EventId != "evt-1" {
-			t.Fatalf("ack %d = %+v, want group workers, namespace default, consumer consumer-abc, event evt-1", i, m)
+		if m.GroupName != "workers" || m.ConsumerId != "consumer-abc" || m.EventId != "evt-1" {
+			t.Fatalf("ack %d = %+v, want group workers, consumer consumer-abc, event evt-1", i, m)
 		}
 		if m.AckType != w.ackType || m.RedeliverDelayMs != w.delayMs {
 			t.Fatalf("ack %d type/delay = %v/%d, want %v/%d", i, m.AckType, m.RedeliverDelayMs, w.ackType, w.delayMs)

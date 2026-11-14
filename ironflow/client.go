@@ -227,7 +227,6 @@ type emitOptions struct {
 	idempotencyKey string
 	version        int
 	metadata       map[string]any
-	namespace      string
 }
 
 // WithEmitIdempotencyKey sets the idempotency key for the emit.
@@ -251,13 +250,6 @@ func WithEmitMetadata(metadata map[string]any) EmitOption {
 	}
 }
 
-// WithEmitNamespace sets the namespace for the emit.
-func WithEmitNamespace(namespace string) EmitOption {
-	return func(o *emitOptions) {
-		o.namespace = namespace
-	}
-}
-
 // Emit publishes an event.
 //
 // This is the primary method for publishing events. Events are stored
@@ -275,17 +267,14 @@ func WithEmitNamespace(namespace string) EmitOption {
 //	    ironflow.WithEmitIdempotencyKey("payment-abc"),
 //	)
 func (c *Client) Emit(ctx context.Context, eventName string, data any, opts ...EmitOption) (*EmitResult, error) {
-	options := &emitOptions{
-		namespace: "default",
-	}
+	options := &emitOptions{}
 	for _, opt := range opts {
 		opt(options)
 	}
 
 	req := map[string]any{
-		"event":     eventName,
-		"data":      data,
-		"namespace": options.namespace,
+		"event": eventName,
+		"data":  data,
 	}
 
 	if options.idempotencyKey != "" {
@@ -1046,9 +1035,9 @@ func (c *Client) GetStepOutputAt(ctx context.Context, runID, stepID string, at t
 //	run, err := client.ResumeRun(ctx, "run_abc123", "")
 //	run, err := client.ResumeRun(ctx, "run_abc123", "step_xyz") // from specific step
 //
-// Two errors share HTTP 409 and want opposite things (#2074): ErrConflict means
-// an identical resume is already in flight, so wait; ErrContended means a CAS
-// race was lost and nothing was applied, so re-read and reissue.
+// A 409 from this call is ErrContended: a CAS race was lost and nothing was
+// applied, so re-read and reissue (#2074). A run that is already running, or
+// whose function or event is gone, answers failed_precondition.
 func (c *Client) ResumeRun(ctx context.Context, runID string, fromStep string) (*WorkflowRun, error) {
 	req := map[string]string{"run_id": runID}
 	if fromStep != "" {
@@ -1322,14 +1311,11 @@ const (
 
 // ConsumerGroupConfig configures a consumer group.
 type ConsumerGroupConfig struct {
-	// Name is the unique name within namespace.
+	// Name is the unique name within the environment.
 	Name string
 
 	// Pattern is the event pattern to subscribe to.
 	Pattern string
-
-	// Namespace is the namespace (default: "default").
-	Namespace string
 
 	// FilterExpr is an optional CEL filter expression.
 	FilterExpr string
@@ -1357,9 +1343,6 @@ type ConsumerGroupConfig struct {
 type ConsumerGroup struct {
 	// ID is the consumer group ID.
 	ID string
-
-	// Namespace is the namespace.
-	Namespace string
 
 	// Name is the human-readable name.
 	Name string
@@ -1412,15 +1395,9 @@ type ConsumerGroup struct {
 //	    MaxInflight: 50,
 //	})
 func (c *Client) CreateConsumerGroup(ctx context.Context, config ConsumerGroupConfig) (*ConsumerGroup, error) {
-	namespace := config.Namespace
-	if namespace == "" {
-		namespace = "default"
-	}
-
 	req := map[string]any{
-		"name":      config.Name,
-		"namespace": namespace,
-		"pattern":   config.Pattern,
+		"name":    config.Name,
+		"pattern": config.Pattern,
 	}
 
 	if config.FilterExpr != "" {
@@ -1454,16 +1431,8 @@ func (c *Client) CreateConsumerGroup(ctx context.Context, config ConsumerGroupCo
 }
 
 // GetConsumerGroup gets a consumer group by name.
-func (c *Client) GetConsumerGroup(ctx context.Context, name string, opts ...ConsumerGroupOption) (*ConsumerGroup, error) {
-	options := &consumerGroupOptions{namespace: "default"}
-	for _, opt := range opts {
-		opt(options)
-	}
-
-	req := map[string]string{
-		"name":      name,
-		"namespace": options.namespace,
-	}
+func (c *Client) GetConsumerGroup(ctx context.Context, name string) (*ConsumerGroup, error) {
+	req := map[string]string{"name": name}
 
 	var resp consumerGroupResponse
 	if err := c.request(ctx, "POST", "/ironflow.v1.PubSubService/GetConsumerGroup", req, &resp); err != nil {
@@ -1474,19 +1443,11 @@ func (c *Client) GetConsumerGroup(ctx context.Context, name string, opts ...Cons
 }
 
 // ListConsumerGroups lists consumer groups.
-func (c *Client) ListConsumerGroups(ctx context.Context, opts ...ConsumerGroupOption) ([]*ConsumerGroup, error) {
-	options := &consumerGroupOptions{}
-	for _, opt := range opts {
-		opt(options)
-	}
-
+func (c *Client) ListConsumerGroups(ctx context.Context) ([]*ConsumerGroup, error) {
 	groups := make([]*ConsumerGroup, 0)
 	cursor := ""
 	for {
-		req := map[string]any{
-			"namespace": options.namespace,
-			"limit":     100,
-		}
+		req := map[string]any{"limit": 100}
 		if cursor != "" {
 			req["cursor"] = cursor
 		}
@@ -1526,13 +1487,8 @@ type UpdateConsumerGroupInput struct {
 }
 
 // UpdateConsumerGroup updates selected fields on a consumer group.
-func (c *Client) UpdateConsumerGroup(ctx context.Context, name string, input UpdateConsumerGroupInput, opts ...ConsumerGroupOption) (*ConsumerGroup, error) {
-	options := &consumerGroupOptions{namespace: "default"}
-	for _, opt := range opts {
-		opt(options)
-	}
-
-	group := map[string]any{"name": name, "namespace": options.namespace}
+func (c *Client) UpdateConsumerGroup(ctx context.Context, name string, input UpdateConsumerGroupInput) (*ConsumerGroup, error) {
+	group := map[string]any{"name": name}
 	paths := make([]string, 0, 9)
 	if input.Pattern != nil {
 		group["pattern"] = *input.Pattern
@@ -1586,25 +1542,14 @@ func (c *Client) UpdateConsumerGroup(ctx context.Context, name string, input Upd
 }
 
 // DeleteConsumerGroup deletes a consumer group.
-func (c *Client) DeleteConsumerGroup(ctx context.Context, name string, opts ...ConsumerGroupOption) error {
-	options := &consumerGroupOptions{namespace: "default"}
-	for _, opt := range opts {
-		opt(options)
-	}
-
-	req := map[string]string{
-		"name":      name,
-		"namespace": options.namespace,
-	}
+func (c *Client) DeleteConsumerGroup(ctx context.Context, name string) error {
+	req := map[string]string{"name": name}
 
 	return c.request(ctx, "POST", "/ironflow.v1.PubSubService/DeleteConsumerGroup", req, nil)
 }
 
 // JoinConsumerGroupOptions configures joining a consumer group.
 type JoinConsumerGroupOptions struct {
-	// Namespace is the namespace (default: "default").
-	Namespace string
-
 	// ConsumerID is the optional consumer identifier.
 	ConsumerID string
 
@@ -1614,13 +1559,6 @@ type JoinConsumerGroupOptions struct {
 
 // JoinConsumerGroupOption configures JoinConsumerGroup.
 type JoinConsumerGroupOption func(*JoinConsumerGroupOptions)
-
-// WithJoinNamespace sets the namespace for JoinConsumerGroup.
-func WithJoinNamespace(namespace string) JoinConsumerGroupOption {
-	return func(o *JoinConsumerGroupOptions) {
-		o.Namespace = namespace
-	}
-}
 
 // WithJoinConsumerID sets the consumer ID for JoinConsumerGroup.
 func WithJoinConsumerID(consumerID string) JoinConsumerGroupOption {
@@ -1634,12 +1572,12 @@ func WithJoinConsumerID(consumerID string) JoinConsumerGroupOption {
 //
 // With "grpc" the subscription is one SubscribeBidirectional stream. It lives
 // until the ctx passed to JoinConsumerGroup is done or Unsubscribe is called.
-// A retryable disconnect, or 90 s with no frame from the server,
-// reconnects silently with backoff; Errors() carries only the error that ends
-// the subscription, canceled or deadline_exceeded when ctx ends it. Ack, nak and
-// term wait for the server's result. After a reconnect they return ErrStaleAck
-// for events of the old stream, which the server redelivers. On an AUTO group
-// they do nothing.
+// A lost connection, another retryable disconnect, or 90 s with no frame from
+// the server reconnects with backoff and logs a warning for each failed attempt;
+// Errors() carries only the error that ends the subscription, canceled or
+// deadline_exceeded when ctx ends it. Ack, nak and term wait for the server's
+// result. After a reconnect they return ErrStaleAck for events of the old
+// stream, which the server redelivers. On an AUTO group they do nothing.
 func WithJoinTransport(transport string) JoinConsumerGroupOption {
 	return func(o *JoinConsumerGroupOptions) {
 		o.Transport = transport
@@ -1653,8 +1591,9 @@ func WithJoinTransport(transport string) JoinConsumerGroupOption {
 //
 // With the "grpc" transport, ctx bounds the subscription's whole life, not only
 // the join: the stream ends when ctx is done or Unsubscribe is called. A done
-// ctx is reported on Errors() as canceled or deadline_exceeded. Retryable
-// disconnects reconnect silently.
+// ctx is reported on Errors() as canceled or deadline_exceeded. A lost
+// connection or another retryable disconnect reconnects with backoff, and each
+// failed attempt logs a warning on the client's Logger.
 //
 // Example:
 //
@@ -1672,9 +1611,7 @@ func WithJoinTransport(transport string) JoinConsumerGroupOption {
 //	    sub.Ack(event.ID)
 //	}
 func (c *Client) JoinConsumerGroup(ctx context.Context, groupName string, opts ...JoinConsumerGroupOption) (*AckableSubscription, error) {
-	options := &JoinConsumerGroupOptions{
-		Namespace: "default",
-	}
+	options := &JoinConsumerGroupOptions{}
 	for _, opt := range opts {
 		opt(options)
 	}
@@ -1685,13 +1622,13 @@ func (c *Client) JoinConsumerGroup(ctx context.Context, groupName string, opts .
 		return c.joinConsumerGroupGrpc(ctx, groupName, options)
 	}
 
-	return c.joinConsumerGroupWebSocket(ctx, groupName, options)
+	return c.joinConsumerGroupWebSocket(ctx, groupName)
 }
 
 // joinConsumerGroupWebSocket joins a consumer group using WebSocket transport.
-func (c *Client) joinConsumerGroupWebSocket(ctx context.Context, groupName string, options *JoinConsumerGroupOptions) (*AckableSubscription, error) {
+func (c *Client) joinConsumerGroupWebSocket(ctx context.Context, groupName string) (*AckableSubscription, error) {
 	// Get consumer group to find pattern
-	group, err := c.GetConsumerGroup(ctx, groupName, WithConsumerGroupNamespace(options.Namespace))
+	group, err := c.GetConsumerGroup(ctx, groupName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get consumer group: %w", err)
 	}
@@ -1702,11 +1639,9 @@ func (c *Client) joinConsumerGroupWebSocket(ctx context.Context, groupName strin
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
 
-	// Subscribe with consumer group and manual ack
+	// The group's own ack mode decides whether events need acknowledging.
 	sub, err := subClient.SubscribeAckable(ctx, group.Pattern, &SubscribeOptions{
 		ConsumerGroup: groupName,
-		AckMode:       AckModeManual,
-		Namespace:     options.Namespace,
 	})
 	if err != nil {
 		subClient.Close()
@@ -1741,24 +1676,9 @@ func (c *Client) DetectTransport(ctx context.Context) (string, error) {
 	return "websocket", nil // Default fallback
 }
 
-// ConsumerGroupOption configures consumer group operations.
-type ConsumerGroupOption func(*consumerGroupOptions)
-
-type consumerGroupOptions struct {
-	namespace string
-}
-
-// WithConsumerGroupNamespace sets the namespace for consumer group operations.
-func WithConsumerGroupNamespace(namespace string) ConsumerGroupOption {
-	return func(o *consumerGroupOptions) {
-		o.namespace = namespace
-	}
-}
-
 // consumerGroupResponse is the wire format for consumer group responses.
 type consumerGroupResponse struct {
 	ID               string         `json:"id"`
-	Namespace        string         `json:"namespace"`
 	Name             string         `json:"name"`
 	Pattern          string         `json:"pattern"`
 	FilterExpr       string         `json:"filterExpr"`
@@ -1860,7 +1780,6 @@ func mapConsumerGroupStatusFromProto(status string) ConsumerGroupStatus {
 func mapConsumerGroupResponse(r *consumerGroupResponse) *ConsumerGroup {
 	group := &ConsumerGroup{
 		ID:               r.ID,
-		Namespace:        r.Namespace,
 		Name:             r.Name,
 		Pattern:          r.Pattern,
 		FilterExpr:       r.FilterExpr,
@@ -2419,8 +2338,8 @@ func (c *Client) errorFromResponse(resp *http.Response, respBody []byte) *Ironfl
 		// Two Connect codes land here and want opposite things (#2074).
 		// "aborted" is a lost CAS race: nothing was applied, so re-read and
 		// reissue. Anything else — "already_exists", "failed_precondition" or a
-		// body with no code — is a deduplicated resume or a failed precondition:
-		// wait or fix the state, do not reissue.
+		// body with no code — is a conflict or a failed precondition: fix the
+		// state, do not reissue.
 		//
 		// Retryable stays false on both. gRPC defines Aborted as "retry at a
 		// higher level" — restart the read-modify-write — and Retryable here

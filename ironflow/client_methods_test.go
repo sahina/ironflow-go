@@ -559,8 +559,8 @@ func TestEmit(t *testing.T) {
 			t.Errorf("expected event 'order.placed', got %v", receivedBody["event"])
 		}
 
-		if receivedBody["namespace"] != "default" {
-			t.Errorf("expected namespace 'default', got %v", receivedBody["namespace"])
+		if _, ok := receivedBody["namespace"]; ok {
+			t.Errorf("expected no namespace, got %v", receivedBody["namespace"])
 		}
 
 		dataMap, ok := receivedBody["data"].(map[string]any)
@@ -616,7 +616,6 @@ func TestEmit(t *testing.T) {
 			WithEmitIdempotencyKey("idem-key-1"),
 			WithEmitVersion(2),
 			WithEmitMetadata(map[string]any{"source": "test"}),
-			WithEmitNamespace("prod"),
 		)
 
 		if err != nil {
@@ -630,10 +629,6 @@ func TestEmit(t *testing.T) {
 		// JSON numbers are float64
 		if receivedBody["version"] != float64(2) {
 			t.Errorf("expected version 2, got %v", receivedBody["version"])
-		}
-
-		if receivedBody["namespace"] != "prod" {
-			t.Errorf("expected namespace 'prod', got %v", receivedBody["namespace"])
 		}
 
 		metaMap, ok := receivedBody["metadata"].(map[string]any)
@@ -3072,9 +3067,6 @@ func TestCreateConsumerGroup(t *testing.T) {
 		if receivedBody["pattern"] != "order.*" {
 			t.Errorf("expected pattern 'order.*', got %v", receivedBody["pattern"])
 		}
-		if receivedBody["namespace"] != "default" {
-			t.Errorf("expected namespace 'default', got %v", receivedBody["namespace"])
-		}
 		if receivedBody["ack_mode"] != "ACK_MODE_MANUAL" {
 			t.Errorf("expected ack_mode 'ACK_MODE_MANUAL', got %v", receivedBody["ack_mode"])
 		}
@@ -3144,7 +3136,6 @@ func TestCreateConsumerGroup(t *testing.T) {
 		_, err := client.CreateConsumerGroup(ctx, ConsumerGroupConfig{
 			Name:             "full-config",
 			Pattern:          "events.*",
-			Namespace:        "prod",
 			FilterExpr:       "event.data.priority == 'high'",
 			AckMode:          AckModeAuto,
 			Backpressure:     BackpressureDrop,
@@ -3158,8 +3149,8 @@ func TestCreateConsumerGroup(t *testing.T) {
 			t.Fatalf("expected no error, got: %v", err)
 		}
 
-		if receivedBody["namespace"] != "prod" {
-			t.Errorf("expected namespace 'prod', got %v", receivedBody["namespace"])
+		if _, ok := receivedBody["namespace"]; ok {
+			t.Errorf("namespace was removed (#4114) but is still sent: %v", receivedBody["namespace"])
 		}
 		if receivedBody["filter_expr"] != "event.data.priority == 'high'" {
 			t.Errorf("expected filter_expr, got %v", receivedBody["filter_expr"])
@@ -3370,9 +3361,6 @@ func TestGetConsumerGroup(t *testing.T) {
 		if receivedBody["name"] != "order-processors" {
 			t.Errorf("expected name 'order-processors', got %v", receivedBody["name"])
 		}
-		if receivedBody["namespace"] != "default" {
-			t.Errorf("expected namespace 'default', got %v", receivedBody["namespace"])
-		}
 
 		if group.ID != "cg-001" {
 			t.Errorf("expected ID 'cg-001', got '%s'", group.ID)
@@ -3444,14 +3432,14 @@ func TestGetConsumerGroup(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		_, err := client.GetConsumerGroup(ctx, "g", WithConsumerGroupNamespace("prod"))
+		_, err := client.GetConsumerGroup(ctx, "g")
 
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
 
-		if receivedBody["namespace"] != "prod" {
-			t.Errorf("expected namespace 'prod', got %v", receivedBody["namespace"])
+		if _, ok := receivedBody["namespace"]; ok {
+			t.Errorf("namespace was removed (#4114) but is still sent: %v", receivedBody["namespace"])
 		}
 	})
 
@@ -3709,14 +3697,14 @@ func TestListConsumerGroups(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		_, err := client.ListConsumerGroups(ctx, WithConsumerGroupNamespace("staging"))
+		_, err := client.ListConsumerGroups(ctx)
 
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
 
-		if receivedBody["namespace"] != "staging" {
-			t.Errorf("expected namespace 'staging', got %v", receivedBody["namespace"])
+		if _, ok := receivedBody["namespace"]; ok {
+			t.Errorf("namespace was removed (#4114) but is still sent: %v", receivedBody["namespace"])
 		}
 	})
 
@@ -3870,9 +3858,6 @@ func TestDeleteConsumerGroup(t *testing.T) {
 		if receivedBody["name"] != "order-processors" {
 			t.Errorf("expected name 'order-processors', got %v", receivedBody["name"])
 		}
-		if receivedBody["namespace"] != "default" {
-			t.Errorf("expected namespace 'default', got %v", receivedBody["namespace"])
-		}
 	})
 
 	t.Run("sends custom namespace via option", func(t *testing.T) {
@@ -3901,14 +3886,14 @@ func TestDeleteConsumerGroup(t *testing.T) {
 		}
 
 		ctx := context.Background()
-		err := client.DeleteConsumerGroup(ctx, "my-group", WithConsumerGroupNamespace("prod"))
+		err := client.DeleteConsumerGroup(ctx, "my-group")
 
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
 
-		if receivedBody["namespace"] != "prod" {
-			t.Errorf("expected namespace 'prod', got %v", receivedBody["namespace"])
+		if _, ok := receivedBody["namespace"]; ok {
+			t.Errorf("namespace was removed (#4114) but is still sent: %v", receivedBody["namespace"])
 		}
 		if receivedBody["name"] != "my-group" {
 			t.Errorf("expected name 'my-group', got %v", receivedBody["name"])
