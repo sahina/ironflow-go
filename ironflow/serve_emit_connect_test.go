@@ -61,3 +61,46 @@ func TestServeWebhookConnectEmit(t *testing.T) {
 		}
 	}
 }
+
+// A permanent refusal answers 502 on purpose: see the SDK webhook handlers in ADR 0184.
+func TestServeWebhookFailedEmitIs502(t *testing.T) {
+	deliver := func(t *testing.T, serverURL, wantMessage string) {
+		t.Helper()
+		handler := Serve(ServeConfig{ServerURL: serverURL, SkipVerification: true, Webhooks: []Webhook{CreateWebhook(WebhookConfig{ID: "test", Transform: func([]byte) (*WebhookEvent, error) {
+			return &WebhookEvent{Name: "order.placed", Data: json.RawMessage(`{}`), IdempotencyKey: "provider-id"}, nil
+		}})}})
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest("POST", "/webhooks/test", strings.NewReader(`{}`)))
+		var body struct {
+			Error struct{ Code, Message string }
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode %q: %v", rec.Body.String(), err)
+		}
+		if rec.Code != http.StatusBadGateway || body.Error.Code != "EMIT_FAILED" {
+			t.Fatalf("got %d %q, want 502 EMIT_FAILED", rec.Code, body.Error.Code)
+		}
+		if !strings.Contains(body.Error.Message, wantMessage) {
+			t.Fatalf("message %q lacks %q", body.Error.Message, wantMessage)
+		}
+	}
+	for status, code := range map[int]string{
+		http.StatusConflict:   "already_exists",
+		http.StatusBadRequest: "invalid_argument",
+		http.StatusForbidden:  "permission_denied",
+	} {
+		t.Run(code, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"code":"` + code + `"}`))
+			}))
+			defer server.Close()
+			deliver(t, server.URL, code)
+		})
+	}
+	t.Run("unreachable", func(t *testing.T) {
+		server := httptest.NewServer(http.NotFoundHandler())
+		server.Close()
+		deliver(t, server.URL, "failed to emit event")
+	})
+}

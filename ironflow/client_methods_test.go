@@ -3,12 +3,14 @@ package ironflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2170,6 +2172,39 @@ func TestDeleteRuns(t *testing.T) {
 // ============================================================================
 
 func TestAppendStreamEvent(t *testing.T) {
+	t.Run("a busy append is retryable, carries Retry-After and is not resent", func(t *testing.T) {
+		var calls atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls.Add(1)
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`{"code":"unavailable","message":"entity stream append met a busy outbox; nothing was written, retry"}`))
+		}))
+		defer server.Close()
+
+		client := &Client{
+			serverURL:   server.URL,
+			httpClient:  &http.Client{},
+			logger:      NewNoopLogger(),
+			retryConfig: &ClientRetryConfig{MaxAttempts: 3},
+		}
+		_, err := client.AppendStreamEvent(context.Background(), "order-123", AppendEventInput{Name: "item.added", EntityType: "order"})
+
+		var ifErr *IronflowError
+		if !errors.As(err, &ifErr) {
+			t.Fatalf("error = %#v, want an IronflowError", err)
+		}
+		if ifErr.Code != "unavailable" || !ifErr.Retryable || ifErr.RetryAfter != time.Second {
+			t.Errorf("code = %q, retryable = %v, retry after = %v", ifErr.Code, ifErr.Retryable, ifErr.RetryAfter)
+		}
+		if errors.Is(err, ErrContended) {
+			t.Error("a busy append must not read as a version conflict")
+		}
+		if n := calls.Load(); n != 1 {
+			t.Errorf("sent %d times, want 1", n)
+		}
+	})
+
 	t.Run("sends correct method path and body", func(t *testing.T) {
 		var receivedMethod string
 		var receivedPath string

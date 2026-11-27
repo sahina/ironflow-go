@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 
 	"connectrpc.com/connect"
@@ -89,7 +90,52 @@ func dialWS(ctx context.Context, url string, header http.Header) (*websocket.Con
 		header = http.Header{}
 	}
 	header.Set(headerSDK, sdkHeaderValue())
-	return websocket.DefaultDialer.DialContext(ctx, url, header)
+	return dialBounded(ctx, websocket.DefaultDialer, url, header)
+}
+
+// dialBounded dials with d and closes the connection when the dial's time runs
+// out. A SOCKS5 proxy dial clears the deadline the dialer set on it, so a server
+// that never answers the upgrade would otherwise hold the dial open.
+func dialBounded(ctx context.Context, base *websocket.Dialer, url string, header http.Header) (*websocket.Conn, *http.Response, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if base.HandshakeTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, base.HandshakeTimeout)
+		defer cancel()
+	}
+	d := *base
+	dial := d.NetDialContext
+	switch {
+	case dial != nil:
+	case d.NetDial != nil:
+		dial = func(_ context.Context, network, addr string) (net.Conn, error) { return d.NetDial(network, addr) }
+	default:
+		dial = (&net.Dialer{}).DialContext
+	}
+	var stop func() bool
+	bound := func(dial func(context.Context, string, string) (net.Conn, error)) func(context.Context, string, string) (net.Conn, error) {
+		return func(dialCtx context.Context, network, addr string) (net.Conn, error) {
+			c, err := dial(dialCtx, network, addr)
+			if err == nil {
+				stop = context.AfterFunc(ctx, func() { _ = c.Close() })
+			}
+			return c, err
+		}
+	}
+	d.NetDialContext = bound(dial)
+	if d.NetDialTLSContext != nil {
+		d.NetDialTLSContext = bound(d.NetDialTLSContext)
+	}
+	conn, resp, err := d.DialContext(ctx, url, header)
+	if stop != nil && !stop() {
+		// The close can win over the dialer's own deadline: name the cause.
+		if err != nil {
+			return nil, resp, fmt.Errorf("%w: %w", context.Cause(ctx), err)
+		}
+		_ = conn.Close()
+		return nil, resp, context.Cause(ctx)
+	}
+	return conn, resp, err
 }
 
 // serverTooOld turns a Connect Unimplemented from SubscribeBidirectional into an error that names

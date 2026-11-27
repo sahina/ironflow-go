@@ -178,7 +178,7 @@ var MyFunction = ironflow.CreateFunction(ironflow.FunctionConfig{
     },
 }, func(ctx ironflow.Context) (any, error) {
     // ctx.Event  -- triggering event
-    // ctx.Run    -- run metadata (ID, FunctionID, Attempt, MaxAttempts, StartedAt, Environment)
+    // ctx.Run    -- run metadata (ID, FunctionID, Attempt, MaxAttempts, OnExhausted, StartedAt, Environment)
     // ctx.Secrets -- resolved secrets
     return nil, nil
 })
@@ -202,7 +202,7 @@ The `Context` passed to handlers provides:
 | Field         | Type            | Description                          |
 |---------------|-----------------|--------------------------------------|
 | `ctx.Event`   | `Event`         | Triggering event (ID, Name, Version, RawData, Timestamp, IdempotencyKey, Source, Metadata, EmittedBy) |
-| `ctx.Run`     | `RunInfo`       | Run metadata (ID, FunctionID, Attempt, MaxAttempts, StartedAt, Environment) |
+| `ctx.Run`     | `RunInfo`       | Run metadata (ID, FunctionID, Attempt, MaxAttempts, OnExhausted, StartedAt, Environment) |
 | `ctx.Secrets` | `SecretsReader` | Resolved secrets (see [Secrets](#secrets)) |
 
 Use `ctx.Event.Data(&target)` to unmarshal the event payload into a typed struct.
@@ -2120,7 +2120,7 @@ err := ironflow.NewStepTimeoutError("slow-step", 30*time.Second)
 | Variable                | Description                     | Default                    |
 |-------------------------|---------------------------------|----------------------------|
 | `IRONFLOW_SERVER_URL`   | Server URL                      | `http://localhost:9123`    |
-| `IRONFLOW_SIGNING_KEY`  | The Go SDK does not read this variable. Your code reads it and passes it to `Serve` as `SigningKey`. With no key, the handler does not verify requests. | (none)                     |
+| `IRONFLOW_SIGNING_KEY`  | `Serve` does not read this variable. Your code reads it (for example with `GetSigningKey()`) and passes it to `Serve` as `SigningKey`. With no key, the handler does not verify requests. | (none)                     |
 | `IRONFLOW_API_KEY`      | API key for authentication      | (none)                     |
 | `IRONFLOW_LOG_LEVEL`    | Log level: debug, info, warn, error, silent | info           |
 | `IRONFLOW_ENV`          | Target environment for `Worker` and `Serve` (the `Client` does not read it) | (none) |
